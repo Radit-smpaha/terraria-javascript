@@ -1,0 +1,1703 @@
+:root {
+  --bg-dark: #0a0e14;
+  --panel-bg: rgba(16, 24, 38, 0.88);
+  --panel-border: #415372;
+  --accent-gold: #f6c344;
+  --accent-green: #38b764;
+  --accent-blue: #3b82f6;
+  --accent-red: #ef4444;
+  --accent-purple: #a855f7;
+  --text-primary: #f1f5f9;
+  --text-muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #000;
+  font-family: 'VT323', monospace;
+  color: var(--text-primary);
+}
+
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+canvas#gameCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+canvas#lightingCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  display: block;
+}
+
+/* Additive bloom layer: makes torches, lava, stars and explosions actually radiate */
+canvas#glowCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.9;
+  display: block;
+}
+
+#ui-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  z-index: 10;
+}
+
+#ui-layer>* {
+  pointer-events: auto;
+}
+
+/* TOP LEFT PANEL */
+.top-left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  max-width: 320px;
+  backdrop-filter: blur(4px);
+}
+
+.clock-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.badge-day {
+  background: #f59e0b;
+  color: #1e1b18;
+  font-size: 13px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-night {
+  background: #7c3aed;
+  color: #fff;
+  font-size: 13px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.8);
+  animation: pulse-night 2s infinite ease-in-out;
+}
+
+.weather-badge {
+  font-size: 10px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid currentColor;
+  color: #93c5fd;
+  white-space: nowrap;
+  transition: color 0.4s, border-color 0.4s;
+}
+
+.weather-badge.hidden { display: none; }
+
+.weather-rain   { color: #7dd3fc; }
+.weather-storm  { color: #c084fc; animation: pulse-night 0.9s infinite ease-in-out; }
+.weather-blizzard { color: #e0f2fe; }
+.weather-sand   { color: #fbbf24; }
+.weather-fog    { color: #cbd5e1; }
+
+@keyframes pulse-night {
+
+  0%,
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px #a855f7);
+  }
+
+  50% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 10px #ec4899);
+  }
+}
+
+.survival-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  color: #cbd5e1;
+}
+
+.bar-outer {
+  width: 100%;
+  height: 14px;
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar-fill {
+  height: 100%;
+  transition: width 0.15s ease-out;
+  border-radius: 2px;
+}
+
+.hp-fill {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.mana-fill {
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.6);
+}
+
+.stamina-fill {
+  background: linear-gradient(90deg, #d97706, #fbbf24);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+}
+
+.hunger-fill {
+  background: linear-gradient(90deg, #b45309, #fb923c);
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.6);
+}
+
+#hunger-bar.hunger-fill {
+  background: linear-gradient(90deg, #b45309, #fb923c);
+}
+
+/* TOP RIGHT PANEL */
+.top-right-status {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ui-btn {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 2px solid #475569;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.ui-btn:hover {
+  background: #334155;
+  border-color: #94a3b8;
+  transform: translateY(-2px);
+}
+
+.summon-btn {
+  background: linear-gradient(135deg, #7c2d12, #991b1b);
+  border-color: #f87171;
+  color: #fef2f2;
+}
+
+.summon-btn:hover {
+  background: linear-gradient(135deg, #991b1b, #dc2626);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+}
+
+/* BOSS PANEL (Epic terraria health bar at top center) */
+.boss-panel {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 520px;
+  max-width: 90vw;
+  background: rgba(15, 23, 42, 0.92);
+  border: 3px solid #dc2626;
+  border-radius: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 0 24px rgba(220, 38, 38, 0.6), inset 0 0 12px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+  animation: boss-appear 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes boss-appear {
+  from {
+    transform: translateX(-50%) translateY(-30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+.boss-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: #fca5a5;
+  letter-spacing: 1px;
+}
+
+#boss-phase-badge {
+  background: #991b1b;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.boss-bar-outer {
+  width: 100%;
+  height: 20px;
+  background: #450a0a;
+  border: 2px solid #7f1d1d;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.boss-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #b91c1c, #ef4444, #f87171);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.9);
+  transition: width 0.15s ease-out;
+}
+
+.boss-hp-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
+  color: #fff;
+}
+
+/* ANNOUNCEMENT BANNER */
+.announcement-banner {
+  position: absolute;
+  top: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid #ef4444;
+  padding: 12px 32px;
+  border-radius: 6px;
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+  pointer-events: none;
+  animation: banner-pop 3.5s forwards ease-in-out;
+}
+
+#announcement-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 16px;
+  color: #f87171;
+  text-align: center;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px #dc2626;
+}
+
+@keyframes banner-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.8);
+  }
+
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.05);
+  }
+
+  25% {
+    transform: translateX(-50%) scale(1);
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+}
+
+/* TOASTS */
+.toast-container {
+  position: absolute;
+  left: 20px;
+  bottom: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+/* Performance readout (F key). Deliberately understated — it is a diagnostic,
+   not part of the HUD art. */
+.fps-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  padding: 5px 9px;
+  background: rgba(8, 15, 28, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 5px;
+  color: #cbd5e1;
+  font: 13px 'VT323', monospace;
+  letter-spacing: 0.5px;
+  text-shadow: 1px 1px 0 #000;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .65);
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(15, 23, 42, 0.9);
+  border-left: 4px solid var(--accent-gold);
+  padding: 6px 12px;
+  font-size: 18px;
+  color: #e2e8f0;
+  border-radius: 0 4px 4px 0;
+  animation: toast-slide 2.5s forwards ease-out;
+}
+
+@keyframes toast-slide {
+  0% {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+
+  10% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+}
+
+/* BOTTOM PANEL & HOTBAR */
+.bottom-panel {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hotbar-wrapper {
+  background: var(--panel-bg);
+  border: 3px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.hotbar-slots {
+  display: flex;
+  gap: 6px;
+}
+
+.hotbar-slot {
+  width: 52px;
+  height: 52px;
+  background: #1e293b;
+  border: 2px solid #475569;
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.hotbar-slot:hover {
+  border-color: var(--accent-gold);
+  background: #334155;
+}
+
+.hotbar-slot.active {
+  border-color: #fbbf24;
+  box-shadow: 0 0 12px #f59e0b, inset 0 0 6px rgba(245, 158, 11, 0.4);
+  transform: translateY(-4px);
+  background: #28374d;
+}
+
+.slot-num {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 13px;
+  color: #94a3b8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+}
+
+.slot-count {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #f8fafc;
+  text-shadow: 1px 1px 2px #000;
+}
+
+.slot-icon {
+  font-size: 26px;
+}
+
+.controls-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 16px;
+  color: #cbd5e1;
+}
+
+kbd {
+  background: #334155;
+  color: #f8fafc;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #64748b;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* MODALS */
+.modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: #0f172a;
+  border: 3px solid #3b82f6;
+  border-radius: 12px;
+  width: 620px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: #1e293b;
+  border-bottom: 2px solid #334155;
+}
+
+.modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  color: #60a5fa;
+  letter-spacing: 1px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 28px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #ef4444;
+}
+
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chest-modal-content {
+  width: 420px;
+  border-color: #d97706;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(217, 119, 6, 0.35);
+}
+
+.chest-modal-content .modal-header h3 {
+  color: #fbbf24;
+}
+
+.chest-modal-body {
+  align-items: stretch;
+}
+
+.chest-message {
+  color: #cbd5e1;
+  font-size: 20px;
+  text-align: center;
+}
+
+.chest-loot-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chest-loot-item {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  font-size: 19px;
+}
+
+.chest-loot-icon {
+  font-size: 26px;
+  text-align: center;
+}
+
+.guide-text {
+  font-size: 19px;
+  line-height: 1.4;
+  color: #cbd5e1;
+}
+
+.guide-text h4 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: #38b764;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.guide-text ul {
+  padding-left: 20px;
+  margin-bottom: 10px;
+}
+
+.guide-text li {
+  margin-bottom: 6px;
+}
+
+/* CRAFTING ITEMS */
+.crafting-modal-content { width: 760px; }
+.crafting-body { gap: 10px; }
+.crafting-help { color: #94a3b8; font-size: 15px; }
+.inventory-modal-content { width: 650px; }
+.inventory-body { align-items: stretch; }
+.inventory-display { width: 100%; }
+.crafting-recipes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.recipe-card {
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.recipe-card.craftable {
+  border-color: #10b981;
+}
+
+.recipe-card:hover {
+  background: #273549;
+}
+
+.recipe-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recipe-icon {
+  font-size: 28px;
+}
+
+.recipe-details h5 {
+  font-size: 18px;
+  color: #f1f5f9;
+}
+
+.recipe-reqs {
+  font-size: 15px;
+  color: #94a3b8;
+}
+
+.craft-btn {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.craft-btn:disabled {
+  background: #475569;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.inv-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: #1e293b;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.inv-slot {
+  width: 48px;
+  height: 48px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.inv-slot.filled {
+  cursor: grab;
+  border-color: #64748b;
+}
+
+.inv-slot.filled:active,
+.inv-slot.dragging {
+  cursor: grabbing;
+  opacity: 0.45;
+}
+
+.inv-slot.drag-over {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(246, 195, 68, 0.45), inset 0 0 12px rgba(246, 195, 68, 0.18);
+}
+
+/* SETTLEMENT JOURNAL */
+.journal-btn {
+  border-color: #a78bfa;
+  color: #ddd6fe;
+}
+
+.journal-modal-content {
+  max-width: 620px;
+  width: 92vw;
+}
+
+.journal-body h4 {
+  margin: 16px 0 6px;
+  color: var(--accent-gold);
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.journal-score {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.55), rgba(30, 41, 59, 0.9));
+  border: 1px solid rgba(167, 139, 250, 0.4);
+}
+
+.journal-total {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 26px;
+  color: #fde047;
+  text-shadow: 0 0 12px rgba(253, 224, 71, 0.45);
+}
+
+.journal-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.journal-rank {
+  color: #ddd6fe;
+  font-size: 16px;
+}
+
+.journal-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.journal-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-size: 15px;
+  color: #cbd5e1;
+}
+
+.journal-row:nth-child(odd) {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.journal-value {
+  color: #94a3b8;
+}
+
+.journal-row strong {
+  color: #fde047;
+  min-width: 72px;
+  text-align: right;
+}
+
+.journal-log {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 15px;
+  color: #e2e8f0;
+}
+
+.journal-log li {
+  padding: 4px 8px;
+  border-left: 3px solid rgba(167, 139, 250, 0.6);
+  background: rgba(30, 41, 59, 0.5);
+}
+
+.journal-day {
+  color: #94a3b8;
+  font-size: 13px;
+  margin-right: 6px;
+}
+
+.journal-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* SHARED STASH — items that follow you between worlds */
+.shared-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.shared-count {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.shared-help {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #94a3b8;
+  margin: 4px 0 8px;
+}
+
+.shared-help kbd {
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* A cooler violet edge marks slots that survive across worlds. */
+.shared-grid {
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: #1a1730;
+}
+
+.shared-slot.filled {
+  cursor: pointer;
+  border-color: #7c6bab;
+}
+
+.shared-slot.filled:hover {
+  border-color: var(--accent-gold);
+  box-shadow: inset 0 0 10px rgba(246, 195, 68, 0.2);
+}
+
+/* DEATH / VICTORY OVERLAYS */
+.death-screen,
+.victory-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+}
+
+.death-screen {
+  background: rgba(45, 10, 10, 0.85);
+}
+
+.victory-screen {
+  background: rgba(10, 45, 20, 0.88);
+}
+
+.death-content,
+.victory-content {
+  text-align: center;
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 32px 40px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.death-content {
+  border: 3px solid #ef4444;
+}
+
+.victory-content {
+  border: 3px solid #38b764;
+}
+
+.death-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 26px;
+  color: #ef4444;
+  text-shadow: 0 0 16px #dc2626;
+}
+
+.victory-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 24px;
+  color: #34d399;
+  text-shadow: 0 0 16px #059669;
+}
+
+.trophy-display {
+  font-size: 24px;
+  color: #fbbf24;
+  font-family: 'Press Start 2P', monospace;
+  margin: 10px 0;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border: 2px solid #60a5fa;
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  padding: 12px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.primary-btn:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  transform: translateY(-2px);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.7);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================
+   TERRARIA-STYLE HUD EXTRAS
+   Hearts, mana stars, buff chips, minimap, vignettes, pause
+   ============================================================ */
+
+:root {
+  --panel-bg2: rgba(23, 25, 50, 0.86);
+  --panel-border2: #6b70c9;
+}
+
+/* Right-hand HUD column: buffs + potion badge + minimap.
+   Sits below the top-right button row (.top-right-status). */
+.right-hud-column {
+  position: absolute;
+  top: 58px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* ---- Buff chips (Terraria buff icons: square, icon + timer) ---- */
+.buff-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 300px;
+}
+
+.buff-chip {
+  width: 44px;
+  height: 44px;
+  background: var(--panel-bg2);
+  border: 2px solid var(--panel-border2);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), inset 0 0 8px rgba(0, 0, 0, 0.45);
+}
+
+.buff-chip.debuff {
+  animation: debuff-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes debuff-pulse {
+
+  0%,
+  100% {
+    box-shadow: inset 0 0 8px rgba(168, 85, 247, 0.4);
+  }
+
+  50% {
+    box-shadow: inset 0 0 14px rgba(168, 85, 247, 0.9);
+  }
+}
+
+.buff-icon {
+  font-size: 20px;
+  line-height: 1;
+  filter: drop-shadow(1px 1px 0 #000);
+}
+
+.buff-time {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #e2e8f0;
+  text-shadow: 1px 1px 0 #000;
+  margin-top: 2px;
+}
+
+/* ---- Potion sickness badge ---- */
+.potion-badge {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: #e9d5ff;
+  background: rgba(88, 28, 135, 0.9);
+  border: 2px solid #a855f7;
+  border-radius: 4px;
+  padding: 4px 8px;
+  text-shadow: 1px 1px 0 #000;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+
+/* ---- Minimap panel ---- */
+.minimap-panel {
+  background: var(--panel-bg2);
+  border: 2px solid var(--panel-border2);
+  border-radius: 6px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+}
+
+#minimap {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 2px solid #3d4080;
+  border-radius: 3px;
+  background: #05060d;
+}
+
+.minimap-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #a5b4fc;
+  text-shadow: 1px 1px 0 #000;
+  letter-spacing: 1px;
+}
+
+/* ---- Life hearts (1 heart = 20 life, like Terraria) ---- */
+.heart-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.heart {
+  font-size: 17px;
+  line-height: 1;
+  text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+  transition: transform 0.12s ease;
+}
+
+.heart.full {
+  color: #ff4d5e;
+  filter: drop-shadow(0 0 4px rgba(255, 77, 94, 0.7));
+}
+
+.heart.empty {
+  color: #4a2b31;
+  filter: saturate(0.4);
+}
+
+/* ---- Mana stars (1 star = 20 mana) ---- */
+.star-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.star {
+  font-size: 15px;
+  line-height: 1;
+  text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+}
+
+.star.full {
+  color: #60a5fa;
+  filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.8));
+}
+
+.star.empty {
+  color: #2b3a55;
+}
+
+/* ---- Hurt / heal screen vignettes ---- */
+.screen-vignette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 30;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(220, 38, 38, 0.75) 100%);
+  transition: opacity 0.18s ease-out;
+}
+
+.heal-vignette {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(34, 197, 94, 0.65) 100%);
+}
+
+/* ---- Pause overlay ---- */
+.pause-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 14, 0.7);
+  backdrop-filter: blur(3px);
+}
+
+.pause-box {
+  background: var(--panel-bg2);
+  border: 3px solid var(--panel-border2);
+  border-radius: 10px;
+  padding: 28px 44px;
+  text-align: center;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.85), 0 0 22px rgba(107, 112, 201, 0.35);
+}
+
+.pause-box h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 26px;
+  color: #f1f5f9;
+  letter-spacing: 4px;
+  text-shadow: 3px 3px 0 #000;
+  margin-bottom: 12px;
+}
+
+.pause-box p {
+  font-size: 20px;
+  color: #cbd5e1;
+}
+
+/* ---- Death / victory run summary ---- */
+.run-stats {
+  font-size: 18px;
+  color: #94a3b8;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   ITEM ICON FONTS — icons must never fall back to tofu boxes
+   ============================================================ */
+.slot-icon,
+.inv-slot,
+.recipe-icon,
+.chest-loot-icon,
+.buff-icon,
+.tt-icon,
+.npc-portrait {
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', 'VT323', sans-serif;
+}
+
+/* ---- Minimap label: fixed, centered, never reflows the panel ---- */
+.minimap-label {
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ============================================================
+   NPC QUESTS — talk prompt, dialogue modal, quest tracker
+   ============================================================ */
+.npc-prompt {
+  position: absolute;
+  bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #fde047;
+  color: #fef9c3;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  z-index: 40;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 #000;
+  animation: prompt-bob 1.4s infinite ease-in-out;
+}
+
+@keyframes prompt-bob {
+
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  50% {
+    transform: translateX(-50%) translateY(-4px);
+  }
+}
+
+.npc-modal-content {
+  width: 480px;
+  border-color: #d4a017;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 160, 23, 0.35);
+}
+
+.npc-modal-content .modal-header h3 {
+  color: #fde047;
+}
+
+.npc-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.npc-portrait {
+  font-size: 54px;
+  line-height: 1;
+  filter: drop-shadow(2px 2px 0 #000);
+}
+
+.npc-dialogue {
+  flex: 1;
+  font-size: 19px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+
+.npc-dialogue .q-name {
+  display: block;
+  color: #fde047;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+.npc-dialogue .q-reward {
+  display: block;
+  color: #86efac;
+  margin-top: 8px;
+}
+
+.npc-dialogue .q-progress {
+  display: block;
+  color: #93c5fd;
+  margin-top: 8px;
+}
+
+.npc-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.secondary-btn {
+  background: #1e293b;
+  border: 2px solid #475569;
+  color: #cbd5e1;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.secondary-btn:hover {
+  background: #334155;
+  border-color: #94a3b8;
+}
+
+/* ---- Quest tracker (lives in the right-hand HUD column) ---- */
+.quest-tracker {
+  background: var(--panel-bg2);
+  border: 2px solid #d4a017;
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-width: 300px;
+  font-size: 15px;
+  color: #e2e8f0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+}
+
+.quest-tracker .qt-title {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #fde047;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.quest-tracker .qt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.quest-tracker .qt-row strong {
+  color: #86efac;
+  white-space: nowrap;
+}
+
+.quest-tracker .qt-ready {
+  color: #fde047;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* ---- Boss badge screams when enraged / awakened ---- */
+.boss-phase-badge.enraged {
+  animation: debuff-pulse 0.7s infinite ease-in-out;
+  color: #fecaca;
+}
+
+/* THREE-SAVE MANAGER */
+.save-manager-content { width: 560px; border-color: #60a5fa; }
+.save-manager-help { color: #94a3b8; font-size: 15px; line-height: 1.5; }
+.save-slot-list { display: grid; gap: 10px; margin-top: 12px; }
+.save-slot-card { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 12px; background: #0f172a; border: 2px solid #334155; border-radius: 6px; }
+.save-slot-card strong { color: #f8fafc; }
+.save-slot-card > span { grid-column: 1; color: #94a3b8; font-size: 14px; }
+.save-slot-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; align-items: center; }
+.save-slot-actions .ui-btn { padding: 7px 9px; font-size: 10px; }
+.save-slot-actions .ui-btn:disabled { opacity: .45; cursor: default; }
+.save-slot-actions .ui-btn.danger { color: #fecaca; border-color: #7f1d1d; }
+/* ============================================================
+   CREATIVE MENU — give yourself any item or block
+   ============================================================ */
+.creative-btn { color: #fde68a; border-color: #78350f; }
+.creative-btn:hover { color: #fffbeb; border-color: var(--accent-gold); }
+
+.creative-modal-content { width: 720px; border-color: #fbbf24; }
+.creative-help { color: #94a3b8; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+
+.creative-controls { display: flex; gap: 10px; align-items: center; }
+
+.creative-search {
+  flex: 1;
+  background: #020617;
+  color: #f8fafc;
+  border: 2px solid #334155;
+  border-radius: 5px;
+  padding: 10px 12px;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  outline: none;
+}
+.creative-search:focus { border-color: #fbbf24; }
+.creative-search::placeholder { color: #64748b; }
+
+.creative-categories { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.creative-cat-btn {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 2px solid #334155;
+  border-radius: 4px;
+  padding: 7px 9px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  cursor: pointer;
+}
+.creative-cat-btn:hover { background: #334155; color: #f8fafc; }
+.creative-cat-btn.active { background: #78350f; border-color: #fbbf24; color: #fde68a; }
+
+.creative-quick { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.creative-quick-btn { padding: 8px 10px; font-size: 10px; }
+.creative-slotmode { color: #94a3b8; font-size: 14px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.creative-slotmode input { cursor: pointer; }
+
+.creative-count { color: #64748b; font-size: 14px; margin: 10px 2px 6px; }
+
+.creative-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding: 4px;
+  background: #020617;
+  border: 2px solid #1e293b;
+  border-radius: 6px;
+}
+
+.creative-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  border: 2px solid #1e293b;
+  border-radius: 5px;
+  font-size: 22px;
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+}
+.creative-cell:hover { border-color: #fbbf24; background: #1e293b; }
+.creative-cell:active { transform: scale(0.94); }
+.creative-cell.flash { border-color: #4ade80; background: #14532d; }
+
+/* Stack size tucked into the bottom-right like the real inventory. */
+.creative-cell-count {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #f8fafc;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* Item icon uses the same monochrome-emoji treatment as the hotbar. */
+.creative-cell-icon {
+  font-size: 22px;
+  line-height: 1;
+  filter: grayscale(100%) contrast(120%);
+}
+
+.creative-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #64748b;
+  font-size: 15px;
+  padding: 24px 8px;
+}
+
+/* ============================================================
+   JOURNEY PROGRESSION — always-on objective, biome and rank HUD
+   ============================================================ */
+.journey-panel {
+  width: 292px;
+  position: relative;
+  overflow: hidden;
+  color: #e2e8f0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(30, 27, 75, 0.9));
+  border: 2px solid #6b70c9;
+  border-radius: 6px;
+  padding: 8px 9px 7px;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.7), inset 0 0 18px rgba(99, 102, 241, 0.12);
+  pointer-events: none;
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.journey-panel::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.journey-panel.rank-up {
+  border-color: #fde047;
+  box-shadow: 0 0 24px rgba(253, 224, 71, .55), inset 0 0 20px rgba(253, 224, 71, .15);
+  animation: journey-rank-pop .55s ease-out;
+}
+.journey-panel.journey-complete { border-color: #facc15; }
+.journey-panel .hidden { display: none !important; }
+.journey-rank-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 7px; position: relative; }
+.journey-rank-icon { font-size: 23px; filter: drop-shadow(2px 2px 0 #000); }
+.journey-rank-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.journey-rank-copy > span, .journey-step {
+  color: #a5b4fc;
+  font: 7px 'Press Start 2P', monospace;
+  letter-spacing: .7px;
+}
+.journey-rank-copy strong { overflow: hidden; color: #f8fafc; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; text-shadow: 1px 1px 0 #000; }
+.journey-score { color: #fde68a; font: 8px 'Press Start 2P', monospace; white-space: nowrap; }
+.journey-location {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 7px 0 6px;
+  padding: 4px 5px;
+  color: #bbf7d0;
+  background: rgba(15, 23, 42, .78);
+  border-left: 3px solid #4ade80;
+  font: 7px 'Press Start 2P', monospace;
+  letter-spacing: .3px;
+}
+.journey-location > span:last-child { color: #94a3b8; white-space: nowrap; }
+.journey-objective { position: relative; min-height: 48px; }
+.journey-objective strong { display: block; margin-top: 5px; color: #fef3c7; font-size: 16px; line-height: 1.05; text-shadow: 1px 1px 0 #000; }
+.journey-objective p { margin-top: 3px; color: #a5b4fc; font-size: 12px; line-height: 1.05; }
+.journey-meter { height: 9px; margin-top: 6px; overflow: hidden; background: #020617; border: 2px solid #334155; border-radius: 2px; }
+.journey-meter i { display: block; width: 0; height: 100%; background: repeating-linear-gradient(90deg, #facc15 0 7px, #ca8a04 7px 9px); box-shadow: 0 0 9px rgba(250, 204, 21, .6); transition: width .22s ease-out; }
+.journey-footer { display: flex; justify-content: space-between; align-items: center; min-height: 18px; margin-top: 3px; color: #e2e8f0; font: 8px 'Press Start 2P', monospace; }
+.journey-streak { color: #86efac; text-align: right; }
+.journey-threat { margin-top: 4px; padding: 3px 5px; color: #c7d2fe; background: rgba(49, 46, 129, .72); border-left: 3px solid #818cf8; font: 7px 'Press Start 2P', monospace; }
+.journey-threat.danger { color: #fecaca; background: rgba(127, 29, 29, .82); border-color: #ef4444; animation: journey-danger .8s infinite alternate; }
+.journey-panel.journey-complete .journey-meter i { background: repeating-linear-gradient(90deg, #fde047 0 7px, #f59e0b 7px 9px); }
+@keyframes journey-rank-pop { 0% { transform: scale(.96); } 55% { transform: scale(1.035); } 100% { transform: scale(1); } }
+@keyframes journey-danger { from { filter: brightness(.9); } to { filter: brightness(1.35); } }
+
+.journal-journey-summary { display: flex; justify-content: space-between; gap: 8px; padding: 9px; background: rgba(30, 27, 75, .75); border: 2px solid #4f46e5; border-radius: 5px; color: #ddd6fe; }
+.journal-journey-summary strong { color: #fde68a; font-size: 12px; }
+.journal-journey-list { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 7px 0 14px; }
+.journey-journal-row { display: flex; justify-content: space-between; gap: 5px; padding: 6px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #64748b; font-size: 12px; }
+.journey-journal-row.current { color: #fef3c7; border-color: #f59e0b; box-shadow: inset 0 0 10px rgba(245, 158, 11, .12); }
+.journey-journal-row.done { color: #86efac; border-color: #166534; }
+.journey-journal-row strong { font-size: 7px; white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .journey-panel { width: 250px; }
+  .journey-objective p { display: none; }
+  .journey-objective { min-height: 31px; }
+}
+@media (max-width: 760px) {
+  .journey-panel { width: 218px; padding: 6px 7px; }
+  .journey-rank-copy > span, .journey-score, .journey-location > span:last-child, .journey-step { display: none; }
+  .journey-rank-row { grid-template-columns: 25px 1fr; }
+  .journey-location { margin: 4px 0; }
+  .quest-tracker { max-width: 218px; font-size: 12px; }
+  .minimap-panel { display: none; }
+}
+
+/* ============================================================
+   COMPACT UI PASS + SETTINGS
+   Keeps the same information hierarchy, with less visual weight.
+   ============================================================ */
+:root {
+  --hud-surface: rgba(11, 18, 32, 0.91);
+  --hud-edge: rgba(100, 116, 139, 0.68);
+  --hud-highlight: rgba(226, 232, 240, 0.1);
+}
+#ui-layer { padding: 12px; }
+.top-left-panel {
+  max-width: 294px;
+  padding: 8px 11px;
+  gap: 6px;
+  border-color: #52617d;
+  background: linear-gradient(145deg, rgba(18, 28, 46, .94), rgba(10, 16, 28, .9));
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(148, 163, 184, .12);
+}
+.clock-display { gap: 7px; font-size: 17px; }
+.badge-day, .badge-night { font-size: 10px; padding: 2px 5px; }
+.weather-badge { font-size: 8px; padding: 2px 5px; }
+.top-right-status { top: 12px; right: 12px; gap: 5px; }
+.ui-btn { padding: 5px 9px; font-size: 8px; border-width: 2px; }
+.right-hud-column { top: 48px; right: 12px; gap: 6px; }
+.journey-panel { width: 260px; padding: 6px 7px; }
+.journey-objective { min-height: 41px; }
+.journey-objective strong { font-size: 14px; }
+.journey-objective p { font-size: 11px; }
+.journey-meter { height: 8px; margin-top: 5px; }
+.journey-footer { min-height: 15px; font-size: 7px; }
+.journey-threat { font-size: 6px; }
+.bottom-panel { gap: 5px; }
+.hotbar-wrapper { border-width: 2px; padding: 4px 6px; }
+.hotbar-slots { gap: 4px; }
+.hotbar-slot { width: 46px; height: 46px; }
+.slot-icon { font-size: 22px; }
+.slot-count { font-size: 14px; }
+.controls-hint { gap: 8px; padding: 3px 8px; font-size: 13px; }
+.controls-hint kbd, kbd { font-size: 11px; }
+.boss-panel { top: 18px; }
+.boss-title { font-size: 10px; }
+.boss-bar-outer { height: 17px; }
+.boss-hp-text { font-size: 12px; }
+.announcement-banner { top: 116px; padding: 9px 22px; }
+#announcement-text { font-size: 12px; }
+.settings-btn { border-color: #64748b; color: #cbd5e1; }
+.settings-btn:hover { border-color: #facc15; color: #fef3c7; }
+.settings-modal-content { width: 540px; border-color: #64748b; }
+.settings-body { padding: 12px 16px 16px; }
+.settings-help { margin: 0 0 12px; color: #94a3b8; font-size: 14px; line-height: 1.35; }
+.settings-section { margin-top: 12px; }
+.settings-section h4 { margin: 0 0 7px; color: var(--accent-gold); font: 9px 'Press Start 2P', monospace; letter-spacing: .5px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 10px; margin-top: 5px; background: #111827; border: 1px solid #334155; border-radius: 5px; }
+.settings-row > span { display: flex; flex-direction: column; gap: 2px; }
+.settings-row strong { color: #e2e8f0; font-size: 16px; }
+.settings-row small { color: #64748b; font-size: 11px; }
+.settings-row select { min-width: 132px; padding: 6px 8px; color: #e2e8f0; background: #1e293b; border: 2px solid #475569; border-radius: 4px; font: 14px 'VT323', monospace; }
+.settings-row select:focus { outline: none; border-color: #facc15; }
+.settings-toggle input { width: 18px; height: 18px; accent-color: #facc15; }
+.settings-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.settings-actions .ui-btn { min-width: 0; padding: 7px 5px; font-size: 7px; }
+@media (max-width: 760px) {
+  .top-left-panel { max-width: 250px; }
+  .controls-hint { max-width: 360px; justify-content: center; font-size: 12px; }
+  .settings-actions { grid-template-columns: repeat(2, 1fr); }
+  .settings-row { align-items: flex-start; }
+  .settings-row select { min-width: 110px; }
+}
+
