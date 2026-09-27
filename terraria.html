@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Terracraft: Forest Survivor & Boss Slayer</title>
+  <link rel="stylesheet" href="terraria.css?v=14">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <canvas id="lightingCanvas"></canvas>
+    <canvas id="glowCanvas"></canvas>
+
+    <!-- Screen flash overlays (hurt = red, heal = green), opacity driven by GameFeel -->
+    <div id="hurt-vignette" class="screen-vignette"></div>
+    <div id="heal-vignette" class="screen-vignette heal-vignette"></div>
+
+    <!-- UI Overlay -->
+    <div id="ui-layer">
+      <!-- Top Left: Time of Day, World Info, Health & Mana -->
+      <div class="top-left-panel">
+        <div class="clock-display">
+          <span id="time-icon">☀️</span>
+          <span id="time-text">08:30 AM (Day 1)</span>
+          <span id="cycle-badge" class="badge-day">DAY</span>
+          <span id="weather-badge" class="weather-badge hidden">🌧️ RAIN</span>
+        </div>
+        <div class="survival-bars">
+          <div class="bar-container hp-container">
+            <div class="bar-header">
+              <span class="label">❤️ LIFE</span>
+              <span id="hp-text">100 / 100</span>
+            </div>
+            <div class="bar-outer">
+              <div id="hp-bar" class="bar-fill hp-fill" style="width: 100%;"></div>
+            </div>
+            <div id="hp-hearts" class="heart-row"></div>
+          </div>
+          <div class="bar-container mana-container">
+            <div class="bar-header">
+              <span class="label">✨ MANA</span>
+              <span id="mana-text">50 / 50</span>
+            </div>
+            <div class="bar-outer">
+              <div id="mana-bar" class="bar-fill mana-fill" style="width: 100%;"></div>
+            </div>
+            <div id="mana-stars" class="star-row"></div>
+          </div>
+          <div class="bar-container stamina-container">
+            <div class="bar-header">
+              <span class="label">⚡ STAMINA (DODGE)</span>
+              <span id="stamina-text">100 / 100</span>
+            </div>
+            <div class="bar-outer">
+              <div id="stamina-bar" class="bar-fill stamina-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+          <div class="bar-container hunger-container">
+            <div class="bar-header">
+              <span class="label">🍖 HUNGER</span>
+              <span id="hunger-text">100 / 100</span>
+            </div>
+            <div class="bar-outer">
+              <div id="hunger-bar" class="bar-fill hunger-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Right: Boss Health Bar (hidden by default) -->
+      <div id="boss-panel" class="boss-panel hidden">
+        <div class="boss-title">
+          <span id="boss-name">ANCIENT FOREST GUARDIAN</span>
+          <span id="boss-phase-badge">PHASE 1</span>
+        </div>
+        <div class="boss-bar-outer">
+          <div id="boss-hp-bar" class="boss-hp-fill" style="width: 100%;"></div>
+          <div id="boss-hp-text" class="boss-hp-text">3000 / 3000</div>
+        </div>
+      </div>
+
+      <!-- Top Right: primary actions only; secondary actions live in Settings -->
+      <div class="top-right-status">
+        <button id="btn-creative" class="ui-btn creative-btn" title="Creative Mode — give yourself any item">✨ CREATIVE</button>
+        <button id="btn-settings" class="ui-btn settings-btn" title="Open Settings">⚙ SETTINGS</button>
+      </div>
+
+      <!-- Right-hand column: journey, buffs, minimap and quests -->
+      <div class="right-hud-column">
+        <section id="journey-panel" class="journey-panel" aria-label="Current journey objective">
+          <div class="journey-rank-row">
+            <span id="journey-rank-icon" class="journey-rank-icon">🧭</span>
+            <div class="journey-rank-copy">
+              <span>JOURNEY RANK</span>
+              <strong id="journey-rank">Wandering Sprout</strong>
+            </div>
+            <span id="journey-score" class="journey-score">0 PTS</span>
+          </div>
+          <div class="journey-location">
+            <span id="journey-location">🌲 VERDANT REACH</span>
+            <span id="journey-zone">SURFACE</span>
+          </div>
+          <div class="journey-objective">
+            <span id="journey-step" class="journey-step">JOURNEY 1 / 12</span>
+            <strong id="journey-title">🪵 Gather 12 Wood</strong>
+            <p id="journey-hint">Chop trees, then collect the drops.</p>
+          </div>
+          <div class="journey-meter" aria-hidden="true"><i id="journey-progress-fill"></i></div>
+          <div class="journey-footer">
+            <span id="journey-progress-text">0 / 12</span>
+            <span id="journey-streak" class="journey-streak hidden"></span>
+          </div>
+          <div id="journey-threat" class="journey-threat hidden"></div>
+        </section>
+        <div id="buff-bar" class="buff-bar"></div>
+        <span id="potion-badge" class="potion-badge hidden">💊 POTION SICKNESS</span>
+        <div id="minimap-panel" class="minimap-panel">
+          <canvas id="minimap" width="132" height="132"></canvas>
+          <div id="minimap-label" class="minimap-label">FOREST</div>
+        </div>
+        <div id="quest-tracker" class="quest-tracker hidden"></div>
+      </div>
+
+      <!-- Quick Action notification toasts -->
+      <div id="toast-container" class="toast-container"></div>
+
+      <!-- Center Notifications (Night Arrived, Boss Spawned, etc.) -->
+      <div id="announcement-banner" class="announcement-banner hidden">
+        <div id="announcement-text">THE BLOOD MOON IS RISING...</div>
+      </div>
+
+      <!-- Bottom Center: Hotbar & Quick Crafting -->
+      <div class="bottom-panel">
+        <div class="hotbar-wrapper">
+          <div id="hotbar" class="hotbar-slots">
+            <!-- 9 slots dynamically populated -->
+          </div>
+        </div>
+        <div class="controls-hint">
+          <span><kbd>1-9</kbd> Select Item</span>
+          <span><kbd>L-Click</kbd> Attack/Mine</span>
+          <span><kbd>R-Click</kbd> Place/Use</span>
+          <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
+          <span><kbd>SPACE</kbd> Jump / Double Jump</span>
+          <span><kbd>SHIFT</kbd> Dodge Roll</span>
+          <span><kbd>E</kbd> Crafting</span>
+          <span><kbd>I</kbd> Inventory</span>
+          <span><kbd>C</kbd> Creative</span>
+          <span><kbd>J</kbd> Journal</span>
+          <span><kbd>F</kbd> FPS</span>
+        </div>
+      </div>
+
+      <!-- Settings: secondary actions and performance controls -->
+      <div id="settings-modal" class="modal hidden">
+        <div class="modal-content settings-modal-content">
+          <div class="modal-header">
+            <h3>⚙ SETTINGS</h3>
+            <button id="settings-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body settings-body">
+            <p class="settings-help">Keep the adventure HUD compact. Performance changes apply immediately and are saved for this browser.</p>
+            <section class="settings-section">
+              <h4>PERFORMANCE</h4>
+              <label class="settings-row">
+                <span><strong>Rendering quality</strong><small>Lower settings reduce internal detail while keeping the game full-screen</small></span>
+                <select id="settings-quality">
+                  <option value="auto">Auto</option>
+                  <option value="high">High</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="low">Low</option>
+                </select>
+              </label>
+              <label class="settings-row">
+                <span><strong>Effects density</strong><small>Particles, weather, slashes, and glow effects</small></span>
+                <select id="settings-effects">
+                  <option value="full">Full</option>
+                  <option value="reduced">Reduced</option>
+                  <option value="minimal">Minimal</option>
+                </select>
+              </label>
+               <label class="settings-row">
+                 <span><strong>Glow / bloom</strong><small>Reduce the expensive additive light pass</small></span>
+                 <select id="settings-glow">
+                   <option value="full">Full</option>
+                   <option value="reduced">Reduced</option>
+                   <option value="off">Off</option>
+                 </select>
+               </label>
+
+              <label class="settings-row settings-toggle">
+                <span><strong>Performance readout</strong><small>Show FPS, frame time, resolution, and effects</small></span>
+                <input id="settings-fps" type="checkbox">
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>QUICK ACTIONS</h4>
+              <div class="settings-actions">
+                <button id="btn-sound" class="ui-btn" title="Toggle Sound">🔊 AUDIO ON</button>
+                <button id="btn-help" class="ui-btn" title="Controls / Guide">❓ GUIDE</button>
+                <button id="btn-crafting" class="ui-btn" title="Open crafting recipes">🔨 CRAFTING</button>
+                <button id="btn-inventory" class="ui-btn" title="Open inventory">🎒 BAG</button>
+                <button id="btn-journal" class="ui-btn journal-btn" title="Your discoveries and settlement score">📖 JOURNAL</button>
+                <button id="btn-save" class="ui-btn" title="Save your world">💾 SAVE</button>
+                <button id="btn-load" class="ui-btn" title="Load your saved world">↻ LOAD</button>
+                <button id="btn-saves" class="ui-btn" title="Switch, rename, or delete save files">💾 SAVE FILES</button>
+                <button id="btn-summon" class="ui-btn summon-btn" title="Summon Boss Instantly">👁️ SUMMON BOSS</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <!-- Crafting modal: recipes only -->
+      <div id="crafting-modal" class="modal hidden">
+        <div class="modal-content crafting-modal-content">
+          <div class="modal-header">
+            <h3>🔨 CRAFTING & FORGE</h3>
+            <button id="modal-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body crafting-body">
+            <p class="crafting-help">Select a recipe to craft it from materials in your bag.</p>
+            <div class="crafting-recipes" id="recipe-list">
+              <!-- Dynamically generated recipes -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inventory modal: bag and shared stash only -->
+      <div id="inventory-modal" class="modal hidden">
+        <div class="modal-content inventory-modal-content">
+          <div class="modal-header">
+            <h3>🎒 INVENTORY</h3>
+            <button id="inventory-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body inventory-body">
+            <div class="inventory-display">
+              <h4>BAG CONTENTS</h4>
+              <div id="inventory-grid" class="inv-grid"></div>
+              <div class="shared-header">
+                <h4>📦 SHARED STASH</h4>
+                <span id="shared-count" class="shared-count">0 / 18 in use</span>
+              </div>
+              <p class="shared-help">
+                Items kept here follow you into <strong>every world</strong>. In your bag, right-click an item
+                (or <kbd>Ctrl</kbd>+click) to store one — hold <kbd>Shift</kbd> to move the whole stack.
+                Click a stash item to take it back.
+              </p>
+              <div id="shared-grid" class="inv-grid shared-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Creative Mode — give yourself any item or block -->
+      <div id="creative-modal" class="modal hidden">
+        <div class="modal-content creative-modal-content">
+          <div class="modal-header">
+            <h3>✨ CREATIVE MENU</h3>
+            <button id="creative-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="creative-help">Search for anything, then click to add a stack straight to your bag. Use the buttons to add 1, a full stack, or everything at once.</p>
+            <div class="creative-controls">
+              <input id="creative-search" class="creative-search" type="text" placeholder="Search items &amp; blocks…" autocomplete="off" spellcheck="false">
+              <div id="creative-categories" class="creative-categories"></div>
+            </div>
+            <div class="creative-quick">
+              <button class="ui-btn creative-quick-btn" data-quick="1">ADD 1</button>
+              <button class="ui-btn creative-quick-btn" data-quick="stack">ADD STACK</button>
+              <button class="ui-btn creative-quick-btn" data-quick="max">ADD 999</button>
+              <span class="creative-slotmode">
+                <label><input id="creative-fill-hotbar" type="checkbox"> fill hotbar</label>
+              </span>
+            </div>
+            <div id="creative-count" class="creative-count">0 items</div>
+            <div id="creative-grid" class="creative-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Three-slot save manager -->
+      <div id="save-manager" class="modal hidden">
+        <div class="modal-content save-manager-content">
+          <div class="modal-header">
+            <h3>💾 SAVE FILES</h3>
+            <button id="save-manager-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="save-manager-help">Switch between three independent worlds. Save the current world before opening another slot.</p>
+            <div id="save-slot-list" class="save-slot-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chest Loot Modal -->
+      <div id="chest-modal" class="modal hidden">
+        <div class="modal-content chest-modal-content">
+          <div class="modal-header">
+            <h3>🧰 CHEST OPENED</h3>
+            <button id="chest-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body chest-modal-body">
+            <p class="chest-message">You found these items:</p>
+            <div id="chest-loot" class="chest-loot-grid"></div>
+            <button id="chest-done" class="primary-btn">CONTINUE EXPLORING</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- NPC talk prompt + quest dialog (see npcs.js) -->
+      <div id="npc-prompt" class="npc-prompt hidden">Press <kbd>T</kbd> to talk</div>
+      <div id="npc-modal" class="modal hidden">
+        <div class="modal-content npc-modal-content">
+          <div class="modal-header">
+            <h3 id="npc-title">VILLAGER</h3>
+            <button id="npc-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="npc-row">
+              <div id="npc-portrait" class="npc-portrait">🧭</div>
+              <div id="npc-dialogue" class="npc-dialogue"></div>
+            </div>
+            <div class="npc-actions">
+              <button id="npc-action" class="primary-btn hidden"></button>
+              <button id="npc-bye" class="secondary-btn">GOODBYE</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settlement Journal: discoveries + score (see Game.renderJournal) -->
+      <div id="journal-modal" class="modal hidden">
+        <div class="modal-content journal-modal-content">
+          <div class="modal-header">
+            <h3>📖 SETTLEMENT JOURNAL</h3>
+            <button id="journal-close" class="close-btn">&times;</button>
+          </div>
+          <div id="journal-body" class="modal-body journal-body"></div>
+        </div>
+      </div>
+
+      <!-- Help / Guide Modal -->
+      <div id="guide-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>🌲 SURVIVAL & COMBAT GUIDE</h3>
+            <button id="guide-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body guide-text">
+            <h4>OBJECTIVES</h4>
+            <ul>
+              <li><strong>Daytime:</strong> Gather Wood, Stone, Iron & Gold ore. Craft stronger weapons (Broadsword,
+                Starlight Bow, Forest Wand), armor and torches.</li>
+              <li><strong>Nighttime:</strong> At 07:00 PM the sky turns dark. Zombies, Demon Eyes, and Forest Wraiths
+                spawn!</li>
+              <li><strong>The Underworld:</strong> Dig far below the blackstone layer. You will reach a lava ocean and the
+                Hellbound Castle. Its gate opens with one click; the demon altar inside wakes a three-phase boss.</li>
+              <li><strong>The Boss:</strong> Surviving to midnight or clicking <strong>[👁️ SUMMON BOSS]</strong>
+                awakens the <strong>Ancient Forest Guardian</strong>! Defeat both phases (Enraged Eye & Bramble
+                Behemoth) to save the forest.</li>
+            </ul>
+            <h4>THINGS TO DO</h4>
+            <ul>
+              <li><strong>🎣 Go fishing.</strong> Craft a <strong>Fishing Rod</strong> (8 wood + 2 wool), select it,
+                and <strong>right-click a pool of water</strong> to cast. Wait for the bobber to flash, then press
+                <kbd>A</kbd> or <kbd>D</kbd> to reel it in. Fish feed you; Golden Koi and Sunken Boots sell the dream.
+                Every catch raises your Angler level, which attracts rarer fish.</li>
+              <li><strong>📖 Fill your Journal.</strong> Press <kbd>J</kbd> to see your settlement score — days
+                survived, monsters slain, bosses defeated, chests opened, quests finished. The first time you do
+                something, the game announces it and logs it forever.</li>
+              <li><strong>📦 Use the Shared Stash.</strong> Open your bag with <kbd>I</kbd>. Right-click an item (or
+                <kbd>Ctrl</kbd>+click, or hold <kbd>Shift</kbd> for the whole stack) to store it. Those items follow
+                you into <em>every</em> world you make.</li>
+              <li><strong>🧭 Talk to villagers</strong> (<kbd>T</kbd>) for quests, explore the swamp for the drowned
+                chapel, and wake the Cursed Knight inside it for a second boss.</li>
+              <li><strong>💗 Grow stronger:</strong> craft Life &amp; Mana Crystals to permanently raise your caps,
+                then chase Rainbow Ore for the Prismatic Saber and Aurora Blade.</li>
+            </ul>
+            <h4>CONTROLS & MOVEMENT</h4>
+            <ul>
+              <li><kbd>A</kbd> / <kbd>D</kbd> — Smooth run & slide mechanics.</li>
+              <li><kbd>W</kbd> or <kbd>SPACE</kbd> — Jump. Press again in air for double jump (Hermes Wind).</li>
+              <li><kbd>S</kbd> — Crouch / Fast fall through wood platforms.</li>
+              <li><kbd>SHIFT</kbd> — Dodge roll with invincibility frames & particle trail!</li>
+              <li>Wall Slide & Wall Jump — Touch any wall while falling and press <kbd>SPACE</kbd> to wall kick!</li>
+              <li><kbd>Left Click</kbd> — Swing sword, shoot bow, cast spells, or mine tiles with pickaxe.</li>
+              <li><kbd>Right Click</kbd> — Place blocks or consume potions.</li>
+              <li><kbd>1</kbd> - <kbd>9</kbd> or Mouse Scroll — Switch hotbar slot.</li>
+              <li><kbd>E</kbd> — Open/Close Crafting Forge.</li>
+              <li><kbd>T</kbd> — Talk to nearby villagers (Guide, Prospector, Scavenger) and accept quests.</li>
+              <li><kbd>C</kbd> — Open the Creative Menu and give yourself any item or block.</li>
+              <li><kbd>Q</kbd> — Drink the best buff potion in your bag.</li>
+              <li><kbd>H</kbd> — Quick heal with a potion.</li>
+              <li><kbd>M</kbd> — Cycle the minimap: hidden → small → medium → large.</li>
+              <li><kbd>O</kbd> — Open Settings for quality, effects density, audio, saves, and quick actions.</li>
+              <li><kbd>F</kbd> — Toggle the performance readout (FPS, resolution, effect count).</li>
+              <li><kbd>J</kbd> — Open the Settlement Journal (discoveries and score).</li>
+              <li><kbd>Right-click</kbd> with the Fishing Rod on water — cast or reel in a line.</li>
+            </ul>
+            <h4>PERFORMANCE</h4>
+            <ul>
+              <li>Terracraft watches its own frame time. If your machine starts to struggle it quietly drops to
+                half resolution and halves the number of effects — the game stays smooth and simply looks a
+                little chunkier.</li>
+              <li>It returns to full resolution on its own once frames are fast again. Press <kbd>F</kbd> to
+                see what it is doing.</li>
+              <li>The <kbd>F</kbd> readout shows <strong>FPS</strong>, the <strong>average frame time</strong> this
+                machine actually spends, the current resolution, and how many effects are live. FPS is the real
+                display rate; frame time is what tells you whether the work itself is heavy.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pause Overlay -->
+      <div id="pause-overlay" class="pause-overlay hidden">
+        <div class="pause-box">
+          <h2>PAUSED</h2>
+          <p>Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</p>
+        </div>
+      </div>
+
+      <!-- Death / Respawn Screen -->
+      <div id="death-screen" class="death-screen hidden">
+        <div class="death-content">
+          <h1 class="death-title">YOU WERE SLAIN...</h1>
+          <p id="death-cause">The creatures of the night tore you apart.</p>
+          <p id="death-stats" class="run-stats"></p>
+          <button id="btn-respawn" class="primary-btn">RESPAWN AT CAMPFIRE</button>
+        </div>
+      </div>
+
+      <!-- Victory Screen -->
+      <div id="victory-screen" class="victory-screen hidden">
+        <div class="victory-content">
+          <h1 class="victory-title">👑 THE FOREST IS SAVED!</h1>
+          <p>You have conquered the Ancient Forest Guardian and survived the terrors of the night.</p>
+          <p id="victory-stats" class="run-stats"></p>
+          <div class="trophy-display">🏆 Legendary Forest Champion</div>
+          <button id="btn-continue" class="primary-btn">CONTINUE EXPLORING</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Audio synthesizers and game scripts -->
+  <script src="audio.js?v=7"></script>
+  <script src="particles.js?v=6"></script>
+  <script src="world.js?v=10"></script>
+  <script src="weather.js?v=6"></script>
+  <script src="entities.js?v=10"></script>
+  <script src="underworld.js?v=4"></script>
+  <script src="juice.js?v=10"></script>
+  <script src="npcs.js?v=2"></script>
+  <script src="journey.js?v=1"></script>
+  <script src="terraria.js?v=19"></script>
+</body>
+
+</html>
