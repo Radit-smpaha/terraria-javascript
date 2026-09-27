@@ -1,0 +1,6 @@
+{
+  "engine": "generic",
+  "launch": { "cmd": "node", "args": ["server.js"] },
+  "log": { "stdout": true },
+  "sourceRoots": ["."]
+}

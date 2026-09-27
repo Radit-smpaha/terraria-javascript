@@ -1,0 +1,8 @@
+{
+  "name": "terracraft",
+  "engine": "generic",
+  "launch": { "cmd": "C:/Users/najma/AppData/Local/Programs/Microsoft VS Code/Code.exe", "args": ["server.js"], "env": { "ELECTRON_RUN_AS_NODE": "1" } },
+  "log": { "stdout": true },
+  "ready": "Terracraft running at",
+  "sourceRoots": ["."]
+}
