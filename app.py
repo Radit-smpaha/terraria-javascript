@@ -1,23 +1,29 @@
+
 import streamlit as st
 import streamlit.components.v1 as components
-from pathlib import Path
 
 st.set_page_config(
-    page_title="Terraria",
-    layout="wide"
+    page_title="Terracraft",
+    page_icon="🌲",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-st.title("Terraria - Browser Edition")
+st.markdown("""
+<style>
+    .block-container {
+        padding: 0 !important;
+        max-width: 100% !important;
+    }
 
-game_file = Path(__file__).parent / "terraria.html"
+    header, footer, #MainMenu {
+        display: none !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-if game_file.exists():
-    html = game_file.read_text(encoding="utf-8")
-
-    components.html(
-        html,
-        height=750,
-        scrolling=False
-    )
-else:
-    st.error("Could not find index.html in the project folder.")
+components.iframe(
+    "https://radit-smpaha.github.io/terraria-javascript/terraria.html",
+    height=850,
+    scrolling=True
+)
