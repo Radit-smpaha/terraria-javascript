@@ -9,7 +9,7 @@ st.set_page_config(
 
 st.title("Terraria - Browser Edition")
 
-game_file = Path(__file__).parent / "index.html"
+game_file = Path(__file__).parent / "terraria.html"
 
 if game_file.exists():
     html = game_file.read_text(encoding="utf-8")
