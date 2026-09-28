@@ -376,10 +376,6 @@ class Projectile {
   }
 }
 
-// Life drained per second once the hunger bar empties. Slow enough to be a
-// warning you can still walk out of, fast enough that ignoring it kills you.
-const STARVATION_DPS = 3;
-
 class Player {
   constructor(x, y) {
     this.x = x;
@@ -403,14 +399,8 @@ class Player {
     this.hp = 100;
     this.maxMana = 50;
     this.mana = 50;
-    // The un-upgraded caps. Life/Mana Crystals raise maxHp/maxMana on top of
-    // these, and the save only stores how many crystals were ever drunk — so
-    // every load has to re-derive the real caps from these baselines.
-    this.baseMaxHp = 100;
-    this.baseMaxMana = 50;
     this.maxHunger = 100;
     this.hunger = 100;
-    this.starving = false; // true while the empty bar is draining life
     this.maxStamina = 100;
     this.stamina = 100;
 
@@ -546,26 +536,6 @@ class Player {
   }
 
   /**
-   * Starvation damage.
-   *
-   * This used to go through takeDamage(), which was wrong twice over. takeDamage
-   * is a *hit* reaction: it applies hurt knockback (vx/vy), plays the hurt sound
-   * and spawns blood, so an empty stomach physically threw the player around and
-   * screamed at them. On top of that it floors every tick to a minimum of 1 HP
-   * and hands out 0.6s of i-frames, so the real 3 HP/s trickle was silently
-   * rounded *up* to 1 HP per frame (a 60x damage rate) and then throttled back
-   * down by the i-frames it had just granted itself.
-   *
-   * Starving is a bleed, not an attack, so it is applied as a plain HP decrement
-   * with no knockback, no sound and no i-frames. The Game's death check still
-   * picks the player up when this reaches 0, and `starving` is left set so the
-   * death screen can name starvation as the cause.
-   */
-  applyStarvation(dt) {
-    this.hp = Math.max(0, this.hp - dt * STARVATION_DPS);
-  }
-
-  /**
    * Per-frame player simulation: resources, states, movement and collisions.
    */
   update(dt, input, world, soundSystem, particleSystem) {
@@ -575,10 +545,7 @@ class Player {
     // Hunger drains gently: a full 100-point bar lasts about 20 minutes.
     this.hunger = Math.max(0, this.hunger - dt * 0.0833333333);
     if (this.hunger <= 0) {
-      this.starving = true;
-      this.applyStarvation(dt);
-    } else {
-      this.starving = false;
+      this.takeDamage(dt * 3, soundSystem, particleSystem);
     }
 
     // Coyote time + buffered jumps let the player press jump slightly early/late.
@@ -3330,3 +3297,31 @@ class CursedKnightBoss {
       ctx.beginPath();
       ctx.arc(cx, cy, radius - 6, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
       ctx.stroke();
+
+      const aimA = t.aimAngle ?? 0;
+      const count = t.aimCount ?? 5;
+      const spread = t.aimSpread ?? 0.55;
+      for (let i = 0; i < count; i++) {
+        const a = count === 1 ? aimA : aimA - spread + (i / (count - 1)) * spread * 2;
+        const inner = radius + 4;
+        const outer = radius + 26 + prog * 22;
+        ctx.globalAlpha = 0.35 + prog * 0.5;
+        ctx.strokeStyle = `rgba(244, 114, 182, ${0.35 + prog * 0.5})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+window.DropItem = DropItem;
+window.Projectile = Projectile;
+window.Player = Player;
+window.Monster = Monster;
+window.Critter = Critter;
+window.ForestGuardianBoss = ForestGuardianBoss;
+window.CursedKnightBoss = CursedKnightBoss;
