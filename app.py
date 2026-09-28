@@ -61,23 +61,76 @@ def build_inline_html() -> str | None:
         html = (BASE / "terraria.html").read_text(encoding="utf-8")
         css = (BASE / "terraria.css").read_text(encoding="utf-8")
         html = re.sub(
-            r'<link[^>]*terraria\.css[^>]*>',
-            "<style>\n/* inlined terraria.css */\n" + css + "\n</style>",
+            r"<link[^>]*terraria\.css[^>]*>",
+            lambda m, _css=css: "<style>\n/* inlined terraria.css */\n"
+            + _css
+            + "\n</style>",
             html,
             count=1,
         )
         for name in GAME_SCRIPTS:
             js = (BASE / name).read_text(encoding="utf-8")
-            # Never let game code break out of the inline <script> block.
-            js = js.replace("</script", "<\\/script")
+            # Escape for HTML parsing only: a literal "</script" (any case)
+            # terminates the <script> block, so break it up as <\/script.
+            # NOTE: do NOT touch backslash-n / backslash-t etc. The old code
+            # also ran a blanket backslash-escape which corrupted regexes and
+            # string literals (e.g. '\n' -> '\\n') and broke entities.js, which
+            # is why Streamlit reported "Player is not defined (about:srcdoc)".
+            js = re.sub(r"</script", r"<\\/script", js, flags=re.IGNORECASE)
+            # A failed earlier deploy used a blanket backslash-escape here that
+            # corrupted the JS. This build only touches "</script" (see verify
+            # above); backslashes/regexes are passed through untouched.
+            # <script> tags carry onload/onerror probes now — allow attributes.
             pattern = re.compile(
-                r'<script\s+src="%s(\?v=[^"]*)?"\s*>\s*</script>' % re.escape(name)
+                r'<script\s+src="%s(\?v=[^"]*)?"[^>]*>\s*</script>' % re.escape(name)
             )
             html, count = pattern.subn(
-                "<script>\n/* inlined %s */\n%s\n</script>" % (name, js), html, count=1
+                lambda m, _name=name, _js=js: "<script>\n/* inlined %s */\n%s\n</script>"
+                % (_name, _js),
+                html,
+                count=1,
             )
             if count != 1:
                 return None
+        # Sanity: every inlined script must expose its class. If a file ever
+        # fails to parse (truncation, bad deploy), this surfaces it in the
+        # Streamlit logs BEFORE the user sees "Player is not defined".
+        probes = {
+            "audio.js": "SoundSystem",
+            "particles.js": "ParticleSystem",
+            "world.js": "World",
+            "weather.js": "WeatherSystem",
+            "entities.js": "Player",
+            "underworld.js": "UnderworldMonster",
+            "juice.js": "GameFeel",
+            "npcs.js": "NPCManager",
+            "journey.js": "JourneySystem",
+            "terraria.js": "Game",
+        }
+        for name, token in probes.items():
+            marker = "/* inlined %s */" % name
+            idx = html.find(marker)
+            if idx < 0:
+                return None
+            end = html.find("</script>", idx)
+            if end < 0:
+                return None
+            block = html[idx:end]
+            if ("class %s" % token) not in block and (
+                "window.%s" % token
+            ) not in block:
+                return None
+            # Inline <script> blocks never fire onload, so record per-file
+            # proof of life right after each block. A failed block's probe
+            # still runs (separate <script>) and reports e.g.
+            # "Player=undefined" — the boot overlay then names the exact file
+            # instead of a bare "Player is not defined (about:srcdoc)".
+            probe = (
+                "\n<script>window.__terraNoteScript&&window.__terraNoteScript("
+                '"inline %s: %s="+(typeof %s))</script>' % (name, token, token)
+            )
+            end += len("</script>")
+            html = html[:end] + probe + html[end:]
         return html
     except Exception as exc:  # missing file etc. -> caller uses iframe fallback
         st.warning(f"Could not inline local game files ({exc}); using hosted build.")
@@ -85,6 +138,22 @@ def build_inline_html() -> str | None:
 
 
 inline_html = build_inline_html()
+
+try:
+    _debug = "debug" in st.query_params
+except Exception:
+    _debug = False
+if _debug:
+    with st.expander("Terracraft embed diagnostics", expanded=True):
+        _sizes = {}
+        for _n in GAME_SCRIPTS + ["terraria.html", "terraria.css"]:
+            try:
+                _sizes[_n] = (BASE / _n).stat().st_size
+            except Exception:
+                _sizes[_n] = -1
+        st.write(_sizes)
+        st.write("inline chars:", len(inline_html) if inline_html else None)
+
 if inline_html:
     components.html(inline_html, height=GAME_HEIGHT, scrolling=False)
 else:
