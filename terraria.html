@@ -477,4 +477,43 @@
           <h2>PAUSED</h2>
           <p>Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</p>
         </div>
-      <
+      </div>
+
+      <!-- Death / Respawn Screen -->
+      <div id="death-screen" class="death-screen hidden">
+        <div class="death-content">
+          <h1 class="death-title">YOU WERE SLAIN...</h1>
+          <p id="death-cause">The creatures of the night tore you apart.</p>
+          <p id="death-stats" class="run-stats"></p>
+          <button id="btn-respawn" class="primary-btn">RESPAWN AT CAMPFIRE</button>
+        </div>
+      </div>
+
+      <!-- Victory Screen -->
+      <div id="victory-screen" class="victory-screen hidden">
+        <div class="victory-content">
+          <h1 class="victory-title">👑 THE FOREST IS SAVED!</h1>
+          <p>You have conquered the Ancient Forest Guardian and survived the terrors of the night.</p>
+          <p id="victory-stats" class="run-stats"></p>
+          <div class="trophy-display">🏆 Legendary Forest Champion</div>
+          <button id="btn-continue" class="primary-btn">CONTINUE EXPLORING</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Audio synthesizers and game scripts -->
+  <script src="audio.js?v=7"></script>
+  <script src="particles.js?v=6"></script>
+  <script src="world.js?v=10"></script>
+  <script src="weather.js?v=6"></script>
+  <script src="entities.js?v=11"></script>
+  <script src="underworld.js?v=4"></script>
+  <script src="juice.js?v=11"></script>
+  <script src="npcs.js?v=2"></script>
+  <script src="journey.js?v=1"></script>
+  <script src="terraria.js?v=21"></script>
+</body>
+
+</html>
