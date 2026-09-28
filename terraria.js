@@ -34,10 +34,10 @@ const ITEMS = {
   ember_bow: { id: 'ember_bow', name: 'Ember Bow', type: 'weapon', weaponType: 'ranged', damage: 32, projectile: 'arrow', speed: 11, icon: '🏹', stackMax: 1 },
   moon_staff: { id: 'moon_staff', name: 'Moon Staff', type: 'weapon', weaponType: 'magic', damage: 52, manaCost: 12, projectile: 'magic_bolt', speed: 12, icon: '🌙', stackMax: 1 },
   diamond_blade: { id: 'diamond_blade', name: 'Diamond Blade', type: 'weapon', weaponType: 'melee', damage: 58, range: 88, icon: '⚔️', stackMax: 1 },
-  iron_armor: { id: 'iron_armor', name: 'Iron Armor Plate', type: 'armor', defense: 6, icon: '🛡️', stackMax: 1 },
-  gold_armor: { id: 'gold_armor', name: 'Gold Armor Plate', type: 'armor', defense: 4, icon: '🟨', stackMax: 1 },
-  diamond_armor: { id: 'diamond_armor', name: 'Diamond Armor Plate', type: 'armor', defense: 9, icon: '💠', stackMax: 1 },
-  crystal_armor: { id: 'crystal_armor', name: 'Crystal Armor Plate', type: 'armor', defense: 15, icon: '💠', stackMax: 1 },
+  iron_armor: { id: 'iron_armor', name: 'Iron Armor Plate', type: 'armor', defense: 6, reduction: 0.12, icon: '🛡️', stackMax: 1 },
+  gold_armor: { id: 'gold_armor', name: 'Gold Armor Plate', type: 'armor', defense: 4, reduction: 0.08, icon: '🟨', stackMax: 1 },
+  diamond_armor: { id: 'diamond_armor', name: 'Diamond Armor Plate', type: 'armor', defense: 9, reduction: 0.18, icon: '💠', stackMax: 1 },
+  crystal_armor: { id: 'crystal_armor', name: 'Crystal Armor Plate', type: 'armor', defense: 15, reduction: 0.25, icon: '💠', stackMax: 1 },
   healing_potion: { id: 'healing_potion', name: 'Lesser Healing Potion', type: 'consumable', heal: 50, icon: '🧪', stackMax: 30 },
   campfire: { id: 'campfire', name: 'Campfire', type: 'tile', tile: TILES.CAMPFIRE, icon: '🏕️', stackMax: 99 }
 };
@@ -169,7 +169,7 @@ const NEW_ITEMS = {
     icon: '🥾', stackMax: 99
   },
   anglers_charm: {
-    id: 'anglers_charm', name: "Angler's Charm", type: 'armor', defense: 3,
+    id: 'anglers_charm', name: "Angler's Charm", type: 'armor', defense: 3, reduction: 0.04,
     icon: '🧿', stackMax: 1
   },
   cursed_edge: {
@@ -190,16 +190,47 @@ const NEW_ITEMS = {
     icon: '🌠', stackMax: 1
   },
   rainbow_armor: {
-    id: 'rainbow_armor', name: 'Prismatic Armor', type: 'armor', defense: 22,
+    id: 'rainbow_armor', name: 'Prismatic Armor', type: 'armor', defense: 22, reduction: 0.32,
     icon: '🌈', stackMax: 1
   },
   fallen_star_armor: {
-    id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 28,
+    id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 28, reduction: 0.40,
     icon: '🌟', stackMax: 1
   }
 };
 
 Object.assign(ITEMS, NEW_ITEMS);
+
+// ============================================================
+// ARMOUR LADDER
+// One ordered list, strongest first. Everything that needs to
+// reason about "which armour is better" reads this instead of
+// hardcoding ids, which is how pieces used to fall out of the
+// system and quietly stop granting anything.
+//
+// `reduction` is a fraction of incoming damage the plate soaks
+// up, on top of the flat `defense` subtraction. The ladder is
+// deliberately gentle and no tier reaches immunity: the 1 HP
+// floor in Player.takeDamage() always applies, so the best
+// armour still lets most of a big hit through.
+// ============================================================
+const ARMOR_TIERS = [
+  'fallen_star_armor', // 1st - 40%
+  'rainbow_armor',     // 2nd - 32%
+  'crystal_armor',     // 3rd - 25%
+  'diamond_armor',     // 4th - 18%
+  'iron_armor',        // 5th - 12%
+  'gold_armor',        // 6th - 8%
+  'anglers_charm'      // accessory - 4%
+];
+
+/** The armour item with the highest reduction that the player owns. */
+function bestOwnedArmor(game) {
+  for (const id of ARMOR_TIERS) {
+    if (game.countItem(id) > 0) return ITEMS[id];
+  }
+  return null;
+}
 
 // Crafting recipes
 const RECIPES = [
@@ -1385,6 +1416,12 @@ class Game {
       this.world.generateLandmarks();
     }
 
+    // Progress first: it carries the permanent Life/Mana Crystal counts, and the
+    // life/mana clamps below have to be evaluated against the upgraded caps —
+    // clamping against the base 100/50 would shave the bonuses back off.
+    this.restoreProgress(save.progress);
+    this.applyPermanentUpgrades();
+
     if (save.player) {
       this.player.x = Number.isFinite(save.player.x) ? save.player.x : this.player.x;
       this.player.y = Number.isFinite(save.player.y) ? save.player.y : this.player.y;
@@ -1410,7 +1447,6 @@ class Game {
       if (this.countItem('bomb') === 0) this.addItem('bomb', 2);
     }
     if (this.npcs) this.npcs.fromSave(save.quests);
-    this.restoreProgress(save.progress);
     this.journey?.syncWorldFlags();
 
     // Sleep-bound respawn (only kept while the bed still exists).
@@ -2062,6 +2098,23 @@ class Game {
     return taken;
   }
 
+  /**
+   * Re-derive the player's life/mana caps from the permanent crystal counts.
+   *
+   * The save file persists how many Life/Mana Crystals were ever drunk
+   * (progress.maxHpUpgrades / maxManaUpgrades), NOT the resulting caps. A fresh
+   * Player starts at the base 100/50, so loadGame has to replay those counts or
+   * every reload silently strips the permanent upgrades. Drinking a crystal
+   * goes through here too, which keeps the two paths from drifting apart.
+   */
+  applyPermanentUpgrades() {
+    const p = this.player;
+    p.maxHp = p.baseMaxHp + this.maxHpUpgrades * (ITEMS.life_crystal.maxHpBonus || 0);
+    p.maxMana = p.baseMaxMana + this.maxManaUpgrades * (ITEMS.mana_crystal.maxManaBonus || 0);
+    p.hp = Math.min(p.hp, p.maxHp);
+    p.mana = Math.min(p.mana, p.maxMana);
+  }
+
   /** Death bookkeeping: stats, buffs, screens. */
   onPlayerDeath() {
     this.stats.deaths += 1;
@@ -2397,14 +2450,16 @@ class Game {
 
     if (itemData.maxHpBonus) {
       this.maxHpUpgrades += 1;
-      this.player.maxHp += itemData.maxHpBonus;
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + itemData.maxHpBonus);
+      const before = this.player.maxHp;
+      this.applyPermanentUpgrades();
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + (this.player.maxHp - before));
       permanent = `❤️ Max life increased to ${this.player.maxHp}!`;
     }
     if (itemData.maxManaBonus) {
       this.maxManaUpgrades += 1;
-      this.player.maxMana += itemData.maxManaBonus;
-      this.player.mana = Math.min(this.player.maxMana, this.player.mana + itemData.maxManaBonus);
+      const before = this.player.maxMana;
+      this.applyPermanentUpgrades();
+      this.player.mana = Math.min(this.player.maxMana, this.player.mana + (this.player.maxMana - before));
       permanent = `✨ Max mana increased to ${this.player.maxMana}!`;
     }
     if (itemData.heal) {
@@ -3127,12 +3182,12 @@ this.player.dodgeTime = 0;
     this.showToast(`🔥 Respawned at ${respawnLabel}.`);
   }
 
+  /**
+   * Best armour the player currently owns. Reads ARMOR_TIERS so every
+   * tier stays in the running — this used to list only four of the six.
+   */
   getBestArmor() {
-    const armorIds = ['gold_armor', 'iron_armor', 'diamond_armor', 'crystal_armor'];
-    return armorIds
-      .map(id => ITEMS[id])
-      .filter(item => this.countItem(item.id) > 0)
-      .sort((a, b) => b.defense - a.defense)[0] || null;
+    return bestOwnedArmor(this);
   }
 
   update(dt) {
@@ -3184,19 +3239,25 @@ this.player.dodgeTime = 0;
     }
 
     // 2. Player Update
-    const goldDefense = this.countItem('gold_armor') > 0 ? ITEMS.gold_armor.defense : 0;
-    const ironDefense = this.countItem('iron_armor') > 0 ? ITEMS.iron_armor.defense : 0;
-    const diamondDefense = this.countItem('diamond_armor') > 0 ? ITEMS.diamond_armor.defense : 0;
-    const crystalDefense = this.countItem('crystal_armor') > 0 ? ITEMS.crystal_armor.defense : 0;
-    const rainbowDefense = this.countItem('rainbow_armor') > 0 ? ITEMS.rainbow_armor.defense : 0;
-    const fallenStarDefense = this.countItem('fallen_star_armor') > 0 ? ITEMS.fallen_star_armor.defense : 0;
-    // Armour plate + Ironskin/Well Fed bonuses stack.
-    this.player.armorDefense = Math.max(goldDefense, ironDefense, diamondDefense, crystalDefense, rainbowDefense, fallenStarDefense)
-      + this.buffs.bonus('defense');
+    // Armour stats come from the piece actually WORN, not the best piece in
+    // the bag. This used to take a Math.max() across every armour the player
+    // merely owned, so gold on your back still granted Fallen Star defence
+    // and swapping tiers did nothing at all.
     if (!this.equippedArmorId || this.countItem(this.equippedArmorId) <= 0) {
-      this.equippedArmorId = null;
+      // Nothing valid equipped (new save, or the plate was dropped/sold):
+      // fall back to the best owned so existing saves keep their protection.
+      const fallback = bestOwnedArmor(this);
+      this.equippedArmorId = fallback ? fallback.id : null;
     }
-    this.player.activeArmor = this.equippedArmorId ? ITEMS[this.equippedArmorId] : null;
+    const wornArmor = this.equippedArmorId ? ITEMS[this.equippedArmorId] : null;
+    this.player.activeArmor = wornArmor;
+
+    // Percentage soak is the main effect; flat defense and the Ironskin /
+    // Well Fed bonuses stack additively on top of it.
+    const armorReduction = wornArmor ? (wornArmor.reduction || 0) : 0;
+    const armorFlat = wornArmor ? (wornArmor.defense || 0) : 0;
+    this.player.armorReduction = Math.min(0.75, armorReduction);
+    this.player.armorDefense = armorFlat + this.buffs.bonus('defense');
 
     // Swiftness and similar buffs feed straight into movement speed.
     this.player.speedMultiplier = this.buffs.multiplier('speed');
@@ -3724,6 +3785,9 @@ this.player.dodgeTime = 0;
 
     // 13. Death check (covers starvation and any other stray damage source)
     if (this.player.hp <= 0 && !this.isDead) {
+      // Starvation no longer goes through damagePlayer(), so it never set a cause
+      // of its own. Name it here, where the death screen reads it from.
+      if (this.player.starving) this.deathCause = '🍎 You starved to death.';
       this.isDead = true;
       this.onPlayerDeath();
     }
@@ -3811,6 +3875,22 @@ this.player.dodgeTime = 0;
     const hp = Math.max(0, Math.floor(p.hp));
     this.setWidth('hp-bar', Math.max(0, (p.hp / p.maxHp) * 100));
     this.setText('hp-text', `${hp} / ${p.maxHp}`);
+
+    // Armour readout: the equipped plate's damage reduction, so the tier
+    // you're actually wearing is visible without hovering a tooltip.
+    const armorChip = this.hudEl('armor-chip');
+    if (armorChip) {
+      const pct = Math.round((p.armorReduction || 0) * 100);
+      if (pct > 0) {
+        this.setText('armor-chip-text', `${pct}%`);
+        const flat = Math.round(p.armorDefense || 0);
+        const label = flat > 0 ? `🛡️ ${pct}% · +${flat} DEF` : `🛡️ ${pct}%`;
+        if (armorChip.textContent !== label) armorChip.textContent = label;
+        armorChip.classList.remove('hidden');
+      } else if (!armorChip.classList.contains('hidden')) {
+        armorChip.classList.add('hidden');
+      }
+    }
 
     const mana = Math.max(0, Math.floor(p.mana));
     this.setWidth('mana-bar', Math.max(0, (p.mana / p.maxMana) * 100));
