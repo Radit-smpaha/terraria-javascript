@@ -5,13 +5,52 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=14">
+  <link rel="stylesheet" href="terraria.css?v=15">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 </head>
 
 <body>
+  <div id="boot-error" class="boot-error hidden" role="alert"></div>
+  <script>
+    // Boot watchdog: if the Game constructor throws (stale/cached/mismatched
+    // script files), the canvas stays black and no input works. Surface the
+    // real error on screen instead of failing silently — essential inside
+    // iframes (Streamlit) where devtools usually aren't open.
+    (function () {
+      window.__terraBootError = null;
+      function showBootError(msg) {
+        var el = document.getElementById('boot-error');
+        if (!el) return;
+        el.classList.remove('hidden');
+        el.innerHTML = '';
+        var title = document.createElement('div');
+        title.className = 'boot-error-title';
+        title.textContent = 'Terracraft failed to start';
+        var body = document.createElement('div');
+        body.className = 'boot-error-body';
+        body.textContent = String(msg).slice(0, 600);
+        var hint = document.createElement('div');
+        hint.className = 'boot-error-hint';
+        hint.textContent = 'Hard-refresh (Ctrl+Shift+R). If embedded, the host may be serving stale game files — open terraria.html directly instead.';
+        el.appendChild(title); el.appendChild(body); el.appendChild(hint);
+      }
+      window.__terraShowBootError = showBootError;
+      window.addEventListener('error', function (e) {
+        if (window.game || !e || !e.filename) return; // ignore resource/font noise
+        window.__terraBootError = e.message || 'Unknown script error';
+        showBootError(window.__terraBootError + ' (' + e.filename.split('/').pop() + ')');
+      }, true);
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (!window.game && !window.__terraBootError) {
+            showBootError('Game scripts did not start a world (a script file may have failed to load).');
+          }
+        }, 4000);
+      });
+    })();
+  </script>
   <div id="game-container">
     <canvas id="gameCanvas"></canvas>
     <canvas id="lightingCanvas"></canvas>
@@ -438,43 +477,4 @@
           <h2>PAUSED</h2>
           <p>Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</p>
         </div>
-      </div>
-
-      <!-- Death / Respawn Screen -->
-      <div id="death-screen" class="death-screen hidden">
-        <div class="death-content">
-          <h1 class="death-title">YOU WERE SLAIN...</h1>
-          <p id="death-cause">The creatures of the night tore you apart.</p>
-          <p id="death-stats" class="run-stats"></p>
-          <button id="btn-respawn" class="primary-btn">RESPAWN AT CAMPFIRE</button>
-        </div>
-      </div>
-
-      <!-- Victory Screen -->
-      <div id="victory-screen" class="victory-screen hidden">
-        <div class="victory-content">
-          <h1 class="victory-title">👑 THE FOREST IS SAVED!</h1>
-          <p>You have conquered the Ancient Forest Guardian and survived the terrors of the night.</p>
-          <p id="victory-stats" class="run-stats"></p>
-          <div class="trophy-display">🏆 Legendary Forest Champion</div>
-          <button id="btn-continue" class="primary-btn">CONTINUE EXPLORING</button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Audio synthesizers and game scripts -->
-  <script src="audio.js?v=7"></script>
-  <script src="particles.js?v=6"></script>
-  <script src="world.js?v=10"></script>
-  <script src="weather.js?v=6"></script>
-  <script src="entities.js?v=10"></script>
-  <script src="underworld.js?v=4"></script>
-  <script src="juice.js?v=10"></script>
-  <script src="npcs.js?v=2"></script>
-  <script src="journey.js?v=1"></script>
-  <script src="terraria.js?v=20"></script>
-</body>
-
-</html>
+      <
