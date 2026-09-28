@@ -157,9 +157,25 @@ World.prototype.buildDemonCastle = function(cx, top, floorY) {
     this.setTile(x, top + 2, TILES.CASTLE_BRICK);
     this.walls[(top + 3) * this.width + x] = TILES.DEMON_BRICK;
   }
-  for (let x = cx - 3; x <= cx + 3; x++) this.setTile(x, floorY - 1, TILES.DEMON_BRICK);
-  for (let x = cx - 2; x <= cx + 2; x++) this.setTile(x, floorY - 2, TILES.OBSIDIAN);
-  for (let x = left + 3; x <= right - 3; x++) this.setTile(x, floorY, TILES.CASTLE_BRICK);
+  // ---- The arena floor ----
+  // Everything below builds the throne dais and the decorative ribs that used to
+  // fill the chamber floor. The Demon is 82px tall and spawns standing on
+  // floorY, so any solid tile in the floorY-1 / floorY-2 rows intersects its
+  // body: the boss spawned inside its own throne, got wedged between the dais
+  // and the scattered ribs, and could never reach the player. The floor is now
+  // kept flat and clear across the whole fighting width, and the ribs are
+  // pushed out to the walls where they read as decoration without colliding.
+  for (let x = left + 3; x <= right - 3; x++) {
+    // Flat, walkable floor. The altar keeps its own tile further below.
+    this.setTile(x, floorY - 1, TILES.AIR);
+    this.setTile(x, floorY - 2, TILES.AIR);
+  }
+  // Ribs survive only along the side walls, outside the boss's patrol box.
+  for (let x = left + 3; x <= left + 5; x++) this.setTile(x, floorY - 1, TILES.DEMON_BRICK);
+  for (let x = right - 5; x <= right - 3; x++) this.setTile(x, floorY - 1, TILES.DEMON_BRICK);
+  for (let x = left + 3; x <= right - 3; x++) {
+    this.setTile(x, floorY, TILES.CASTLE_BRICK);
+  }
   for (let x = left + 2; x <= right - 2; x += 4) {
     this.setTile(x, top, TILES.DEMON_BRICK);
     this.setTile(x, top - 1, TILES.DEMON_BRICK);
@@ -173,9 +189,8 @@ World.prototype.buildDemonCastle = function(cx, top, floorY) {
     this.setTile(x, floorY - 1, TILES.CAMPFIRE);
     this.setTile(x, floorY - 2, TILES.AIR);
   }
-  for (let x = left + 8; x <= right - 8; x++) {
-    if (x % 3 === 0) this.setTile(x, floorY - 1, TILES.DEMON_BRICK);
-  }
+  // (The old `x % 3` rib scatter across the arena floor was removed — see the
+  // arena-floor block above. Those pillars are what used to trap the Demon.)
   // A clear central stair shaft from the underworld ceiling to the gate.
   for (let y = this.underworldStart; y <= top + 2; y++) this.setTile(cx, y, TILES.AIR);
   this.setTile(cx, top, TILES.DEMON_GATE);
@@ -414,13 +429,18 @@ class DemonBoss {
     this.kind = 'demon';
     this.x = x; this.y = y; this.width = 72; this.height = 82;
     this.vx = 0; this.vy = 0; this.facing = -1;
-    this.maxHp = 24000; this.hp = 24000; this.phase = 1;
+    // 24k -> 38k. The Demon is the hardest fight in the game and now outlasts
+    // a full phase of chip damage from anything short of the Inferno Brand.
+    this.maxHp = 38000; this.hp = 38000; this.phase = 1;
     this.name = 'THE HELLBOUND DEMON, KING OF ASH';
-    this.dead = false; this.lightRadius = 360; this.glowRadius = 170;
+    this.dead = false; this.lightRadius = 420; this.glowRadius = 210;
     this.game = game; this.hitFlash = 0; this.animT = 0;
     this.attackState = 'stalk'; this.stateTimer = 1.4; this.telegraph = null;
     this.lastAttack = ''; this.targetX = x; this.targetY = y;
-    this.attackHistory = []; this.minionTimer = 8; this.aura = 0;
+    this.attackHistory = []; this.minionTimer = 6; this.aura = 0;
+    // Phase 3 "Abyssal Maelstrom": a rotating beam sweep that forces the player
+    // to keep moving instead of hugging a wall waiting out the projectile ring.
+    this.sweepAngle = 0; this.sweepTimer = 0; this.sweeping = false;
   }
 
   get phaseName() {
@@ -451,37 +471,90 @@ class DemonBoss {
   }
 
   spawnRing(projectiles, soundSystem, particleSystem) {
-    const count = this.phase === 1 ? 12 : this.phase === 2 ? 16 : 22;
-    const damage = this.phase === 1 ? 30 : this.phase === 2 ? 38 : 48;
+    const count = this.phase === 1 ? 14 : this.phase === 2 ? 19 : 26;
+    const damage = this.phase === 1 ? 34 : this.phase === 2 ? 44 : 56;
     const cx = this.x + this.width / 2, cy = this.y + this.height / 2;
+    // Successive rings counter-rotate so the gaps never line up twice in a row.
+    const spin = (this.phase - 1) * 0.21;
     for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + this.animT * 0.13;
-      const speed = 4.2 + this.phase * 0.65;
+      const a = (i / count) * Math.PI * 2 + this.animT * 0.13 * (i % 2 ? 1 : -1) + spin;
+      const speed = 4.6 + this.phase * 0.7;
       projectiles.push(new Projectile(cx, cy, Math.cos(a) * speed, Math.sin(a) * speed, 'boss_laser', damage, true, 5.2, 90));
     }
     soundSystem?.playBossLaser(); particleSystem?.magicSparkle(cx, cy, '#fb923c', 26);
   }
 
+  /**
+   * Phase 3 only: a slow rotating double-beam fired from the boss's hands for a
+   * few seconds. It sweeps a full circle over its lifetime, so the safe spot is
+   * always moving — a static projectile ring can be waited out, this cannot.
+   */
+  startSweep(projectiles, soundSystem, particleSystem) {
+    this.sweeping = true;
+    this.sweepTimer = 3.4;
+    this.sweepAngle = Math.atan2(
+      (this.game?.player?.y || this.y) - (this.y + this.height / 2),
+      (this.game?.player?.x || this.x) - (this.x + this.width / 2)
+    );
+    soundSystem?.playBossLaser();
+    particleSystem?.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#f43f5e', 40);
+  }
+
+  updateSweep(dt, projectiles, soundSystem, particleSystem) {
+    if (!this.sweeping) return;
+    this.sweepTimer -= dt;
+    this.sweepAngle += dt * (this.phase === 3 ? 1.15 : 0.8);
+    const cx = this.x + this.width / 2, cy = this.y + this.height / 2;
+    // Two opposed arms, emitted a few times a second, so the sweep reads as a
+    // continuous beam rather than a stream of loose shots.
+    this._sweepEmit = (this._sweepEmit || 0) + dt;
+    if (this._sweepEmit >= 0.16) {
+      this._sweepEmit = 0;
+      const damage = this.phase === 3 ? 40 : 32;
+      for (const offset of [0, Math.PI]) {
+        const a = this.sweepAngle + offset;
+        projectiles.push(new Projectile(cx, cy, Math.cos(a) * 6.2, Math.sin(a) * 6.2, 'boss_laser', damage, true, 2.6, 80));
+      }
+      if (particleSystem && Math.random() < 0.5) particleSystem.magicSparkle(cx, cy, '#fb7185', 3);
+    }
+    if (this.sweepTimer <= 0) { this.sweeping = false; this.sweepTimer = 0; }
+  }
+
   summonMinions(projectiles, soundSystem, particleSystem) {
     if (!this.game) return;
-    const count = this.phase === 1 ? 2 : 3;
+    const count = this.phase === 1 ? 2 : this.phase === 2 ? 3 : 4;
     for (let i = 0; i < count; i++) {
       const species = i % 2 ? 'imp' : (this.phase === 3 ? 'bone_serpent' : 'hellhound');
       const minion = new UnderworldMonster(this.x + (i - 1) * 46, this.y - 20, species);
       if (this.phase >= 2) minion.makeElite();
+      // Minions hit meaningfully harder alongside the boss instead of being
+      // ignorable chip damage while the player's attention is on the Demon.
+      minion.damage = Math.round((minion.damage || 12) * (1 + this.phase * 0.25));
       this.game.monsters.push(minion);
       particleSystem?.bloodBurst(minion.x + minion.width / 2, minion.y + minion.height / 2, '#f97316', 14);
     }
-    soundSystem?.playBossRoar(); this.minionTimer = this.phase === 3 ? 7 : 10;
+    soundSystem?.playBossRoar();
+    this.minionTimer = this.phase === 3 ? 5 : this.phase === 2 ? 7 : 9;
   }
 
   chooseAttack(player) {
-    const options = this.phase === 1 ? ['ring', 'blink', 'summon'] : this.phase === 2 ? ['ring', 'blink', 'rain', 'summon'] : ['ring', 'blink', 'rain', 'summon', 'ring'];
+    // The maelstrom sweep is phase 3's signature: it is weighted heavily so the
+    // final phase actually feels like a different fight, and it is never picked
+    // twice in a row.
+    const options = this.phase === 1
+      ? ['ring', 'blink', 'summon']
+      : this.phase === 2
+        ? ['ring', 'blink', 'rain', 'summon', 'sweep']
+        : ['ring', 'blink', 'rain', 'summon', 'sweep', 'sweep', 'ring'];
     let choice = options[Math.floor(Math.random() * options.length)];
     if (choice === this.lastAttack && options.length > 1) choice = options[(options.indexOf(choice) + 1) % options.length];
     this.lastAttack = choice; this.attackHistory.push(choice); if (this.attackHistory.length > 5) this.attackHistory.shift();
-    this.stateTimer = choice === 'blink' ? 0.55 : choice === 'rain' ? 0.85 : 0.7;
-    this.telegraph = { type: choice === 'blink' ? 'line' : choice === 'rain' ? 'target' : choice === 'ring' ? 'ring' : 'summon', timer: this.stateTimer, total: this.stateTimer, x: player.x + player.width / 2, y: player.y + player.height / 2 };
+    this.stateTimer = choice === 'blink' ? 0.55 : choice === 'rain' ? 0.85 : choice === 'sweep' ? 1.0 : 0.7;
+    this.telegraph = {
+      type: choice === 'blink' ? 'line' : choice === 'rain' ? 'target' : choice === 'sweep' ? 'sweep' : choice === 'ring' ? 'ring' : 'summon',
+      timer: this.stateTimer, total: this.stateTimer,
+      x: player.x + player.width / 2, y: player.y + player.height / 2
+    };
     this.attackState = `tell_${choice}`;
   }
 
@@ -542,11 +615,13 @@ class DemonBoss {
   beginAttack(attack, player, projectiles, soundSystem, particleSystem) {
     const cx = this.x + this.width / 2, cy = this.y + this.height / 2;
     if (attack === 'ring') this.spawnRing(projectiles, soundSystem, particleSystem);
+    else if (attack === 'sweep') this.startSweep(projectiles, soundSystem, particleSystem);
     else if (attack === 'rain') {
-      const count = this.phase === 3 ? 14 : 9;
+      const count = this.phase === 3 ? 19 : this.phase === 2 ? 13 : 9;
+      const damage = 34 + this.phase * 10;
       for (let i = 0; i < count; i++) {
         const x = player.x - 260 + i * (520 / Math.max(1, count - 1));
-        projectiles.push(new Projectile(x, player.y - 360, 0, 5.5 + this.phase * 0.7, 'boss_laser', 34 + this.phase * 8, true, 4.8, 80));
+        projectiles.push(new Projectile(x, player.y - 360, 0, 5.5 + this.phase * 0.7, 'boss_laser', damage, true, 4.8, 80));
       }
       soundSystem?.playBossLaser();
     } else if (attack === 'blink') {
@@ -565,6 +640,15 @@ class DemonBoss {
   update(dt, player, projectiles, soundSystem, particleSystem, world) {
     if (this.dead) return;
     this.animT += dt; this.hitFlash = Math.max(0, this.hitFlash - dt); this.aura = Math.max(0, this.aura - dt * 0.5); this.minionTimer -= dt;
+    // The sweep runs on its own clock, independent of the stalk/tell state
+    // machine, so it can overlap the boss repositioning between attacks.
+    this.updateSweep(dt, projectiles, soundSystem, particleSystem);
+    // Phase 3 keeps pressure on: an extra minion wave mid-fight so the arena
+    // never becomes a safe corridor to kite in.
+    if (this.phase === 3 && !this._pressureFired && this.hp <= this.maxHp * 0.45) {
+      this._pressureFired = true;
+      this.summonMinions(projectiles, soundSystem, particleSystem);
+    }
     const px = player.x + player.width / 2, py = player.y + player.height / 2;
     const cx = this.x + this.width / 2;
     this.facing = px >= cx ? 1 : -1; this.stateTimer -= dt;
@@ -590,14 +674,25 @@ class DemonBoss {
 
   render(ctx, camera) {
     const sx = this.x - camera.x, sy = this.y - camera.y;
+    // The live maelstrom beams are drawn UNDER the body so the demon stays
+    // readable on top of its own effect instead of being buried in it.
+    if (this.sweeping) this.renderSweep(ctx, camera);
     const body = this.phase === 3 ? '#4c0519' : this.phase === 2 ? '#701a2c' : '#3f1720';
     const edge = this.phase === 3 ? '#ff4d6d' : '#fb923c';
     const t = this.animT;
     const pulse = 0.75 + Math.sin(t * 3.2) * 0.25;
     ctx.save(); ctx.translate(sx, sy);
     if (this.facing === -1) { ctx.translate(this.width, 0); ctx.scale(-1, 1); }
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.18 + this.aura * 0.35;
-    ctx.fillStyle = edge; ctx.fillRect(-8, 8, this.width + 16, this.height - 8); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    // Aura: two passes, a wide soft halo plus a tighter hot core, breathing with
+    // the phase. Phase 3 burns hottest so the escalation is visible at a glance.
+    const auraHeat = this.phase === 3 ? 1 : this.phase === 2 ? 0.7 : 0.45;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = (0.14 + this.aura * 0.3) * auraHeat + 0.06;
+    ctx.fillStyle = edge;
+    ctx.fillRect(-20, 2, this.width + 40, this.height + 6);
+    ctx.globalAlpha = (0.2 + this.aura * 0.4) * auraHeat;
+    ctx.fillRect(-6, 12, this.width + 12, this.height - 12);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = '#1b0714'; ctx.beginPath(); ctx.moveTo(9, 25); ctx.lineTo(-18, 2); ctx.lineTo(-8, 43); ctx.lineTo(13, 49); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#260a1e'; ctx.beginPath(); ctx.moveTo(63, 25); ctx.lineTo(90, 2); ctx.lineTo(80, 43); ctx.lineTo(59, 49); ctx.closePath(); ctx.fill();
     ctx.fillStyle = body; ctx.fillRect(16, 18, 40, 49); ctx.fillRect(25, 8, 22, 18);
@@ -620,6 +715,35 @@ class DemonBoss {
     this.renderTelegraph(ctx, camera);
   }
 
+  /** The live rotating maelstrom beams. Drawn as a fading trail, not a hard line. */
+  renderSweep(ctx, camera) {
+    const cx = this.x + this.width / 2 - camera.x;
+    const cy = this.y + this.height / 2 - camera.y;
+    const fade = Math.max(0, Math.min(1, this.sweepTimer / 0.6));
+    const len = 900;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (const offset of [0, Math.PI]) {
+      const a = this.sweepAngle + offset;
+      // Three nested strokes fake a soft, hot beam core.
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = [0.5, 0.26, 0.13][i] * fade;
+        ctx.lineWidth = [7, 15, 26][i];
+        ctx.strokeStyle = i === 0 ? '#fff1f2' : (i === 1 ? '#f43f5e' : '#fb923c');
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len);
+        ctx.stroke();
+      }
+    }
+    // Bright hub at the boss's chest where both beams originate.
+    ctx.globalAlpha = 0.65 * fade;
+    ctx.fillStyle = '#fecdd3';
+    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
   renderTelegraph(ctx, camera) {
     const t = this.telegraph; if (!t) return;
     const cx = this.x + this.width / 2 - camera.x, cy = this.y + this.height / 2 - camera.y;
@@ -629,6 +753,17 @@ class DemonBoss {
     if (t.type === 'ring') { ctx.beginPath(); ctx.arc(cx, cy, 30 + progress * 34, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha *= 0.25; ctx.beginPath(); ctx.arc(cx, cy, 70 + progress * 35, 0, Math.PI * 2); ctx.fill(); }
     else if (t.type === 'line') { const tx = t.x - camera.x, ty = t.y - camera.y; const a = Math.atan2(ty - cy, tx - cx); ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * 900, cy + Math.sin(a) * 900); ctx.stroke(); ctx.beginPath(); ctx.arc(tx, ty, 24 - progress * 10, 0, Math.PI * 2); ctx.stroke(); }
     else if (t.type === 'target') { const tx = t.x - camera.x, ty = t.y - camera.y; ctx.beginPath(); ctx.ellipse(tx, ty, 30 + progress * 24, 10 + progress * 8, 0, 0, Math.PI * 2); ctx.stroke(); }
+    else if (t.type === 'sweep') {
+      // Wind-up for the maelstrom: a growing arc that previews the direction the
+      // beam will start sweeping, so the opening is dodgeable rather than blind.
+      const r = 40 + progress * 46;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, cy, r, this.sweepAngle - 0.5, this.sweepAngle + 0.5); ctx.stroke();
+      ctx.globalAlpha *= 0.3;
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.55, this.sweepAngle + Math.PI - 0.5, this.sweepAngle + Math.PI + 0.5); ctx.stroke();
+      ctx.font = "bold 11px 'Press Start 2P', monospace"; ctx.textAlign = 'center';
+      ctx.fillStyle = '#fda4af'; ctx.fillText('MAELSTROM', cx, cy - r - 14);
+    }
     else { ctx.font = "bold 11px 'Press Start 2P', monospace"; ctx.textAlign = 'center'; ctx.fillStyle = '#fda4af'; ctx.fillText('SUMMONING HELL', cx, cy - 56); }
     ctx.restore();
   }
