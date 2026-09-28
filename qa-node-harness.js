@@ -236,7 +236,7 @@ try {
   if (!mobsOk) process.exit(1);
 
   const demon = new global.DemonBoss(g.player.x, g.player.y, g);
-  const demonStartOk = demon.kind === 'demon' && demon.maxHp === 24000 && demon.phase === 1;
+  const demonStartOk = demon.kind === 'demon' && demon.maxHp === 38000 && demon.phase === 1;
   demon.x = (uw.castleX + 0.5) * TILE_SIZE - demon.width / 2;
   demon.y = uw.floorY * TILE_SIZE - demon.height;
   const roomBounds = demon.castleBounds(g.world);
@@ -248,11 +248,31 @@ try {
   const blocked = demon.safeBossPosition(roomBounds.right + 400, demon.y, g.world);
   g.world.setTile(wallX, wallY, oldWall);
   const wallSafeOk = bounded.x >= roomBounds.left && bounded.x <= roomBounds.right && bounded.y >= roomBounds.top && bounded.y <= roomBounds.bottom && blocked.x === demon.x;
-  demon.takeDamage(24000 * 0.7, g.sound, g.particles, false);
+  demon.takeDamage(demon.maxHp * 0.7, g.sound, g.particles, false);
   const demonPhase3Ok = demon.phase === 3 && demon.hp < demon.maxHp * 0.34;
+  // The arena fix: the boss stands on floorY, so its body (82px tall) must not
+  // intersect any solid tile. It used to spawn inside its own throne dais and
+  // the scattered DEMON_BRICK ribs, which left it stuck and trivial to kill.
+  // The altar tile itself is legitimately solid (it is the wake-up switch), so
+  // the assertion is that the BODY is clear, not that the floor is bare.
+  const bodyClear = demon.positionClear(demon.x, demon.y, g.world);
+  // And the floor immediately under the boss must be walkable, so it can chase.
+  const footTileY = Math.floor((demon.y + demon.height + 2) / TILE_SIZE);
+  const footTileX = Math.floor((demon.x + demon.width / 2) / TILE_SIZE);
+  const floorRowClear = g.world.isSolid(footTileX, footTileY);
+  // The maelstrom sweep must exist, be phase-3 only, and actually emit.
+  demon.startSweep([], g.sound, g.particles);
+  const sweepShots = [];
+  for (let i = 0; i < 40; i++) demon.updateSweep(1 / 60, sweepShots, g.sound, g.particles);
+  const sweepOk = demon.sweeping && sweepShots.length > 0 && sweepShots[0].isHostile === true;
   demon.render(makeCtx(), g.camera);
-  console.log('demon boss: ' + (demonStartOk && wallSafeOk && demonPhase3Ok ? 'OK' : 'FAIL') + ' hp=' + Math.round(demon.hp) + ' phase=' + demon.phase + ' wallSafe=' + wallSafeOk);
+  console.log('demon boss: ' + (demonStartOk && wallSafeOk && demonPhase3Ok ? 'OK' : 'FAIL') +
+    ' hp=' + Math.round(demon.hp) + ' phase=' + demon.phase + ' wallSafe=' + wallSafeOk +
+    ' spawnClear=' + bodyClear + ' floorClear=' + floorRowClear + ' sweep=' + sweepOk);
   if (!demonStartOk || !wallSafeOk || !demonPhase3Ok) process.exit(1);
+  if (!bodyClear) { console.log('FAIL: demon spawns inside a solid tile'); process.exit(1); }
+  if (!floorRowClear) { console.log('FAIL: arena floor is blocked at the boss spawn'); process.exit(1); }
+  if (!sweepOk) { console.log('FAIL: maelstrom sweep emitted no hostile projectiles'); process.exit(1); }
 
   // ---- v11 world/progression persistence ----
   g.stats.itemsCrafted = 7;
