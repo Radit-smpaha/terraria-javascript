@@ -22,8 +22,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-components.iframe(
-    "https://radit-smpaha.github.io/terraria-javascript/terraria.html",
-    height=850,
-    scrolling=True
+components.html(
+    """
+    <iframe
+        src="https://radit-smpaha.github.io/terraria-javascript/terraria.html"
+        style="
+            width: 100%;
+            height: 100vh;
+            border: none;
+            display: block;
+            overflow: hidden;
+        "
+        allow="fullscreen"
+    ></iframe>
+    """,
+    height=950,
+    scrolling=False
 )
