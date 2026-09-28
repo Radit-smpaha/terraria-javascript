@@ -948,7 +948,8 @@ class Player {
       diamond_armor: ['#67e8f9', '#155e75'],
       crystal_armor: ['#1e3a8a', '#0f172a'],
       rainbow_armor: ['#f0abfc', '#3730a3'],
-      fallen_star_armor: ['#fef3c7', '#78350f']
+      fallen_star_armor: ['#fef3c7', '#78350f'],
+      demon_armor: ['#f87171', '#450a0a']
     };
     const armorColors = colors[armorItem.id];
     if (!armorColors) return;
@@ -1094,6 +1095,14 @@ class Monster {
     this.facing = 1;
     this.dead = false;
     this.lightRadius = 0;
+    // ---- Status effects ----
+    // `poisonTime` is seconds of Hellfire Venom remaining; `poisonTick` is the
+    // countdown to the next damage-over-time tick. Stacking refreshes the
+    // duration and takes the stronger of the two intensities rather than
+    // adding, so repeated hits from a fast weapon can't runaway-scale a mob.
+    this.poisonTime = 0;
+    this.poisonTick = 0;
+    this.poisonDps = 0;
 
     if (type === 'zombie') {
       this.width = 18;
@@ -1293,6 +1302,53 @@ class Monster {
     return dealt;
   }
 
+  /**
+   * Apply Hellfire Venom (poison): damage over time for a few seconds.
+   *
+   * Re-applying refreshes the duration and keeps the STRONGER intensity rather
+   * than stacking additively. The Hellstone Greatblade swings roughly three
+   * times a second, so an additive stack would multiply a single mob's damage
+   * by an unbounded amount within a couple of seconds.
+   */
+  applyPoison(duration, dps, particleSystem) {
+    if (this.dead) return false;
+    this.poisonTime = Math.max(this.poisonTime, duration);
+    this.poisonDps = Math.max(this.poisonDps, dps);
+    // Snap the next tick close so the effect reads immediately instead of after
+    // a full interval of the victim apparently being unaffected.
+    if (this.poisonTick <= 0) this.poisonTick = 0.5;
+    if (particleSystem) {
+      particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#84cc16', 6);
+    }
+    return true;
+  }
+
+  /**
+   * Tick poison damage over time. Returns the damage dealt this frame so the
+   * caller can credit it to stats and to the kill that ends the mob.
+   */
+  tickPoison(dt, particleSystem) {
+    if (this.dead || this.poisonTime <= 0) return 0;
+    this.poisonTime = Math.max(0, this.poisonTime - dt);
+    this.poisonTick -= dt;
+    if (this.poisonTick > 0) return 0;
+
+    this.poisonTick = 0.5;
+    // Fractional damage is carried, not rounded away: a 6 dps venom would
+    // otherwise floor to 3 per tick and quietly halve itself.
+    const dealt = Math.max(1, Math.round(this.poisonDps * 0.5));
+    this.hp -= dealt;
+    this.hitFlash = Math.max(this.hitFlash, 0.06);
+    if (particleSystem) {
+      particleSystem.addDamageText(this.x + this.width / 2, this.y, dealt, '#84cc16', false);
+    }
+    // Expire the intensity with the duration so a re-poisoned mob always starts
+    // from the fresh weapon's value rather than a stale stronger one.
+    if (this.poisonTime <= 0) this.poisonDps = 0;
+    if (this.hp <= 0) this.die(particleSystem);
+    return dealt;
+  }
+
   update(dt, player, world) {
     if (this.hurtCooldown > 0) this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
     if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
@@ -1478,6 +1534,28 @@ class Monster {
   render(ctx, camera) {
     const sx = this.x - camera.x;
     const sy = this.y - camera.y;
+    // Hellfire Venom tell: a sickly green wash over the body that fades as the
+    // poison runs down, so a poisoned mob is identifiable at a glance and the
+    // player can see the effect wearing off instead of guessing.
+    if (this.poisonTime > 0) {
+      const fade = Math.max(0, Math.min(1, this.poisonTime / 1.2));
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.16 + fade * 0.26;
+      ctx.fillStyle = '#84cc16';
+      ctx.fillRect(sx - 2, sy - 2, this.width + 4, this.height + 4);
+      ctx.globalCompositeOperation = 'source-over';
+      // A few rising motes make it read as an active status, not a colour swap.
+      ctx.globalAlpha = 0.3 + fade * 0.5;
+      ctx.fillStyle = '#a3e635';
+      for (let i = 0; i < 3; i++) {
+        const t = (this.animT || 0) * 1.4 + i * 2.1;
+        const px = sx + 4 + ((i * 5 + Math.sin(t) * 2) % Math.max(1, this.width - 8));
+        const py = sy + this.height - ((t * 9) % (this.height + 6));
+        ctx.fillRect(px, py, 2, 2);
+      }
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.translate(sx, sy);
