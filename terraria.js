@@ -1331,13 +1331,10 @@ class Game {
       bossDays: this.bossDaysDone,
       rainbowSeeded: this.world.rainbowSeeded === true,
       drops: this.drops.map(drop => ({ id: drop.id, count: drop.count, x: drop.x, y: drop.y })),
-      boss: this.boss && !this.boss.dead ? {
-        x: this.boss.x,
-        y: this.boss.y,
-        hp: this.boss.hp,
-        phase: this.boss.phase,
-        kind: this.boss.kind || 'forest'
-      } : null
+      // A battle is never carried through a save: quitting or refreshing the page
+      // ends the encounter (see loadGame), so there is no live boss left to write.
+      // The key is kept so version-11 saves keep their exact shape.
+      boss: null
     };
 
     try {
@@ -1435,21 +1432,22 @@ class Game {
     this.monsters = [];
     this.projectiles = [];
     this.boss = null;
-    if (save.boss && Number.isFinite(save.boss.x) && Number.isFinite(save.boss.y)) {
-      const BossClass = save.boss.kind === 'knight' && typeof CursedKnightBoss !== 'undefined'
-        ? CursedKnightBoss
-        : save.boss.kind === 'demon' && typeof DemonBoss !== 'undefined'
-          ? DemonBoss
-          : ForestGuardianBoss;
-      this.boss = new BossClass(save.boss.x, save.boss.y, this);
-      this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, save.boss.hp));
-      this.boss.phase = save.boss.kind === 'demon'
-        ? Math.max(1, Math.min(3, save.boss.phase || 1))
-        : save.boss.phase === 2 ? 2 : 1;
-      document.getElementById('boss-panel').classList.remove('hidden');
-    } else {
-      document.getElementById('boss-panel').classList.add('hidden');
+    // Boss battles deliberately do NOT survive a reload. Re-instantiating the
+    // saved boss used to drop it right back onto the player's saved position,
+    // so refreshing (or loading) mid-fight resumed with the player already being
+    // crushed — often killed before the first frame was even drawn. Loading a
+    // world now always starts the fight over: the encounter is re-summonable
+    // through [👁️ SUMMON BOSS] or whichever night/altar trigger started it.
+    if (save.boss && !save.boss.dead &&
+        Number.isFinite(save.boss.x) && Number.isFinite(save.boss.y)) {
+      this.showToast('🛡️ You broke off the fight — the boss has fled.');
     }
+    document.getElementById('boss-panel').classList.add('hidden');
+
+    // A freshly loaded world also hands the player a moment of grace, so a
+    // reload can never open with damage already ticking (lava, starvation, a
+    // mob that spawned next to the saved position) before they can react.
+    this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 2.5);
 
     // Saves that predate the secret dungeon get one retrofitted on load.
     if (!this.world.dungeon) this.world.generateSecretDungeon();
