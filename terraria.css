@@ -1170,6 +1170,26 @@ kbd {
   filter: saturate(0.4);
 }
 
+/* ---- Equipped-armour readout, sits under the life hearts ---- */
+.armor-chip {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+  color: #bfdbfe;
+  background: rgba(30, 58, 138, 0.55);
+  border: 1px solid rgba(147, 197, 253, 0.5);
+  border-radius: 4px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.armor-chip.hidden {
+  display: none;
+}
+
 /* ---- Mana stars (1 star = 20 mana) ---- */
 .star-row {
   display: flex;
