@@ -3121,6 +3121,10 @@ class Game {
     this.player.hp = this.player.maxHp;
     this.player.mana = this.player.maxMana;
     this.player.stamina = this.player.maxStamina;
+    this.isDead = false;
+this.player.invulnerableTime = 1.0;
+this.player.isDodgeRolling = false;
+this.player.dodgeTime = 0;
     document.getElementById('death-screen').classList.add('hidden');
     this.showToast(`🔥 Respawned at ${respawnLabel}.`);
   }
