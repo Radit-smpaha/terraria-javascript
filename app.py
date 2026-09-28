@@ -11,7 +11,6 @@ import re
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 BASE = Path(__file__).parent
 GAME_SCRIPTS = [
@@ -155,8 +154,12 @@ if _debug:
         st.write("inline chars:", len(inline_html) if inline_html else None)
 
 if inline_html:
-    components.html(inline_html, height=GAME_HEIGHT, scrolling=False)
+    # st.iframe replaces the deprecated components.html. It takes the raw HTML
+    # string directly and has no `scrolling` argument; a fixed pixel height is
+    # used because the game sizes itself to 100vh of the iframe, so
+    # height="content" would be circular.
+    st.iframe(inline_html, height=GAME_HEIGHT)
 else:
     st.error("Local game files did not match terraria.html — falling back to hosted build.")
-    components.iframe(GITHUB_FALLBACK, height=GAME_HEIGHT, scrolling=False)
+    st.iframe(GITHUB_FALLBACK, height=GAME_HEIGHT)
 
