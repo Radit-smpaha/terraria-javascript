@@ -1747,3 +1747,16 @@ body {
     transform: translateX(-50%);
     max-width: 100%;
 }
+html,
+body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+
+#game-container {
+    height: 100vh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
