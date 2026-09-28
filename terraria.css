@@ -1701,3 +1701,49 @@ kbd {
   .settings-row select { min-width: 110px; }
 }
 
+/* ===== STREAMLIT FULL-SCREEN FIX ===== */
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden !important;
+}
+
+#game-container {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+#gameCanvas,
+#lightingCanvas,
+#glowCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Keep HUD and hotbar inside the visible game */
+#ui-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Keep the bottom hotbar away from the edge */
+.bottom-panel {
+    position: absolute;
+    bottom: 8px !important;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 100%;
+}
