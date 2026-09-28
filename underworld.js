@@ -441,6 +441,44 @@ class DemonBoss {
     // Phase 3 "Abyssal Maelstrom": a rotating beam sweep that forces the player
     // to keep moving instead of hugging a wall waiting out the projectile ring.
     this.sweepAngle = 0; this.sweepTimer = 0; this.sweeping = false;
+    // DemonBoss does not extend Monster, so it carries its own poison state.
+    // Kept identical in shape to Monster's so the melee hit path can feature-
+    // detect applyPoison() and treat every boss target the same way.
+    this.poisonTime = 0; this.poisonTick = 0; this.poisonDps = 0;
+  }
+
+  /**
+   * Hellfire Venom on the Demon. Mirrors Monster.applyPoison: refresh the
+   * duration, keep the stronger intensity. A 38k-HP boss is never killed by the
+   * DoT alone — it just makes the player commit to the fight instead of
+   * trading one hit and walking away.
+   */
+  applyPoison(duration, dps, particleSystem) {
+    if (this.dead) return false;
+    this.poisonTime = Math.max(this.poisonTime, duration);
+    this.poisonDps = Math.max(this.poisonDps, dps);
+    if (this.poisonTick <= 0) this.poisonTick = 0.5;
+    particleSystem?.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#84cc16', 8);
+    return true;
+  }
+
+  tickPoison(dt, particleSystem) {
+    if (this.dead || this.poisonTime <= 0) return 0;
+    this.poisonTime = Math.max(0, this.poisonTime - dt);
+    this.poisonTick -= dt;
+    if (this.poisonTick > 0) return 0;
+    this.poisonTick = 0.5;
+    const dealt = Math.max(1, Math.round(this.poisonDps * 0.5));
+    this.hp -= dealt;
+    this.hitFlash = Math.max(this.hitFlash, 0.06);
+    particleSystem?.addDamageText(this.x + this.width / 2, this.y, dealt, '#84cc16', false);
+    if (this.poisonTime <= 0) this.poisonDps = 0;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.dead = true;
+      particleSystem?.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#fde047', 100);
+    }
+    return dealt;
   }
 
   get phaseName() {
