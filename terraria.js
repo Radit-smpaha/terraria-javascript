@@ -122,6 +122,9 @@ const NEW_ITEMS = {
   hellstone_greatblade: {
     id: 'hellstone_greatblade', name: 'Hellstone Greatblade', type: 'weapon', weaponType: 'melee',
     damage: 152, range: 120, useTime: 0.30, critBonus: 0.14, lifesteal: 0.05,
+    // Hellfire Venom: every hit has a 40% chance to poison. 4s at 14 dps, so a
+    // landed proc adds up to ~56 damage over its lifetime.
+    poisonChance: 0.40, poisonDuration: 4, poisonDps: 14,
     icon: '⚔️', stackMax: 1
   },
   soulfire_repeater: {
@@ -196,6 +199,15 @@ const NEW_ITEMS = {
   fallen_star_armor: {
     id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 28, reduction: 0.40,
     icon: '🌟', stackMax: 1
+  },
+  demon_armor: {
+    // 48% would be the obvious "just make it bigger" pick, but combined with the
+    // flat defense slice it ate a small hit whole: at 48% + 36 defense a 14 HP
+    // slime bite was fully negated down to the 1 HP floor, making Demonplate
+    // functionally immune to chip damage. 44% + 32 keeps it the clear apex while
+    // every tier stays a distinct step on a small hit.
+    id: 'demon_armor', name: 'Demonplate Armor', type: 'armor', defense: 32, reduction: 0.44,
+    icon: '👹', stackMax: 1
   }
 };
 
@@ -215,13 +227,14 @@ Object.assign(ITEMS, NEW_ITEMS);
 // armour still lets most of a big hit through.
 // ============================================================
 const ARMOR_TIERS = [
-  'fallen_star_armor', // 1st - 40%
-  'rainbow_armor',     // 2nd - 32%
-  'crystal_armor',     // 3rd - 25%
-  'diamond_armor',     // 4th - 18%
-  'iron_armor',        // 5th - 12%
-  'gold_armor',        // 6th - 8%
-  'anglers_charm'      // accessory - 4%
+  'demon_armor',        // 1st - 44%  (forged from the Demon himself)
+  'fallen_star_armor',  // 2nd - 40%
+  'rainbow_armor',      // 3rd - 32%
+  'crystal_armor',      // 4th - 25%
+  'diamond_armor',      // 5th - 18%
+  'iron_armor',         // 6th - 12%
+  'gold_armor',         // 7th - 8%
+  'anglers_charm'       // accessory - 4%
 ];
 
 /** The armour item with the highest reduction that the player owns. */
@@ -450,6 +463,18 @@ const RECIPES = [
       { id: 'demon_soul', count: 3 }, { id: 'demon_brick', count: 6 }
     ],
     name: 'Abyssal Staff (deep mana bolt)'
+  },
+  {
+    // The apex of the armour ladder. It deliberately costs the Demon's Trophy, so
+    // the only way to wear his hide is to actually beat him — the trophy is the
+    // one material in the game that cannot be bought, farmed or substituted.
+    result: { id: 'demon_armor', count: 1 },
+    materials: [
+      { id: 'demon_trophy', count: 1 },
+      { id: 'hellstone', count: 25 }, { id: 'obsidian_block', count: 12 },
+      { id: 'demon_soul', count: 8 }, { id: 'castle_brick', count: 10 }
+    ],
+    name: 'Demonplate Armor (48% damage reduction)'
   }
 ];
 
@@ -2866,6 +2891,12 @@ class Game {
           totalDealt += dealt;
           hitAnything = true;
           anyCrit = anyCrit || roll.crit;
+          // Hellstone Greatblade: 40% of landed hits inflict poison. Rolled per
+          // target, so one swing can poison a whole group independently.
+          if (itemData.poisonChance && Math.random() < itemData.poisonChance) {
+            m.applyPoison(itemData.poisonDuration, itemData.poisonDps, this.particles);
+            this.stats.poisonProcs = (this.stats.poisonProcs || 0) + 1;
+          }
         }
       }
 
@@ -2880,6 +2911,14 @@ class Game {
             totalDealt += dealt;
             hitAnything = true;
             anyCrit = anyCrit || roll.crit;
+            // Bosses take the same 40% venom proc. UnderworldMonster extends
+            // Monster and inherits applyPoison; DemonBoss is standalone, so the
+            // capability is feature-detected rather than assumed.
+            if (itemData.poisonChance && typeof this.boss.applyPoison === 'function' &&
+                Math.random() < itemData.poisonChance) {
+              this.boss.applyPoison(itemData.poisonDuration, itemData.poisonDps, this.particles);
+              this.stats.poisonProcs = (this.stats.poisonProcs || 0) + 1;
+            }
           }
         }
       }
@@ -3549,6 +3588,13 @@ this.player.dodgeTime = 0;
 
       m.update(dt, this.player, this.world);
 
+      // Hellfire Venom (Hellstone Greatblade): damage over time, credited to
+      // stats so poison kills are attributed the same way as direct hits.
+      if (m.poisonTime > 0) {
+        const venom = m.tickPoison(dt, this.particles);
+        if (venom > 0) this.stats.damageDealt += venom;
+      }
+
       // Monster touches player
       const pMidX = this.player.x + this.player.width / 2;
       const pMidY = this.player.y + this.player.height / 2;
@@ -3668,6 +3714,13 @@ this.player.dodgeTime = 0;
     // 7. Update Boss
     if (this.boss && !this.boss.dead) {
       this.boss.update(dt, this.player, this.projectiles, this.sound, this.particles, this.world);
+
+      // Venom on the boss too. Feature-detected because DemonBoss carries its
+      // own poison implementation while Monster/UnderworldMonster have theirs.
+      if (typeof this.boss.tickPoison === 'function' && this.boss.poisonTime > 0) {
+        const venom = this.boss.tickPoison(dt, this.particles);
+        if (venom > 0) this.stats.damageDealt += venom;
+      }
 
       // Arcane motes drift off every boss — cheap, constant, very cool.
       if (Math.random() < 0.5) {
