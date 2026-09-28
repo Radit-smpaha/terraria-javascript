@@ -869,6 +869,10 @@ function describeItem(id, game) {
     if (def) rows.push({ label: 'Grants', value: `${def.icon} ${def.name} (${Math.round(item.buffTime || 0)}s)` });
   }
   if (item.lifesteal) rows.push({ label: 'Life steal', value: `${Math.round(item.lifesteal * 100)}% of damage dealt` });
+  if (item.poisonChance) {
+    rows.push({ label: 'Hellfire Venom', value: `${Math.round(item.poisonChance * 100)}% chance per hit` });
+    if (item.poisonDps) rows.push({ label: 'Venom', value: `${item.poisonDps}/s for ${item.poisonDuration}s` });
+  }
   if (item.radius) rows.push({ label: 'Blast', value: `${item.radius}px` });
   if (item.type === 'ammo') rows.push({ label: 'Used by', value: 'Bows' });
   if (item.stackMax > 1) rows.push({ label: 'Stacks to', value: `${item.stackMax}` });
@@ -893,7 +897,3 @@ if (typeof window !== 'undefined') {
   window.BuffSystem = BuffSystem;
   window.BUFF_DEFS = BUFF_DEFS;
   window.Minimap = Minimap;
-  window.describeItem = describeItem;
-  window.buildItemTooltipHTML = buildItemTooltipHTML;
-}
-
