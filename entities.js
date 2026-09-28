@@ -380,6 +380,19 @@ class Projectile {
 // warning you can still walk out of, fast enough that ignoring it kills you.
 const STARVATION_DPS = 3;
 
+// How much of an armour piece's raw `defense` stat is subtracted from a hit,
+// on top of its percentage `reduction`. Kept small on purpose: the percentage
+// is meant to drive the tier ladder, and letting the flat stat apply at full
+// strength double-dips. At 1.0, Fallen Star (40% + 28) reduced a 40 HP hit to
+// the 1 HP floor and pinned the top three tiers to 1 HP on every small hit —
+// exactly the runaway power the ladder is supposed to avoid.
+//
+// At 0.15 the flat slice is a light bonus on top of the percentage instead of
+// a second full mitigation. A 14 HP slime bite then steps cleanly through the
+// ladder (12/11/10/8/6/4) with no two tiers collapsing onto the 1 HP floor, and
+// a boss slam still spreads out (68/64/58/50/41/33).
+const ARMOR_FLAT_WEIGHT = 0.15;
+
 class Player {
   constructor(x, y) {
     this.x = x;
@@ -443,23 +456,59 @@ class Player {
 
     // Equipment & Inventory
     this.selectedSlot = 0;
-    this.armorDefense = 0;
+    this.armorDefense = 0;    // flat subtraction from each hit
+    this.armorReduction = 0;  // fraction of each hit soaked by the plate
     this.activeArmor = null;
+    this.armorFlash = 0;      // 0..1, drives the "the plate caught it" flash
+    this.lastAbsorbed = 0;    // damage the armour soaked on the last hit
   }
 
   /**
    * Apply damage. Returns the damage actually taken (0 when blocked by i-frames),
    * so the caller can trigger screen shake / vignette only for real hits.
+   *
+   * Armour mitigation is two-stage: the plate first soaks `armorReduction` as a
+   * fraction of the incoming hit, then the remainder loses a flat slice of
+   * `armorDefense`. Percentage-first is what makes armour scale — the old
+   * flat-only `amount - defense * 0.5` shaved a couple of HP off a big boss
+   * slam and was invisible against a small slime bite, so nothing ever "felt"
+   * like it was working.
+   *
+   * The flat slice is deliberately weighted well below the raw defense stat.
+   * Subtracting defense in full on top of the percentage double-dips: Fallen
+   * Star (40% + 28) turned a 40 HP hit into the 1 HP floor and pinned the top
+   * three tiers to 1 HP on every small hit, which is exactly the runaway
+   * power the ladder is supposed to avoid. Weighting it keeps defense
+   * meaningful (and keeps the Ironskin/Well Fed bonuses worth having) while
+   * leaving the percentage in charge of the tier ordering.
+   *
+   * A 1 HP floor is kept regardless: no tier, not even Fallen Star, can ever
+   * fully negate a hit.
    */
   takeDamage(amount, soundSystem, particleSystem, sourceX = null) {
     if (this.invulnerableTime > 0 || this.isDodgeRolling) return 0;
-    const actualDamage = Math.max(1, Math.floor(amount - this.armorDefense * 0.5));
+    const raw = Math.max(0, amount);
+    const reduction = Math.max(0, Math.min(0.9, this.armorReduction || 0));
+    const absorbed = raw * reduction;
+    const afterArmor = raw - absorbed;
+    const afterFlat = afterArmor - (this.armorDefense || 0) * ARMOR_FLAT_WEIGHT;
+    const actualDamage = Math.max(1, Math.floor(afterFlat));
+    this.lastAbsorbed = Math.max(0, Math.floor(raw - actualDamage));
+    // Only flash the plate when it actually did something, so unarmoured hits
+    // don't get a shield sparkle they didn't earn.
+    if (this.lastAbsorbed > 0) this.armorFlash = 1;
     this.hp -= actualDamage;
     this.invulnerableTime = 0.6; // i-frames
     if (soundSystem) soundSystem.playPlayerHurt();
     if (particleSystem) {
-      particleSystem.addDamageText(this.x + this.width / 2, this.y, actualDamage, '#ef4444', false);
+      // An armoured hit reports in a shield tint rather than plain blood red.
+      const color = this.lastAbsorbed > 0 ? '#93c5fd' : '#ef4444';
+      particleSystem.addDamageText(this.x + this.width / 2, this.y, actualDamage, color, false);
       particleSystem.bloodBurst(this.x + this.width / 2, this.y + this.height / 2, '#ef4444', 8);
+      // Sparks flying off the plate sell the "the armour caught this" beat.
+      if (this.lastAbsorbed > 0) {
+        particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#bfdbfe', 10);
+      }
     }
 
     // Knock away from the attacker (falls back to "backwards" when unknown).
@@ -594,6 +643,11 @@ class Player {
 
     if (this.invulnerableTime > 0) {
       this.invulnerableTime -= dt;
+    }
+
+    // Armour flash decays on its own so renderArmor() can just read it.
+    if (this.armorFlash > 0) {
+      this.armorFlash = Math.max(0, this.armorFlash - dt * 2.5);
     }
 
     // Dodge roll update
@@ -900,6 +954,14 @@ class Player {
     if (!armorColors) return;
 
     ctx.save();
+    // A hit that the plate soaked sets armorFlash to 1; it decays over ~0.4s.
+    // This is the main reason armour "feels" like it works — a real 8% cut is
+    // only a couple of HP, which is invisible without a visible reaction.
+    const flash = Math.max(0, Math.min(1, this.armorFlash || 0));
+    if (flash > 0) {
+      ctx.shadowColor = armorColors[0];
+      ctx.shadowBlur = 14 * flash;
+    }
     ctx.fillStyle = armorColors[0];
     ctx.fillRect(ox + 2, oy + 2, 14, 6);
     ctx.fillRect(ox + 2, oy + 14, 14, 11);
@@ -911,6 +973,15 @@ class Player {
     ctx.fillStyle = '#f8fafc';
     ctx.globalAlpha = 0.55;
     ctx.fillRect(ox + 4, oy + 15, 2, 6);
+    // White-hot wash across the whole plate on impact.
+    if (flash > 0) {
+      ctx.globalAlpha = 0.75 * flash;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(ox + 2, oy + 2, 14, 6);
+      ctx.fillRect(ox + 2, oy + 14, 14, 11);
+      ctx.fillRect(ox, oy + 15, 4, 7);
+      ctx.fillRect(ox + 14, oy + 15, 4, 7);
+    }
     ctx.restore();
   }
 
