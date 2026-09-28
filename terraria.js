@@ -748,17 +748,18 @@ class Game {
   resize() {
     this.dpr = window.devicePixelRatio || 1;
     const dpr = this.dpr;
-    // The camera still exposes the full CSS-pixel viewport in world units. Low
-    // quality only reduces the internal backing resolution; the final composite
-    // always fills the complete visible canvas.
-    //
-    const vw = Math.max(320, Math.floor(window.innerWidth * this.zoom));
-    const vh = Math.max(240, Math.floor(window.innerHeight * this.zoom));
+    // Inside an iframe (Streamlit) window.innerWidth is the frame viewport,
+    // which can read 0 while the embed is still laying out — fall back to the
+    // document size so the canvas never boots at 0x0 (black screen).
+    const frameW = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const frameH = window.innerHeight || document.documentElement.clientHeight || 800;
+    const vw = Math.max(320, Math.floor(frameW * this.zoom));
+    const vh = Math.max(240, Math.floor(frameH * this.zoom));
     const internalScale = Math.max(0.5, Math.min(1, this.renderScale || 1));
     const internalW = Math.max(1, Math.floor(vw * internalScale));
     const internalH = Math.max(1, Math.floor(vh * internalScale));
-    const outputW = Math.max(1, Math.floor(window.innerWidth * dpr));
-    const outputH = Math.max(1, Math.floor(window.innerHeight * dpr));
+    const outputW = Math.max(1, Math.floor(frameW * dpr));
+    const outputH = Math.max(1, Math.floor(frameH * dpr));
 
     this.pixelCanvas.width = internalW;
     this.pixelCanvas.height = internalH;
@@ -951,7 +952,9 @@ class Game {
     });
 
     window.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.modal') || this.paused) return;
+      // e.target can be a text node / null in some embed contexts — a crash
+      // here would kill ALL mouse input, so guard it.
+      if ((e.target && e.target.closest && e.target.closest('.modal')) || this.paused) return;
       this.sound.init();
       if (e.button === 0) {
         this.input.mouseDown = true;
@@ -4363,6 +4366,11 @@ function bootTerracraft() {
   } catch (error) {
     console.error('Terracraft failed to start:', error);
     window.game = null;
+    try {
+      if (typeof window.__terraShowBootError === 'function') {
+        window.__terraShowBootError((error && error.stack) || (error && error.message) || String(error));
+      }
+    } catch (_) {}
     throw error;
   }
 }
