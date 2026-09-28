@@ -399,6 +399,11 @@ class Player {
     this.hp = 100;
     this.maxMana = 50;
     this.mana = 50;
+    // The un-upgraded caps. Life/Mana Crystals raise maxHp/maxMana on top of
+    // these, and the save only stores how many crystals were ever drunk — so
+    // every load has to re-derive the real caps from these baselines.
+    this.baseMaxHp = 100;
+    this.baseMaxMana = 50;
     this.maxHunger = 100;
     this.hunger = 100;
     this.maxStamina = 100;
