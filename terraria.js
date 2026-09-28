@@ -34,10 +34,10 @@ const ITEMS = {
   ember_bow: { id: 'ember_bow', name: 'Ember Bow', type: 'weapon', weaponType: 'ranged', damage: 32, projectile: 'arrow', speed: 11, icon: '🏹', stackMax: 1 },
   moon_staff: { id: 'moon_staff', name: 'Moon Staff', type: 'weapon', weaponType: 'magic', damage: 52, manaCost: 12, projectile: 'magic_bolt', speed: 12, icon: '🌙', stackMax: 1 },
   diamond_blade: { id: 'diamond_blade', name: 'Diamond Blade', type: 'weapon', weaponType: 'melee', damage: 58, range: 88, icon: '⚔️', stackMax: 1 },
-  iron_armor: { id: 'iron_armor', name: 'Iron Armor Plate', type: 'armor', defense: 6, icon: '🛡️', stackMax: 1 },
-  gold_armor: { id: 'gold_armor', name: 'Gold Armor Plate', type: 'armor', defense: 4, icon: '🟨', stackMax: 1 },
-  diamond_armor: { id: 'diamond_armor', name: 'Diamond Armor Plate', type: 'armor', defense: 9, icon: '💠', stackMax: 1 },
-  crystal_armor: { id: 'crystal_armor', name: 'Crystal Armor Plate', type: 'armor', defense: 15, icon: '💠', stackMax: 1 },
+  iron_armor: { id: 'iron_armor', name: 'Iron Armor Plate', type: 'armor', defense: 6, reduction: 0.12, icon: '🛡️', stackMax: 1 },
+  gold_armor: { id: 'gold_armor', name: 'Gold Armor Plate', type: 'armor', defense: 4, reduction: 0.08, icon: '🟨', stackMax: 1 },
+  diamond_armor: { id: 'diamond_armor', name: 'Diamond Armor Plate', type: 'armor', defense: 9, reduction: 0.18, icon: '💠', stackMax: 1 },
+  crystal_armor: { id: 'crystal_armor', name: 'Crystal Armor Plate', type: 'armor', defense: 15, reduction: 0.25, icon: '💠', stackMax: 1 },
   healing_potion: { id: 'healing_potion', name: 'Lesser Healing Potion', type: 'consumable', heal: 50, icon: '🧪', stackMax: 30 },
   campfire: { id: 'campfire', name: 'Campfire', type: 'tile', tile: TILES.CAMPFIRE, icon: '🏕️', stackMax: 99 }
 };
@@ -169,7 +169,7 @@ const NEW_ITEMS = {
     icon: '🥾', stackMax: 99
   },
   anglers_charm: {
-    id: 'anglers_charm', name: "Angler's Charm", type: 'armor', defense: 3,
+    id: 'anglers_charm', name: "Angler's Charm", type: 'armor', defense: 3, reduction: 0.04,
     icon: '🧿', stackMax: 1
   },
   cursed_edge: {
@@ -190,16 +190,47 @@ const NEW_ITEMS = {
     icon: '🌠', stackMax: 1
   },
   rainbow_armor: {
-    id: 'rainbow_armor', name: 'Prismatic Armor', type: 'armor', defense: 22,
+    id: 'rainbow_armor', name: 'Prismatic Armor', type: 'armor', defense: 22, reduction: 0.32,
     icon: '🌈', stackMax: 1
   },
   fallen_star_armor: {
-    id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 28,
+    id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 28, reduction: 0.40,
     icon: '🌟', stackMax: 1
   }
 };
 
 Object.assign(ITEMS, NEW_ITEMS);
+
+// ============================================================
+// ARMOUR LADDER
+// One ordered list, strongest first. Everything that needs to
+// reason about "which armour is better" reads this instead of
+// hardcoding ids, which is how pieces used to fall out of the
+// system and quietly stop granting anything.
+//
+// `reduction` is a fraction of incoming damage the plate soaks
+// up, on top of the flat `defense` subtraction. The ladder is
+// deliberately gentle and no tier reaches immunity: the 1 HP
+// floor in Player.takeDamage() always applies, so the best
+// armour still lets most of a big hit through.
+// ============================================================
+const ARMOR_TIERS = [
+  'fallen_star_armor', // 1st - 40%
+  'rainbow_armor',     // 2nd - 32%
+  'crystal_armor',     // 3rd - 25%
+  'diamond_armor',     // 4th - 18%
+  'iron_armor',        // 5th - 12%
+  'gold_armor',        // 6th - 8%
+  'anglers_charm'      // accessory - 4%
+];
+
+/** The armour item with the highest reduction that the player owns. */
+function bestOwnedArmor(game) {
+  for (const id of ARMOR_TIERS) {
+    if (game.countItem(id) > 0) return ITEMS[id];
+  }
+  return null;
+}
 
 // Crafting recipes
 const RECIPES = [
@@ -451,19 +482,21 @@ class Game {
     // ---- Adaptive quality ----
     // One master switch that trades a little sharpness for smoothness. The
     // budget measures the *average* frame, so one hitch cannot flip it back on.
-    // preferLowPower starts cautious on very large HiDPI screens, where drawing
-    // every world pixel at full resolution is the most expensive thing this
-    // game does.
-    const pixelBudget = window.innerWidth * window.innerHeight * this.dpr * this.dpr;
     this.autoQuality = true;
     this.quality = {
       budgetMs: 24,        // average frame time above this = drop sharpness
       avgMs: 16.7,         // rolling average, seeded at 60fps
       goodFrames: 0,       // consecutive fast frames before restoring sharpness
-      lowQuality: pixelBudget > 2.6e6
+      // Start at full resolution and let the rolling average decide. The old
+      // seed (`innerWidth * innerHeight * dpr^2 > 2.6e6`) started *high-DPI
+      // laptops in low quality before a single frame had been measured, which
+      // is why the same build looked chunky on one machine and crisp on
+      // another. Measured performance is the honest signal.
+      lowQuality: false
     };
     this.settings = this.loadSettings();
     this.showFps = this.settings.showFps;
+    this.autosaveInterval = this.settings.autosave;
     this.applyQualityMode(this.settings.quality, false);
     // Same helper weather.js uses for its particle cap.
     this.pixelCanvas = document.createElement('canvas');
@@ -520,7 +553,10 @@ class Game {
     // Persistent journey goals, explorer ranks, biome discoveries and streaks.
     this.journey = typeof JourneySystem !== 'undefined' ? new JourneySystem(this) : null;
     this.paused = false;
-    this.autosaveTimer = 90;
+    // Armed from the player's chosen interval so the first autosave happens a
+    // full interval from boot, not 90s regardless of their setting.
+    this.autosaveInterval = this.settings && this.settings.autosave ? this.settings.autosave : 90;
+    this.autosaveTimer = this.autosaveInterval;
     this.potionsUsed = 0;
 
     // Player progression + run statistics (shown on death / victory screens)
@@ -607,7 +643,7 @@ class Game {
   }
 
   loadSettings() {
-    const defaults = { quality: 'auto', effects: 'full', glow: 'full', showFps: false };
+    const defaults = { quality: 'auto', effects: 'full', glow: 'full', showFps: false, autosave: 90 };
     try {
       const raw = localStorage.getItem('terracraft-settings');
       if (!raw) return defaults;
@@ -616,6 +652,9 @@ class Game {
       if (['full', 'reduced', 'minimal'].includes(saved.effects)) defaults.effects = saved.effects;
       if (['full', 'reduced', 'off'].includes(saved.glow)) defaults.glow = saved.glow;
       defaults.showFps = saved.showFps === true;
+      // Clamped so a corrupt or hand-edited value can't stall the game with a
+      // 0s autosave loop (or effectively disable saving with a huge one).
+      if (Number.isFinite(saved.autosave)) defaults.autosave = Math.max(15, Math.min(600, Math.round(saved.autosave)));
     } catch (_) {}
     return defaults;
   }
@@ -665,10 +704,12 @@ class Game {
     const effects = document.getElementById('settings-effects');
     const glow = document.getElementById('settings-glow');
     const fps = document.getElementById('settings-fps');
+    const autosave = document.getElementById('settings-autosave');
     if (quality) quality.value = this.settings.quality;
     if (effects) effects.value = this.settings.effects;
     if (glow) glow.value = this.settings.glow;
     if (fps) fps.checked = this.settings.showFps === true;
+    if (autosave) autosave.value = String(this.settings.autosave);
   }
 
   toggleSettings(force) {
@@ -685,6 +726,7 @@ class Game {
     // The camera still exposes the full CSS-pixel viewport in world units. Low
     // quality only reduces the internal backing resolution; the final composite
     // always fills the complete visible canvas.
+    //
     const vw = Math.max(320, Math.floor(window.innerWidth * this.zoom));
     const vh = Math.max(240, Math.floor(window.innerHeight * this.zoom));
     const internalScale = Math.max(0.5, Math.min(1, this.renderScale || 1));
@@ -728,6 +770,30 @@ class Game {
   initWindow() {
     window.addEventListener('resize', () => this.resize());
     this.resize();
+
+    // ---- Save on the way out ----
+    // The in-loop timer only fires while the game is actually running, so
+    // closing the tab (or the Streamlit iframe reloading) used to throw away
+    // up to a full interval of progress. These three hooks cover the ways a
+    // session really ends:
+    //   pagehide      - fires on close/navigation, and unlike beforeunload it
+    //                  is reliable on mobile Safari, which is where most
+    //                  "I lost my world" reports come from.
+    //   visibilitychange - fires when the tab is backgrounded, which on mobile
+    //                  is the usual precursor to being killed.
+    //   beforeunload  - desktop close, kept as a belt-and-braces fallback.
+    // saveGame() is synchronous localStorage, so it completes during teardown.
+    const saveOnExit = () => {
+      // Never write a mid-death snapshot: dying is not a reason to persist the
+      // moment the player fell, and the respawn handler saves the real state.
+      if (this.isDead) return;
+      this.saveGame(true);
+    };
+    window.addEventListener('pagehide', saveOnExit);
+    window.addEventListener('beforeunload', saveOnExit);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveOnExit();
+    });
   }
 
   initInput() {
@@ -786,7 +852,9 @@ class Game {
         return;
       }
 
-      // 1-9 Hotbar selection
+    // Zoom is handled elsewhere in this build.
+
+    // 1-9 Hotbar selection
       if (e.key >= '1' && e.key <= '9') {
         this.player.selectedSlot = parseInt(e.key) - 1;
         this.updateHotbarUI();
@@ -931,6 +999,19 @@ class Game {
         this._fpsBadge = null;
       }
       this.saveSettings();
+    });
+
+    // Autosave interval lives in settings; changing it re-arms the countdown.
+    document.getElementById('settings-autosave')?.addEventListener('change', (event) => {
+      const value = Number(event.target.value);
+      if (!Number.isFinite(value)) return;
+      this.settings.autosave = Math.max(15, Math.min(600, Math.round(value)));
+      this.autosaveInterval = this.settings.autosave;
+      // Re-arm from now, so a new interval takes effect immediately instead of
+      // waiting out whatever was left of the old countdown.
+      this.autosaveTimer = this.autosaveInterval;
+      this.saveSettings();
+      this.showToast(`💾 Autosave: every ${this.autosaveInterval}s`);
     });
 
     // Sound toggle button
@@ -1385,6 +1466,12 @@ class Game {
       this.world.generateLandmarks();
     }
 
+    // Progress first: it carries the permanent Life/Mana Crystal counts, and the
+    // life/mana clamps below have to be evaluated against the upgraded caps —
+    // clamping against the base 100/50 would shave the bonuses back off.
+    this.restoreProgress(save.progress);
+    this.applyPermanentUpgrades();
+
     if (save.player) {
       this.player.x = Number.isFinite(save.player.x) ? save.player.x : this.player.x;
       this.player.y = Number.isFinite(save.player.y) ? save.player.y : this.player.y;
@@ -1410,7 +1497,6 @@ class Game {
       if (this.countItem('bomb') === 0) this.addItem('bomb', 2);
     }
     if (this.npcs) this.npcs.fromSave(save.quests);
-    this.restoreProgress(save.progress);
     this.journey?.syncWorldFlags();
 
     // Sleep-bound respawn (only kept while the bed still exists).
@@ -2062,6 +2148,23 @@ class Game {
     return taken;
   }
 
+  /**
+   * Re-derive the player's life/mana caps from the permanent crystal counts.
+   *
+   * The save file persists how many Life/Mana Crystals were ever drunk
+   * (progress.maxHpUpgrades / maxManaUpgrades), NOT the resulting caps. A fresh
+   * Player starts at the base 100/50, so loadGame has to replay those counts or
+   * every reload silently strips the permanent upgrades. Drinking a crystal
+   * goes through here too, which keeps the two paths from drifting apart.
+   */
+  applyPermanentUpgrades() {
+    const p = this.player;
+    p.maxHp = p.baseMaxHp + this.maxHpUpgrades * (ITEMS.life_crystal.maxHpBonus || 0);
+    p.maxMana = p.baseMaxMana + this.maxManaUpgrades * (ITEMS.mana_crystal.maxManaBonus || 0);
+    p.hp = Math.min(p.hp, p.maxHp);
+    p.mana = Math.min(p.mana, p.maxMana);
+  }
+
   /** Death bookkeeping: stats, buffs, screens. */
   onPlayerDeath() {
     this.stats.deaths += 1;
@@ -2397,14 +2500,16 @@ class Game {
 
     if (itemData.maxHpBonus) {
       this.maxHpUpgrades += 1;
-      this.player.maxHp += itemData.maxHpBonus;
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + itemData.maxHpBonus);
+      const before = this.player.maxHp;
+      this.applyPermanentUpgrades();
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + (this.player.maxHp - before));
       permanent = `❤️ Max life increased to ${this.player.maxHp}!`;
     }
     if (itemData.maxManaBonus) {
       this.maxManaUpgrades += 1;
-      this.player.maxMana += itemData.maxManaBonus;
-      this.player.mana = Math.min(this.player.maxMana, this.player.mana + itemData.maxManaBonus);
+      const before = this.player.maxMana;
+      this.applyPermanentUpgrades();
+      this.player.mana = Math.min(this.player.maxMana, this.player.mana + (this.player.maxMana - before));
       permanent = `✨ Max mana increased to ${this.player.maxMana}!`;
     }
     if (itemData.heal) {
@@ -3020,8 +3125,29 @@ class Game {
       return false;
     }
     const castle = this.world.underworld;
-    const x = castle ? (castle.altarX + 0.5) * TILE_SIZE - 36 : this.player.x;
+    let x = castle ? (castle.altarX + 0.5) * TILE_SIZE - 36 : this.player.x;
     const y = castle ? (castle.altarY + 1) * TILE_SIZE - 82 : this.player.y - 180;
+    // The altar tile is solid and sits exactly where the boss would otherwise
+    // appear, so the Demon used to materialise *inside* its own altar. Walk the
+    // spawn sideways until the tile under the boss's chest is clear. The arena
+    // floor is flat now, so the first candidate is essentially always free and
+    // the boss still walks to the player on its first stalk.
+    if (castle) {
+      // Probe the boss's mid-body tile, which is where a solid block would trap
+      // it. The altar is one tile wide at cx, so a 2-tile step clears it.
+      const bodyY = Math.floor((y + 41) / TILE_SIZE);
+      const step = 2 * TILE_SIZE;
+      for (let i = 1; i <= 4; i++) {
+        for (const dir of [1, -1]) {
+          const cx = x + dir * i * step;
+          if (!this.world.isSolid(Math.floor((cx + 36) / TILE_SIZE), bodyY)) {
+            x = cx;
+            i = 99;
+            break;
+          }
+        }
+      }
+    }
     this.boss = new DemonBoss(x, y, this);
     this.sound.playBossRoar();
     this.bossEntrance(x + 36, y + 41, '#fb923c', '#f43f5e');
@@ -3123,16 +3249,19 @@ class Game {
 this.player.invulnerableTime = 1.0;
 this.player.isDodgeRolling = false;
 this.player.dodgeTime = 0;
+    // Persist the respawn immediately. Combined with the exit hooks this means
+    // a world survives both "closed the tab" and "died and closed the tab".
+    this.saveGame(true);
     document.getElementById('death-screen').classList.add('hidden');
     this.showToast(`🔥 Respawned at ${respawnLabel}.`);
   }
 
+  /**
+   * Best armour the player currently owns. Reads ARMOR_TIERS so every
+   * tier stays in the running — this used to list only four of the six.
+   */
   getBestArmor() {
-    const armorIds = ['gold_armor', 'iron_armor', 'diamond_armor', 'crystal_armor'];
-    return armorIds
-      .map(id => ITEMS[id])
-      .filter(item => this.countItem(item.id) > 0)
-      .sort((a, b) => b.defense - a.defense)[0] || null;
+    return bestOwnedArmor(this);
   }
 
   update(dt) {
@@ -3184,19 +3313,25 @@ this.player.dodgeTime = 0;
     }
 
     // 2. Player Update
-    const goldDefense = this.countItem('gold_armor') > 0 ? ITEMS.gold_armor.defense : 0;
-    const ironDefense = this.countItem('iron_armor') > 0 ? ITEMS.iron_armor.defense : 0;
-    const diamondDefense = this.countItem('diamond_armor') > 0 ? ITEMS.diamond_armor.defense : 0;
-    const crystalDefense = this.countItem('crystal_armor') > 0 ? ITEMS.crystal_armor.defense : 0;
-    const rainbowDefense = this.countItem('rainbow_armor') > 0 ? ITEMS.rainbow_armor.defense : 0;
-    const fallenStarDefense = this.countItem('fallen_star_armor') > 0 ? ITEMS.fallen_star_armor.defense : 0;
-    // Armour plate + Ironskin/Well Fed bonuses stack.
-    this.player.armorDefense = Math.max(goldDefense, ironDefense, diamondDefense, crystalDefense, rainbowDefense, fallenStarDefense)
-      + this.buffs.bonus('defense');
+    // Armour stats come from the piece actually WORN, not the best piece in
+    // the bag. This used to take a Math.max() across every armour the player
+    // merely owned, so gold on your back still granted Fallen Star defence
+    // and swapping tiers did nothing at all.
     if (!this.equippedArmorId || this.countItem(this.equippedArmorId) <= 0) {
-      this.equippedArmorId = null;
+      // Nothing valid equipped (new save, or the plate was dropped/sold):
+      // fall back to the best owned so existing saves keep their protection.
+      const fallback = bestOwnedArmor(this);
+      this.equippedArmorId = fallback ? fallback.id : null;
     }
-    this.player.activeArmor = this.equippedArmorId ? ITEMS[this.equippedArmorId] : null;
+    const wornArmor = this.equippedArmorId ? ITEMS[this.equippedArmorId] : null;
+    this.player.activeArmor = wornArmor;
+
+    // Percentage soak is the main effect; flat defense and the Ironskin /
+    // Well Fed bonuses stack additively on top of it.
+    const armorReduction = wornArmor ? (wornArmor.reduction || 0) : 0;
+    const armorFlat = wornArmor ? (wornArmor.defense || 0) : 0;
+    this.player.armorReduction = Math.min(0.75, armorReduction);
+    this.player.armorDefense = armorFlat + this.buffs.bonus('defense');
 
     // Swiftness and similar buffs feed straight into movement speed.
     this.player.speedMultiplier = this.buffs.multiplier('speed');
@@ -3712,7 +3847,7 @@ this.player.dodgeTime = 0;
     this.minimap.update(dt, this);
     this.minimap.render(this);
     if (this.autosaveTimer <= 0) {
-      this.autosaveTimer = 90;
+      this.autosaveTimer = this.autosaveInterval || 90;
       this.saveGame(true);
     }
     // Shared-stash writes are batched: Ctrl+clicking twenty items is one write,
@@ -3724,6 +3859,9 @@ this.player.dodgeTime = 0;
 
     // 13. Death check (covers starvation and any other stray damage source)
     if (this.player.hp <= 0 && !this.isDead) {
+      // Starvation no longer goes through damagePlayer(), so it never set a cause
+      // of its own. Name it here, where the death screen reads it from.
+      if (this.player.starving) this.deathCause = '🍎 You starved to death.';
       this.isDead = true;
       this.onPlayerDeath();
     }
@@ -3811,6 +3949,22 @@ this.player.dodgeTime = 0;
     const hp = Math.max(0, Math.floor(p.hp));
     this.setWidth('hp-bar', Math.max(0, (p.hp / p.maxHp) * 100));
     this.setText('hp-text', `${hp} / ${p.maxHp}`);
+
+    // Armour readout: the equipped plate's damage reduction, so the tier
+    // you're actually wearing is visible without hovering a tooltip.
+    const armorChip = this.hudEl('armor-chip');
+    if (armorChip) {
+      const pct = Math.round((p.armorReduction || 0) * 100);
+      if (pct > 0) {
+        this.setText('armor-chip-text', `${pct}%`);
+        const flat = Math.round(p.armorDefense || 0);
+        const label = flat > 0 ? `🛡️ ${pct}% · +${flat} DEF` : `🛡️ ${pct}%`;
+        if (armorChip.textContent !== label) armorChip.textContent = label;
+        armorChip.classList.remove('hidden');
+      } else if (!armorChip.classList.contains('hidden')) {
+        armorChip.classList.add('hidden');
+      }
+    }
 
     const mana = Math.max(0, Math.floor(p.mana));
     this.setWidth('mana-bar', Math.max(0, (p.mana / p.maxMana) * 100));
