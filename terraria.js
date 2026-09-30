@@ -150,6 +150,59 @@ const NEW_ITEMS = {
     id: 'guardian_trophy', name: 'Guardian Trophy', type: 'material',
     icon: '🏆', stackMax: 1
   },
+  // ---- Space dimension: the Void Rift and the Ossuary Sovereign ----
+  // Beacon is consumed on use, so a second trip means another craft. That is
+  // deliberate: it makes the rift an expedition you prepare for rather than a
+  // free elevator, and it gives the Underworld's souls a reason to be mined.
+  void_rift_beacon: {
+    id: 'void_rift_beacon', name: 'Void Rift Beacon', type: 'consumable',
+    riftBeacon: true, icon: '🌀', stackMax: 5
+  },
+  meteor_shard: {
+    id: 'meteor_shard', name: 'Meteor Shard', type: 'material',
+    icon: '☄️', stackMax: 999
+  },
+  nebula_crystal: {
+    id: 'nebula_crystal', name: 'Nebula Crystal', type: 'material',
+    icon: '💜', stackMax: 999
+  },
+  dragonbone: {
+    id: 'dragonbone', name: 'Dragonbone', type: 'material',
+    icon: '🦴', stackMax: 999
+  },
+  dragon_trophy: {
+    id: 'dragon_trophy', name: 'Ossuary Sovereign Trophy', type: 'material',
+    icon: '🏆', stackMax: 1
+  },
+  star_platform: {
+    id: 'star_platform', name: 'Star Platform', type: 'tile', tile: TILES.VOID_PLATFORM,
+    icon: '🟪', stackMax: 999
+  },
+  void_star_blade: {
+    id: 'void_star_blade', name: 'Voidstar Cleaver', type: 'weapon', weaponType: 'melee',
+    // Forged from the Sovereign's own skeleton: the strongest blade in the game,
+    // gated behind the strongest boss. Lifesteal is the reward for standing your
+    // ground in the arena instead of kiting forever.
+    damage: 214, range: 142, useTime: 0.27, critBonus: 0.24, lifesteal: 0.12,
+    icon: '🌌', stackMax: 1
+  },
+  voidscale_armor: {
+    // New apex of the ladder: 46% + 36 defence. Not 48% — at 48% the flat slice
+    // (0.15/point) swallowed a 14 HP slime bite whole and the plate fell through
+    // the 1 HP floor, exactly the mistake Demonplate was pulled back from. 46%
+    // keeps that bite at 2 HP while still beating Demonplate on both axes
+    // (small hit 2 vs 3, boss slam 35 vs 37).
+    id: 'voidscale_armor', name: 'Voidscale Armor', type: 'armor', defense: 36, reduction: 0.46,
+    icon: '🌌', stackMax: 1
+  },
+  dragon_wings: {
+    // The Sovereign's own wings. They live in the accessory slot — NOT the
+    // armour slot — so the plate and the wings can be worn together. Deliberately
+    // no defense/reduction: the flat slice would drag the apex tier back onto
+    // the 1 HP floor the ladder was tuned away from, and flight is the stat.
+    id: 'dragon_wings', name: 'Dragon Wings', type: 'accessory', grantsFlight: true,
+    icon: '🪽', stackMax: 1
+  },
   // ---- Fishing ----
   fishing_rod: {
     id: 'fishing_rod', name: 'Fishing Rod', type: 'tool', toolPower: 0,
@@ -227,13 +280,14 @@ Object.assign(ITEMS, NEW_ITEMS);
 // armour still lets most of a big hit through.
 // ============================================================
 const ARMOR_TIERS = [
-  'demon_armor',        // 1st - 44%  (forged from the Demon himself)
-  'fallen_star_armor',  // 2nd - 40%
-  'rainbow_armor',      // 3rd - 32%
-  'crystal_armor',      // 4th - 25%
-  'diamond_armor',      // 5th - 18%
-  'iron_armor',         // 6th - 12%
-  'gold_armor',         // 7th - 8%
+  'voidscale_armor',    // 1st - 46%  (forged from the Ossuary Sovereign)
+  'demon_armor',        // 2nd - 44%  (forged from the Demon himself)
+  'fallen_star_armor',  // 3rd - 40%
+  'rainbow_armor',      // 4th - 32%
+  'crystal_armor',      // 5th - 25%
+  'diamond_armor',      // 6th - 18%
+  'iron_armor',         // 7th - 12%
+  'gold_armor',         // 8th - 8%
   'anglers_charm'       // accessory - 4%
 ];
 
@@ -475,6 +529,39 @@ const RECIPES = [
       { id: 'demon_soul', count: 8 }, { id: 'castle_brick', count: 10 }
     ],
     name: 'Demonplate Armor (48% damage reduction)'
+  },
+  // ---- Space dimension recipes -------------------------------------------------
+  // The beacon is the gateway to the Ossuary and is deliberately priced in
+  // Underworld loot: you have to have been deep enough to meet the Demon before
+  // you can even knock on the Sovereign's door.
+  {
+    result: { id: 'void_rift_beacon', count: 1 },
+    materials: [
+      { id: 'demon_soul', count: 4 }, { id: 'hellstone', count: 6 },
+      { id: 'crystal', count: 4 }, { id: 'gold_ore', count: 8 }
+    ],
+    name: 'Void Rift Beacon (tears open the Ossuary)'
+  },
+  {
+    result: { id: 'star_platform', count: 4 },
+    materials: [{ id: 'meteor_shard', count: 1 }, { id: 'stone', count: 4 }],
+    name: 'Star Platforms (x4)'
+  },
+  {
+    result: { id: 'void_star_blade', count: 1 },
+    materials: [
+      { id: 'dragonbone', count: 14 }, { id: 'meteor_shard', count: 10 },
+      { id: 'nebula_crystal', count: 6 }
+    ],
+    name: 'Voidstar Cleaver (214 damage, 12% lifesteal)'
+  },
+  {
+    result: { id: 'voidscale_armor', count: 1 },
+    materials: [
+      { id: 'dragon_trophy', count: 1 }, { id: 'dragonbone', count: 24 },
+      { id: 'nebula_crystal', count: 12 }, { id: 'meteor_shard', count: 16 }
+    ],
+    name: 'Voidscale Armor (48% damage reduction)'
   }
 ];
 
@@ -546,6 +633,9 @@ class Game {
     const spawnY = (this.world.surfaceHeights[Math.floor(this.world.width / 2)] - 3) * TILE_SIZE;
     this.player = new Player(spawnX, spawnY);
     this.equippedArmorId = null;
+    // Second slot: accessories (currently only the Sovereign's Dragon Wings).
+    // Kept separate from equippedArmorId so flight never costs you the plate.
+    this.equippedAccessoryId = null;
 
     // Initial camera position centered on player
     this.camera.x = Math.max(0, Math.min(this.world.pixelWidth - this.camera.viewportWidth, this.player.x + this.player.width / 2 - this.camera.viewportWidth / 2));
@@ -638,6 +728,12 @@ class Game {
     this.altarNagTimer = 0; // throttles the "a boss already hunts you" toast
     this.respawnPoint = null;   // sleep-bound respawn {kind:'bed', bedX, bedY, x, y}
     this.bossDaysDone = [];     // auto-summoned forest boss days (7 and 20)
+    // ---- Space dimension: the Void Rift and the Ossuary Sovereign ----
+    this.wormhole = null;        // live WormholeFX while a rift is open
+    this.wormholeIntent = null;  // 'space' | 'overworld': what the collapse does
+    this.riftUses = 0;           // rifts opened so far — later ones tear in faster
+    this.dragonHP = null;        // Sovereign's damaged HP, kept across a death/retreat
+    this.riftReturnDelay = 0;    // beats until a post-death re-entry fires
     this.bedNagTimer = 0; // throttles "can't sleep" toasts while mouse is held
     this.undergroundTime = 0;
     this.nightAnnounced = false;
@@ -1414,21 +1510,32 @@ class Game {
   saveGame(silent = false) {
     let preferredName = `World ${this.saveKey.slice(-1)}`;
     try { preferredName = JSON.parse(localStorage.getItem(this.saveKey) || '{}').name || preferredName; } catch (_) {}
+    // Autosave does not care that you are mid-fight, and the save file must
+    // always describe the OVERWORLD: while the Ossuary owns the live buffers,
+    // persistTiles/persistWalls hand back the stashed home copy. The clock and
+    // the rainbow flag are stashed for the trip too, so they are read from the
+    // same place. A player who logs out inside the rift comes back home, at the
+    // spot the wormhole opened over, and arena loot is written from the stash.
+    const inSpace = this.world.isInSpace();
+    const stashed = inSpace ? this.world.overworldStash : null;
+    const pos = (inSpace && this.overworldReturnPos) ? this.overworldReturnPos : this.player;
+    const savedDrops = (inSpace && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
       version: 11,
-      timeOfDay: this.world.timeOfDay,
+      timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
-      tiles: Array.from(this.world.tiles),
-      walls: Array.from(this.world.walls),
+      tiles: Array.from(this.world.persistTiles()),
+      walls: Array.from(this.world.persistWalls()),
       player: {
-        x: this.player.x,
-        y: this.player.y,
+        x: pos.x,
+        y: pos.y,
         hp: this.player.hp,
         mana: this.player.mana,
         stamina: this.player.stamina,
         hunger: this.player.hunger,
         equippedArmorId: this.equippedArmorId,
+        equippedAccessoryId: this.equippedAccessoryId,
         selectedSlot: this.player.selectedSlot
       },
       inventory: this.inventory,
@@ -1438,8 +1545,17 @@ class Game {
       dungeon: this.world.dungeon || null,
       respawn: this.respawnPoint,
       bossDays: this.bossDaysDone,
-      rainbowSeeded: this.world.rainbowSeeded === true,
-      drops: this.drops.map(drop => ({ id: drop.id, count: drop.count, x: drop.x, y: drop.y })),
+      rainbowSeeded: (stashed ? stashed.rainbowSeeded : this.world.rainbowSeeded) === true,
+      drops: savedDrops.map(drop => ({ id: drop.id, count: drop.count, x: drop.x, y: drop.y })),
+      // Banked Sovereign HP: dying or retreating does not reset the fight, and
+      // neither does closing the tab mid-fight — the live HP is what gets banked.
+      dragonHP: (this.boss && this.boss.kind === 'dragon' && !this.boss.dead)
+        ? Math.max(1, Math.round(this.boss.hp))
+        : (Number.isFinite(this.dragonHP) ? this.dragonHP : null),
+      // A pending charged re-entry is part of the promise ("it remembers you"),
+      // so it survives a reload too — otherwise a player who quits during the
+      // few seconds a rift takes to reopen loses the way back to their fight.
+      riftReturnDelay: this.riftReturnDelay > 0 ? this.riftReturnDelay : null,
       // A battle is never carried through a save: quitting or refreshing the page
       // ends the encounter (see loadGame), so there is no live boss left to write.
       // The key is kept so version-11 saves keep their exact shape.
@@ -1508,6 +1624,9 @@ class Game {
       this.player.stamina = Math.max(0, Math.min(this.player.maxStamina, save.player.stamina));
       this.player.hunger = Number.isFinite(save.player.hunger) ? Math.max(0, Math.min(this.player.maxHunger, save.player.hunger)) : this.player.maxHunger;
       this.equippedArmorId = ITEMS[save.player.equippedArmorId]?.type === 'armor' ? save.player.equippedArmorId : null;
+      // Old saves predate the accessory slot: a missing field simply leaves it empty.
+      this.equippedAccessoryId = ITEMS[save.player.equippedAccessoryId]?.type === 'accessory'
+        ? save.player.equippedAccessoryId : null;
       this.player.selectedSlot = Math.max(0, Math.min(8, save.player.selectedSlot || 0));
     }
 
@@ -1546,6 +1665,20 @@ class Game {
     this.monsters = [];
     this.projectiles = [];
     this.boss = null;
+    // A save always describes the OVERWORLD, so whatever dimension the tab died
+    // in, the player is put back home and the Ossuary is rebuilt from scratch on
+    // the next trip. The Sovereign keeps the damage it had taken.
+    if (this.world.isInSpace()) this.world.exitSpaceDimension();
+    this.wormhole = null;
+    this.wormholeIntent = null;
+    this.riftReturnDelay = 0;
+    this.dimensionStash = null;
+    this.sound.isBoss = false;
+    this.dragonHP = Number.isFinite(save.dragonHP) ? save.dragonHP : null;
+    // Re-arm a re-entry that was still counting down when the tab died, but only
+    // while there is actually a wounded Sovereign to go back to.
+    this.riftReturnDelay = (Number.isFinite(this.dragonHP) && Number.isFinite(save.riftReturnDelay))
+      ? Math.max(1.5, save.riftReturnDelay) : 0;
     // Boss battles deliberately do NOT survive a reload. Re-instantiating the
     // saved boss used to drop it right back onto the player's saved position,
     // so refreshing (or loading) mid-fight resumed with the player already being
@@ -1587,6 +1720,7 @@ class Game {
       slotDiv.onclick = () => {
         this.player.selectedSlot = i;
         if (itemData?.type === 'armor') this.equipArmor(itemData.id);
+        else if (itemData?.type === 'accessory') this.equipAccessory(itemData.id);
         this.updateHotbarUI();
       };
 
@@ -1679,6 +1813,9 @@ class Game {
     if (item.type === 'weapon') return 'weapons';
     if (item.type === 'tool') return 'tools';
     if (item.type === 'armor') return 'armor';
+    // Accessories ride along with armour in the ARMOR chip — there is no
+    // separate bag category for a single item class.
+    if (item.type === 'accessory') return 'armor';
     if (item.type === 'consumable') return 'consumables';
     if (item.type === 'ammo') return 'ammo';
     if (item.type === 'material') return 'materials';
@@ -1971,6 +2108,10 @@ class Game {
       this.equipArmor(item.id);
       return;
     }
+    if (item?.type === 'accessory') {
+      this.equipAccessory(item.id);
+      return;
+    }
     if (index < 9) {
       this.player.selectedSlot = index;
       this.updateHotbarUI();
@@ -1983,6 +2124,17 @@ class Game {
     this.equippedArmorId = id;
     this.player.activeArmor = ITEMS[id];
     this.showToast(`🛡️ Equipped ${ITEMS[id].name}`);
+    this.renderHotbarUI();
+    this.renderInventoryGrid();
+  }
+
+  /** Accessory slot (Dragon Wings). Deliberately separate from the plate. */
+  equipAccessory(id) {
+    if (!ITEMS[id] || ITEMS[id].type !== 'accessory' || this.countItem(id) <= 0) return;
+    this.equippedAccessoryId = id;
+    this.player.activeWings = ITEMS[id];
+    this.player.hasWings = ITEMS[id].grantsFlight === true;
+    this.showToast(`🪽 Equipped ${ITEMS[id].name} — hold JUMP in the air to fly`);
     this.renderHotbarUI();
     this.renderInventoryGrid();
   }
@@ -2742,6 +2894,35 @@ class Game {
       this.summonDemonBoss();
       return true;
     }
+    // ---- The rift gate: the only hand-built doorway back to the overworld.
+    // The Ossuary has no bed, so this is the retreat for a player who wants to
+    // leave with the Sovereign still alive — the fight resumes at the same
+    // damage when they come back. ----
+    if (tile === TILES.RIFT_PORTAL) {
+      if (!this.world.isInSpace()) {
+        this.showToast('🕳️ The gate is a hole cut in the sky. It only answers from the far side.');
+        return true;
+      }
+      const gTx = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
+      const gTy = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
+      if (Math.hypot(tileX - gTx, tileY - gTy) > 6.5) return false;
+      if (this.wormhole) {
+        this.showToast('🌀 A wormhole is already tearing open…');
+        return true;
+      }
+      // The whole frame is consumed by the passage it opens: one gate builds one
+      // trip home, so a deliberate retreat always costs building a second one.
+      for (let gx = tileX - 2; gx <= tileX + 2; gx++) {
+        for (let gy = tileY - 4; gy <= tileY + 1; gy++) {
+          if (this.world.getTile(gx, gy) === TILES.RIFT_PORTAL) this.world.setTile(gx, gy, TILES.AIR);
+        }
+      }
+      this.openWormhole('overworld',
+        (tileX + 0.5) * TILE_SIZE,
+        (tileY - 1.5) * TILE_SIZE,
+        this.riftUses > 1);
+      return true;
+    }
     // The Cursed Knight's pedestal: click it (any item, in reach) to wake him.
     if (tile === TILES.ALTAR) {
       const aTx = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
@@ -3053,6 +3234,15 @@ class Game {
       const dist = Math.hypot(tileX - pTileX, tileY - pTileY);
 
       if (dist <= 6.5) { // Reach range
+        // Rune brick frames the Ossuary arena and the rift gate is bolted into
+        // it: both are the fight's furniture, not loot. (The same reason the
+        // altars are intercepted before mining ever runs.)
+        if (tile === TILES.SPACE_RUNE || tile === TILES.RIFT_PORTAL) {
+          this.showToast(tile === TILES.SPACE_RUNE
+            ? '🟪 The rune brick hums. It will not break.'
+            : '🕳️ The gate is the way home. Do not chip at it.');
+          return;
+        }
         const prop = TILE_PROPERTIES[tile];
         this.sound.playDig(tile === TILES.STONE || tile === TILES.IRON_ORE || tile === TILES.GOLD_ORE);
         this.particles.tileBreak(tileX, tileY, prop ? prop.color : '#854d0e');
@@ -3090,6 +3280,14 @@ class Game {
 
     // Fishing rod: right-click water to cast (left click still swings it).
     if (this.castFishingLine(Math.floor(mouseWorldX / TILE_SIZE), Math.floor(mouseWorldY / TILE_SIZE))) {
+      return;
+    }
+
+    // Void Rift Beacon: tears a wormhole open toward the Ossuary. Handled
+    // ahead of the generic consumable branch because it is a consumable that
+    // must never fall into the potion/healing pipeline.
+    if (itemData && itemData.riftBeacon) {
+      this.useVoidRiftBeacon();
       return;
     }
 
@@ -3264,7 +3462,241 @@ class Game {
     document.getElementById('boss-panel').classList.remove('hidden');
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // THE VOID RIFT — the Space Dimension and the Ossuary Sovereign
+  //
+  // Every dimension jump in the game — beacon, rift gate, death — funnels
+  // through openWormhole() and then updateWormhole(), so the world only ever
+  // changes in one place: the exact frame the wormhole collapses, hidden behind
+  // its own white-out. The overworld is stashed by reference (see space.js), so
+  // a return trip is an exact restoration, and the save file always describes
+  // home rather than the arena.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /** Tear a wormhole open at a world-pixel position. */
+  openWormhole(intent, x, y, charged = false) {
+    // Remember where home is while the player is still standing in it. By the
+    // frame the rift collapses they have been dragged a hundred pixels into the
+    // sky, and the way back has to set them down on the ground they left.
+    if (intent === 'space' && !this.world.isInSpace()) {
+      this.overworldReturnPos = { x: this.player.x, y: this.player.y };
+    }
+    this.riftUses++;
+    this.wormholeIntent = intent;
+    this.wormhole = new WormholeFX(x, y, {
+      charged,
+      // Opening a rift toward the arena is the loud, cinematic one; the way
+      // home is a smaller, quieter tear, because you walk into it.
+      maxRadius: intent === 'space' ? 205 : 170
+    });
+    this.showAnnouncement(intent === 'space'
+      ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
+      : '🕳️ THE WAY HOME OPENS.');
+  }
+
+  /**
+   * Advance the live wormhole. Returns true while the rift owns the player, in
+   * which case update() suspends the player's own physics so nothing fights
+   * the pull.
+   */
+  updateWormhole(dt) {
+    if (!this.wormhole) {
+      // Dying in the Ossuary banks the fight, then the rift comes back for you:
+      // the retry is instant and the Sovereign resumes at the damage it had
+      // already taken, so a death is a setback rather than a reset.
+      if (this.riftReturnDelay > 0) {
+        if (this.isDead || this.world.isInSpace() || this.boss) return false;
+        this.riftReturnDelay -= dt;
+        if (this.riftReturnDelay <= 0) {
+          this.riftReturnDelay = 0;
+          this.openWormhole('space',
+            this.player.x + this.player.width / 2,
+            this.player.y - 26, true);
+        }
+      }
+      return false;
+    }
+    // Helpless while the sky is eating you: keep the i-frames topped up.
+    this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 0.4);
+    if (this.wormhole.update(dt, this.player, this.particles) === 'done') {
+      const intent = this.wormholeIntent;
+      this.wormhole = null;
+      this.wormholeIntent = null;
+      if (intent === 'space') this.enterSpaceDimension();
+      else if (intent === 'overworld') this.returnToOverworld();
+    }
+    return true;
+  }
+
+  /**
+   * Right-click with a Void Rift Beacon: open a rift toward the Ossuary.
+   * Returns true when the sky starts tearing — which is also when the beacon is
+   * spent. A refused beacon is never consumed.
+   */
+  useVoidRiftBeacon() {
+    if (this.world.isInSpace()) {
+      this.showToast('🌀 You are already in the Ossuary. Walk into the 🕳️ Rift Gate on the west wall to go home.');
+      return false;
+    }
+    if (this.wormhole) {
+      this.showToast('🌀 The sky is still tearing open…');
+      return false;
+    }
+    if (this.boss && !this.boss.dead) {
+      this.showToast('🚫 No wormhole will open while a fight is already raging.');
+      return false;
+    }
+    const pTileX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
+    const pTileY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
+    const groundY = this.world.surfaceHeights[Math.max(0, Math.min(this.world.width - 1, pTileX))];
+    // A hole punched in the sky is the only shape this door can take. The honest
+    // test is skylight: run a ray straight up from the player and if any solid
+    // tile blocks it, they are in a cave and the beacon refuses. (Comparing
+    // against surfaceHeights alone is not enough — a hill you stand under has a
+    // surface row above your head, and an inverted comparison silently turns
+    // the whole check inside out.) Platforms are walk-through, so they let the
+    // sky through.
+    let skylight = true;
+    for (let ty = pTileY; ty >= 0; ty--) {
+      const above = this.world.getTile(pTileX, ty);
+      const props = above !== TILES.AIR && TILE_PROPERTIES[above];
+      if (props && props.solid && !props.isPlatform) { skylight = false; break; }
+    }
+    if (!skylight) {
+      this.showToast('🚫 The beacon needs open sky above you. Climb out of the caves.');
+      return false;
+    }
+    // While a wounded Sovereign is waiting, the beacon is a tether rather than a
+    // ticket: it reopens the same rift for free, so the fight cannot be reset by
+    // leaving. It is only spent when a fresh dragon is being woken.
+    if (!Number.isFinite(this.dragonHP) && !this.removeItem('void_rift_beacon', 1)) {
+      this.showToast('🌀 You need a Void Rift Beacon for that.');
+      return false;
+    }
+    this.openWormhole('space',
+      (pTileX + 0.5) * TILE_SIZE,
+      Math.max(2, groundY - 10) * TILE_SIZE,
+      Number.isFinite(this.dragonHP));
+    return true;
+  }
+
+  /**
+   * Swap the world buffers for the arena, drop the player onto its floor and
+   * wake the Sovereign. Called by updateWormhole at the moment of collapse.
+   */
+  enterSpaceDimension() {
+    const arena = this.world.enterSpaceDimension();
+    // Whatever was alive at home waits there for the way back.
+    this.dimensionStash = {
+      monsters: this.monsters,
+      critters: this.critters,
+      drops: this.drops
+    };
+    this.overworldReturnPos = { x: this.player.x, y: this.player.y };
+    this.monsters = [];
+    this.critters = [];
+    this.drops = [];
+    this.projectiles = [];
+    // The minimap's texture, its explored mask and its landmark pins all describe
+    // the overworld; the arena is a different world, so rebuild all of it.
+    if (this.minimap) this.minimap.markDirty();
+    // Normally already captured by openWormhole; kept as a fallback so the
+    // dimension can never be left without a way home.
+    if (!this.overworldReturnPos) this.overworldReturnPos = { x: this.player.x, y: this.player.y };
+    this.player.x = arena.spawnX;
+    this.player.y = arena.spawnY;
+    this.player.vx = 0;
+    this.player.vy = 0;
+
+    // ---- Wake the Sovereign, resuming any damage it already took ----
+    this.boss = new SkeletonDragonBoss(arena.cx * TILE_SIZE, (arena.floorY - 16) * TILE_SIZE, this);
+    if (Number.isFinite(this.dragonHP)) {
+      this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, this.dragonHP));
+      this.showToast('🦴 It remembers you.');
+    }
+    this.dragonHP = null;
+    this.sound.isBoss = true;
+    const panel = document.getElementById('boss-panel');
+    if (panel) panel.classList.remove('hidden');
+    this.showAnnouncement('🦴 THE OSSUARY SOVEREIGN AWAKENS!');
+    this.showToast('🌌 The only way home is the 🕳️ Rift Gate on the west wall.');
+    this.particles.magicSparkle(this.player.x, this.player.y, '#c4b5fd', 40);
+  }
+
+  /**
+   * Put the overworld back exactly as it was and set the player down where they
+   * stepped into the sky. Driven by updateWormhole, and by respawnPlayer when
+   * the player dies inside the arena.
+   */
+  returnToOverworld() {
+    // An unfinished fight is banked, not forgotten.
+    if (this.boss && !this.boss.dead && this.boss.kind === 'dragon') this.dragonHP = this.boss.hp;
+    this.boss = null;
+    this.sound.isBoss = false;
+    const panel = document.getElementById('boss-panel');
+    if (panel) panel.classList.add('hidden');
+    this.projectiles = [];
+    this.monsters = [];
+    this.critters = [];
+    this.drops = [];
+    this.world.exitSpaceDimension();
+    // …and the minimap has to forget the arena and redraw the world it knows.
+    if (this.minimap) this.minimap.markDirty();
+    const stash = this.dimensionStash;
+    if (stash) {
+      this.monsters = stash.monsters;
+      this.critters = stash.critters;
+      this.drops = stash.drops;
+      this.dimensionStash = null;
+    }
+    const home = this.overworldReturnPos;
+    if (home) {
+      this.player.x = home.x;
+      this.player.y = home.y;
+      // Spent: the next trip has to capture a fresh doorstep, never reuse this
+      // one (a re-used position could be inside a wall the player has since built).
+      this.overworldReturnPos = null;
+    }
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 2.5);
+    // Land the camera on the player instead of gliding there from the arena.
+    this.camera.x = Math.max(0, Math.min(this.world.pixelWidth - this.camera.viewportWidth,
+      this.player.x + this.player.width / 2 - this.camera.viewportWidth / 2));
+    this.camera.y = Math.max(0, Math.min(this.world.pixelHeight - this.camera.viewportHeight,
+      this.player.y + this.player.height / 2 - this.camera.viewportHeight / 2));
+    this.showToast(Number.isFinite(this.dragonHP)
+      ? '🕳️ The rift closes. It is still in there, and it remembers every hit.'
+      : '🌲 Back under the sky of home.');
+    this.particles.magicSparkle(this.player.x, this.player.y, '#a5f3fc', 40);
+    // Leaving the Sovereign alive is allowed, losing your way back to it is not:
+    // a wounded dragon re-tears the sky a few seconds after the retreat, so a
+    // deliberate withdrawal is a pause rather than a forfeit. respawnPlayer
+    // overwrites this with its own shorter delay after the bed maths.
+    if (Number.isFinite(this.dragonHP)) this.riftReturnDelay = Math.max(this.riftReturnDelay, 5.0);
+    this.saveGame(true);
+  }
+
+  /**
+   * Called the frame the Sovereign is felled. The loot itself comes out of the
+   * shared boss-bag path; what is special here is that the arena does NOT
+   * eject the player — the rift gate stays standing so they can mine the
+   * meteor seams and bone piles before deciding to leave.
+   */
+  onDragonDefeated() {
+    this.dragonHP = null;
+    this.showToast('🦴 Mine the 🟠 meteor seams and bone piles before you leave — every trip rebuilds the arena.');
+  }
+
   respawnPlayer() {
+    // Dying inside the Ossuary cannot strand you. The fight is banked, the
+    // overworld is restored first (so the bed/campfire maths below read the
+    // real surface profile), and updateWormhole then reopens a charged rift a
+    // few seconds later to drag you straight back in for the retry.
+    if (this.world.isInSpace()) {
+      this.returnToOverworld();
+      this.riftReturnDelay = 3.2;
+    }
     const spawnX = Math.floor(this.world.width / 2) * TILE_SIZE;
     const spawnY = (this.world.surfaceHeights[Math.floor(this.world.width / 2)] - 3) * TILE_SIZE;
     let rx = spawnX;
@@ -3328,8 +3760,11 @@ this.player.dodgeTime = 0;
     this.sound.isNight = this.world.isNight();
     this.sound.isBoss = !!(this.boss && !this.boss.dead);
 
-    // Extreme weather (rain, storms, blizzards, sandstorms, fog)
-    if (this.weather) this.weather.update(dt, this);
+    // Extreme weather (rain, storms, blizzards, sandstorms, fog).
+    // Frozen solid while the player is inside the Ossuary: there is no sky up
+    // there to rain from, and the storm waiting at home keeps the exact state
+    // it had the moment they were swallowed.
+    if (this.weather && !this.world.isInSpace()) this.weather.update(dt, this);
 
     // Night announcements & Midnight boss awakening
     if (this.world.isNight() && !this.nightAnnounced) {
@@ -3368,6 +3803,17 @@ this.player.dodgeTime = 0;
     const wornArmor = this.equippedArmorId ? ITEMS[this.equippedArmorId] : null;
     this.player.activeArmor = wornArmor;
 
+    // The accessory slot is validated the same way as the plate, minus the
+    // "best owned" fallback — if the wings leave the bag the slot just empties.
+    // hasWings is what Player.update reads for the flight tank.
+    if (this.equippedAccessoryId && this.countItem(this.equippedAccessoryId) <= 0) {
+      this.equippedAccessoryId = null;
+    }
+    const wornAccessory = this.equippedAccessoryId ? ITEMS[this.equippedAccessoryId] : null;
+    this.player.activeWings = wornAccessory;
+    this.player.hasWings = !!(wornAccessory && wornAccessory.grantsFlight);
+    if (!this.player.hasWings) this.player.isFlying = false;
+
     // Percentage soak is the main effect; flat defense and the Ironskin /
     // Well Fed bonuses stack additively on top of it.
     const armorReduction = wornArmor ? (wornArmor.reduction || 0) : 0;
@@ -3388,7 +3834,10 @@ this.player.dodgeTime = 0;
     // a frame of running.
     if (this.fishing) this.updateFishing(dt);
 
-    this.player.update(dt, this.input, this.world, this.sound, this.particles);
+    // While a wormhole is tearing, the rift drives the player: input, gravity
+    // and collision all stand down so nothing fights the pull.
+    const inRift = this.updateWormhole(dt);
+    if (!inRift) this.player.update(dt, this.input, this.world, this.sound, this.particles);
     this.journey?.update(dt);
 
     // Heavy landings kick dust and nudge the camera.
@@ -3480,8 +3929,10 @@ this.player.dodgeTime = 0;
     this.camera.y = Math.max(0, Math.min(this.world.pixelHeight - this.camera.viewportHeight, this.camera.y));
 
     // 4. Friendly wildlife Spawning AI
+    // No meadows in the Ossuary: the arena is bone and vacuum, so the surface
+    // profile there must never be read as grass to graze on.
     this.critterTimer += dt;
-    if (!this.world.isNight() && this.critterTimer >= 5.0) {
+    if (!this.world.isInSpace() && !this.world.isNight() && this.critterTimer >= 5.0) {
       this.critterTimer = 0;
       if (this.critters.length < 6) {
         const spawnDir = Math.random() > 0.5 ? 1 : -1;
@@ -3561,7 +4012,9 @@ this.player.dodgeTime = 0;
         return Math.max(max, 1 - d / (source.radius * 3.2));
       }, 0);
       const darkChance = Math.max(0.04, Math.min(0.95, darkness + (1 - lit) * 0.55));
-      if (Math.random() > darkChance) {
+      // The Ossuary breeds nothing: the Sovereign summons its own undead and the
+      // overworld's biome tables must not leak a zombie into the arena.
+      if (this.world.isInSpace() || Math.random() > darkChance) {
         this.spawnTimer = 0;
       } else if (mType && (underworld || !underground || this.undergroundTime >= 6)) {
         const spawn = underworld ? new UnderworldMonster(mX, mY, mType) : new Monster(mX, mY, mType);
@@ -3663,6 +4116,7 @@ this.player.dodgeTime = 0;
     if (this.boss && this.boss.dead) {
       const defeatedKnight = this.boss.kind === 'knight';
       const defeatedDemon = this.boss.kind === 'demon';
+      const defeatedDragon = this.boss.kind === 'dragon';
       this.stats.bossKills += 1;
       this.journey?.recordActivity('hunt', this.boss.x + this.boss.width / 2, this.boss.y);
       // Remember which bosses this world has ever felled — the journal scores
@@ -3673,31 +4127,49 @@ this.player.dodgeTime = 0;
       this._bossKinds[bossKey] = true;
       if (firstTime) {
         this.logDiscovery(`boss_${bossKey}`,
-          defeatedDemon ? '🔥 First Hellbound Demon Defeated!' : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!', defeatedDemon ? 600 : 300);
+          defeatedDragon ? '🌌 First Ossuary Sovereign Defeated!'
+            : defeatedDemon ? '🔥 First Hellbound Demon Defeated!'
+              : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!',
+          defeatedDragon ? 900 : defeatedDemon ? 600 : 300);
       }
       const bossPanel = document.getElementById('boss-panel');
       if (bossPanel) bossPanel.classList.add('hidden');
       this.sound.isBoss = false;
-      this.showAnnouncement(defeatedDemon
-        ? '🔥 THE HELLBOUND DEMON HAS FALLEN!'
-        : defeatedKnight ? '⚔️ THE CURSED KNIGHT IS UNDONE!' : '👑 THE ANCIENT FOREST GUARDIAN HAS BEEN FELLED!');
-      this.feel.slow(defeatedDemon ? 2.4 : 1.6, defeatedDemon ? 0.18 : 0.25);
-      this.feel.shake(defeatedDemon ? 1.8 : 1.0);
-      const rewardIds = defeatedDemon
-        ? ['hellstone', 'obsidian_block', 'demon_soul', 'life_crystal', 'mana_crystal']
-        : defeatedKnight
-          ? ['crystal', 'diamond', 'gold_ore', 'fallen_star', 'life_crystal', 'mana_crystal']
-          : ['gold_ore', 'iron_ore', 'crystal', 'diamond', 'fallen_star', 'life_crystal', 'mana_crystal'];
-      const bagCount = defeatedDemon ? 12 : defeatedKnight ? 7 : 8;
+      this.showAnnouncement(defeatedDragon
+        ? '🌌 THE OSSUARY SOVEREIGN HAS FALLEN!'
+        : defeatedDemon
+          ? '🔥 THE HELLBOUND DEMON HAS FALLEN!'
+          : defeatedKnight ? '⚔️ THE CURSED KNIGHT IS UNDONE!' : '👑 THE ANCIENT FOREST GUARDIAN HAS BEEN FELLED!');
+      this.feel.slow(defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6, defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
+      this.feel.shake(defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
+      const rewardIds = defeatedDragon
+        ? ['dragonbone', 'meteor_shard', 'nebula_crystal', 'crystal', 'life_crystal', 'mana_crystal']
+        : defeatedDemon
+          ? ['hellstone', 'obsidian_block', 'demon_soul', 'life_crystal', 'mana_crystal']
+          : defeatedKnight
+            ? ['crystal', 'diamond', 'gold_ore', 'fallen_star', 'life_crystal', 'mana_crystal']
+            : ['gold_ore', 'iron_ore', 'crystal', 'diamond', 'fallen_star', 'life_crystal', 'mana_crystal'];
+      const bagCount = defeatedDragon ? 18 : defeatedDemon ? 12 : defeatedKnight ? 7 : 8;
       for (let i = 0; i < bagCount; i++) {
-        this.drops.push(new DropItem(this.boss.x + i * 10 - 40, this.boss.y, rewardIds[i % rewardIds.length], defeatedDemon ? 3 : 2));
+        this.drops.push(new DropItem(this.boss.x + i * 10 - 40, this.boss.y, rewardIds[i % rewardIds.length],
+          defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
       this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-        defeatedDemon ? 'demon_trophy' : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+        defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy' : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
       if (defeatedDemon) this.drops.push(new DropItem(this.boss.x + 12, this.boss.y - 20, 'inferno_brand', 1));
+      // The Sovereign drops its own gear: the apex weapon, the wings that let
+      // you fly, and the Voidscale plate itself. The forge recipe stays as a
+      // backup so a lost piece can be rebuilt from the trophy.
+      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'void_star_blade', 1));
+      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 18, 'dragon_wings', 1));
+      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 2, this.boss.y - 34, 'voidscale_armor', 1));
+      if (defeatedDragon) this.onDragonDefeated();
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
-      if (defeatedDemon) {
+      if (defeatedDragon) {
+        if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
+        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings and Voidscale plate fell with it. The rift home is still open — and the arena is full of treasure.';
+      } else if (defeatedDemon) {
         if (vTitle) vTitle.textContent = '🔥 THE HELLBOUND DEMON IS UNDONE!';
         if (vLead) vLead.textContent = 'The infernal king has fallen. The Underworld is finally quiet... for now.';
       } else if (defeatedKnight) {
@@ -3727,9 +4199,10 @@ this.player.dodgeTime = 0;
 
       // Arcane motes drift off every boss — cheap, constant, very cool.
       if (Math.random() < 0.5) {
-        const moteColor = this.boss.kind === 'demon' ? (this.boss.phase === 3 ? '#f43f5e' : '#fb923c') : this.boss.kind === 'knight'
-          ? (this.boss.phase === 2 ? '#c084fc' : '#818cf8')
-          : (this.boss.enraged ? '#fde047' : '#4ade80');
+        const moteColor = this.boss.kind === 'dragon' ? (this.boss.phase === 3 ? '#fde047' : this.boss.phase === 2 ? '#c084fc' : '#a5f3fc')
+          : this.boss.kind === 'demon' ? (this.boss.phase === 3 ? '#f43f5e' : '#fb923c') : this.boss.kind === 'knight'
+            ? (this.boss.phase === 2 ? '#c084fc' : '#818cf8')
+            : (this.boss.enraged ? '#fde047' : '#4ade80');
         this.particles.addParticle(
           this.boss.x + Math.random() * this.boss.width,
           this.boss.y + Math.random() * this.boss.height,
@@ -3743,8 +4216,16 @@ this.player.dodgeTime = 0;
       const pMidY = this.player.y + this.player.height / 2;
       const bMidX = this.boss.x + this.boss.width / 2;
       const bMidY = this.boss.y + this.boss.height / 2;
-      if (Math.hypot(pMidX - bMidX, pMidY - bMidY) < (this.player.width + this.boss.width) / 2) {
-        const touchDamage = this.boss.kind === 'demon' ? [45, 60, 75][this.boss.phase - 1] : this.boss.phase === 1 ? 25 : 35;
+      // The Sovereign is a nineteen-piece serpent, so it is asked for its own
+      // hit test instead of trusting one circle around the head — otherwise its
+      // tail passes straight through you.
+      const touching = typeof this.boss.overlapsPlayer === 'function'
+        ? this.boss.overlapsPlayer(this.player)
+        : Math.hypot(pMidX - bMidX, pMidY - bMidY) < (this.player.width + this.boss.width) / 2;
+      if (touching) {
+        const touchDamage = this.boss.kind === 'demon' ? [45, 60, 75][this.boss.phase - 1]
+          : typeof this.boss.touchDamage === 'function' ? this.boss.touchDamage()
+            : this.boss.phase === 1 ? 25 : 35;
         this.damagePlayer(touchDamage, bMidX, `${this.boss.name} crushed you.`);
       }
 
@@ -3979,6 +4460,14 @@ this.player.dodgeTime = 0;
     this.setClass('cycle-badge', night ? 'badge-night' : 'badge-day');
     this.setText('cycle-badge', night ? 'NIGHT' : 'DAY');
 
+    // Dimension badge: the day/night chip means nothing under a dead sky, so
+    // the Ossuary borrows a marker of its own while the buffers are swapped.
+    const dimBadge = this.hudEl('dimension-badge');
+    if (dimBadge) {
+      const shown = this.world.isInSpace() ? 'dimension-badge' : 'dimension-badge hidden';
+      if (dimBadge.className !== shown) dimBadge.className = shown;
+    }
+
     // Weather badge
     const weatherBadge = this.hudEl('weather-badge');
     if (weatherBadge) {
@@ -4019,6 +4508,20 @@ this.player.dodgeTime = 0;
         armorChip.classList.remove('hidden');
       } else if (!armorChip.classList.contains('hidden')) {
         armorChip.classList.add('hidden');
+      }
+    }
+
+    // Wings chip: the flight tank is the only resource the accessory spends,
+    // so "can I still climb?" needs to be answerable without opening the bag.
+    const wingsChip = this.hudEl('wings-chip');
+    if (wingsChip) {
+      if (p.hasWings) {
+        const pct = Math.max(0, Math.round((p.flightFuel / p.maxFlightFuel) * 100));
+        const label = p.isFlying ? `🪽 FLAPPING ${pct}%` : `🪽 ${pct}%`;
+        if (wingsChip.textContent !== label) wingsChip.textContent = label;
+        wingsChip.classList.remove('hidden');
+      } else if (!wingsChip.classList.contains('hidden')) {
+        wingsChip.classList.add('hidden');
       }
     }
 
@@ -4161,13 +4664,18 @@ this.player.dodgeTime = 0;
     ctx.clearRect(0, 0, vw, vh);
 
     // 1. Terraria Parallax Forest Background & Sun/Moon
-    this.world.renderForestBackground(ctx, this.camera);
+    // The Ossuary paints its own sky: the forest backdrop's cache key has no
+    // notion of dimension, so sharing it once let stale daylight show up in
+    // deep space after a return trip.
+    if (this.world.isInSpace()) this.world.renderSpaceBackground(ctx, this.camera);
+    else this.world.renderForestBackground(ctx, this.camera);
 
     // 2. World Solid & Wall Tiles
     this.world.renderTiles(ctx, this.camera);
 
     // 2b. Ambient weather layer (rain / snow / sand / fog) sits behind entities
-    if (this.weather) this.weather.render(this, ctx, this.camera, 'back');
+    // (there is no weather in the Ossuary — it is a vacuum.)
+    if (this.weather && !this.world.isInSpace()) this.weather.render(this, ctx, this.camera, 'back');
 
     // 3. Drop Items
     for (const d of this.drops) {
@@ -4186,14 +4694,34 @@ this.player.dodgeTime = 0;
       m.render(ctx, this.camera);
     }
 
-    // 6. Boss
+    // 6. Boss — the Sovereign paints its telegraph rings on the arena floor
+    // first, so they read as "where not to stand" instead of covering the body.
     if (this.boss && !this.boss.dead) {
+      if (typeof this.boss.renderTelegraph === 'function') this.boss.renderTelegraph(ctx, this.camera);
       this.boss.render(ctx, this.camera);
     }
 
     // 7. Player & Held Item
     const held = this.inventory[this.player.selectedSlot];
-    this.player.render(ctx, this.camera, held, this.player.activeArmor);
+    // While a rift is swallowing them the wormhole owns the player transform:
+    // it tracks a shrinking scale and a spin rate, and the sprite spiralling
+    // down to nothing is what sells the crossing. Outside a rift this is the
+    // plain, untransformed draw the whole game depends on.
+    const fx = this.wormhole;
+    if (fx && fx.phase !== 'open') {
+      const px = this.player.x + this.player.width / 2 - this.camera.x;
+      const py = this.player.y + this.player.height / 2 - this.camera.y;
+      const scale = Math.max(0.02, Math.min(1, fx.playerScale));
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(Math.sin(fx.playerSpin) * 0.9 * (1 - scale));
+      ctx.scale(scale, scale);
+      ctx.translate(-px, -py);
+      this.player.render(ctx, this.camera, held, this.player.activeArmor);
+      ctx.restore();
+    } else {
+      this.player.render(ctx, this.camera, held, this.player.activeArmor);
+    }
 
     // 8. Projectiles
     for (const p of this.projectiles) {
@@ -4204,11 +4732,15 @@ this.player.dodgeTime = 0;
     // rod tip and the bobber while the camera moves.
     this.renderFishingLine(ctx);
 
+    // 8c. A tearing wormhole is the frontmost thing in the world buffer: it is
+    // swallowing the player, so nothing may draw over the mouth.
+    if (this.wormhole) this.wormhole.render(ctx, this.camera);
+
     // 9. Particles, Slashes & Combat Damage Texts
     this.particles.render(ctx, this.camera);
 
     // 10. Foreground weather (close-up rain streaks + lightning flash)
-    if (this.weather) this.weather.render(this, ctx, this.camera, 'front');
+    if (this.weather && !this.world.isInSpace()) this.weather.render(this, ctx, this.camera, 'front');
 
     // 11. Multiply Dynamic Lighting Pass
     // Reused scratch array — building a fresh one every frame was needless
@@ -4243,6 +4775,11 @@ this.player.dodgeTime = 0;
     out.clearRect(0, 0, this.canvas.width, this.canvas.height);
     out.drawImage(this.pixelCanvas, 0, 0, this.pixelCanvas.width, this.pixelCanvas.height,
       0, 0, this.canvas.width, this.canvas.height);
+    // The wormhole owns the whole screen while it is tearing: this layer is
+    // drawn on the OUTPUT canvas (not the pixel buffer) so the violet pressure
+    // tint and the white-out that hides the dimension swap stay crisp whatever
+    // the render scale happens to be.
+    if (this.wormhole) this.wormhole.renderScreenOverlay(out, this.canvas.width, this.canvas.height);
     if (this.showFps) this.renderFpsBadge();
   }
 

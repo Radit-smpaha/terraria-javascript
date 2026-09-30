@@ -376,6 +376,23 @@ class Projectile {
   }
 }
 
+// Life drained per second once the hunger bar empties. Slow enough to be a
+// warning you can still walk out of, fast enough that ignoring it kills you.
+const STARVATION_DPS = 3;
+
+// How much of an armour piece's raw `defense` stat is subtracted from a hit,
+// on top of its percentage `reduction`. Kept small on purpose: the percentage
+// is meant to drive the tier ladder, and letting the flat stat apply at full
+// strength double-dips. At 1.0, Fallen Star (40% + 28) reduced a 40 HP hit to
+// the 1 HP floor and pinned the top three tiers to 1 HP on every small hit —
+// exactly the runaway power the ladder is supposed to avoid.
+//
+// At 0.15 the flat slice is a light bonus on top of the percentage instead of
+// a second full mitigation. A 14 HP slime bite then steps cleanly through the
+// ladder (12/11/10/8/6/4) with no two tiers collapsing onto the 1 HP floor, and
+// a boss slam still spreads out (68/64/58/50/41/33).
+const ARMOR_FLAT_WEIGHT = 0.15;
+
 class Player {
   constructor(x, y) {
     this.x = x;
@@ -399,8 +416,14 @@ class Player {
     this.hp = 100;
     this.maxMana = 50;
     this.mana = 50;
+    // The un-upgraded caps. Life/Mana Crystals raise maxHp/maxMana on top of
+    // these, and the save only stores how many crystals were ever drunk — so
+    // every load has to re-derive the real caps from these baselines.
+    this.baseMaxHp = 100;
+    this.baseMaxMana = 50;
     this.maxHunger = 100;
     this.hunger = 100;
+    this.starving = false; // true while the empty bar is draining life
     this.maxStamina = 100;
     this.stamina = 100;
 
@@ -433,23 +456,68 @@ class Player {
 
     // Equipment & Inventory
     this.selectedSlot = 0;
-    this.armorDefense = 0;
+    this.armorDefense = 0;    // flat subtraction from each hit
+    this.armorReduction = 0;  // fraction of each hit soaked by the plate
     this.activeArmor = null;
+    this.armorFlash = 0;      // 0..1, drives the "the plate caught it" flash
+    this.lastAbsorbed = 0;    // damage the armour soaked on the last hit
+
+    // ---- Dragon Wings (accessory slot, equipped by the Game each frame) ----
+    this.hasWings = false;      // a grantsFlight accessory is worn
+    this.isFlying = false;      // beating the wings right now (drives FX + HUD)
+    this.flightFuel = 1.6;      // seconds of powered ascent left
+    this.maxFlightFuel = 1.6;
+    this.flightAscent = 4.2;    // px/frame upward cap while flapping
+    this.flightRefill = 1.4;    // fuel/second regained while standing on ground
+    this.activeWings = null;    // the equipped accessory item (for tooltips/HUD)
   }
 
   /**
    * Apply damage. Returns the damage actually taken (0 when blocked by i-frames),
    * so the caller can trigger screen shake / vignette only for real hits.
+   *
+   * Armour mitigation is two-stage: the plate first soaks `armorReduction` as a
+   * fraction of the incoming hit, then the remainder loses a flat slice of
+   * `armorDefense`. Percentage-first is what makes armour scale — the old
+   * flat-only `amount - defense * 0.5` shaved a couple of HP off a big boss
+   * slam and was invisible against a small slime bite, so nothing ever "felt"
+   * like it was working.
+   *
+   * The flat slice is deliberately weighted well below the raw defense stat.
+   * Subtracting defense in full on top of the percentage double-dips: Fallen
+   * Star (40% + 28) turned a 40 HP hit into the 1 HP floor and pinned the top
+   * three tiers to 1 HP on every small hit, which is exactly the runaway
+   * power the ladder is supposed to avoid. Weighting it keeps defense
+   * meaningful (and keeps the Ironskin/Well Fed bonuses worth having) while
+   * leaving the percentage in charge of the tier ordering.
+   *
+   * A 1 HP floor is kept regardless: no tier, not even Fallen Star, can ever
+   * fully negate a hit.
    */
   takeDamage(amount, soundSystem, particleSystem, sourceX = null) {
     if (this.invulnerableTime > 0 || this.isDodgeRolling) return 0;
-    const actualDamage = Math.max(1, Math.floor(amount - this.armorDefense * 0.5));
+    const raw = Math.max(0, amount);
+    const reduction = Math.max(0, Math.min(0.9, this.armorReduction || 0));
+    const absorbed = raw * reduction;
+    const afterArmor = raw - absorbed;
+    const afterFlat = afterArmor - (this.armorDefense || 0) * ARMOR_FLAT_WEIGHT;
+    const actualDamage = Math.max(1, Math.floor(afterFlat));
+    this.lastAbsorbed = Math.max(0, Math.floor(raw - actualDamage));
+    // Only flash the plate when it actually did something, so unarmoured hits
+    // don't get a shield sparkle they didn't earn.
+    if (this.lastAbsorbed > 0) this.armorFlash = 1;
     this.hp -= actualDamage;
     this.invulnerableTime = 0.6; // i-frames
     if (soundSystem) soundSystem.playPlayerHurt();
     if (particleSystem) {
-      particleSystem.addDamageText(this.x + this.width / 2, this.y, actualDamage, '#ef4444', false);
+      // An armoured hit reports in a shield tint rather than plain blood red.
+      const color = this.lastAbsorbed > 0 ? '#93c5fd' : '#ef4444';
+      particleSystem.addDamageText(this.x + this.width / 2, this.y, actualDamage, color, false);
       particleSystem.bloodBurst(this.x + this.width / 2, this.y + this.height / 2, '#ef4444', 8);
+      // Sparks flying off the plate sell the "the armour caught this" beat.
+      if (this.lastAbsorbed > 0) {
+        particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#bfdbfe', 10);
+      }
     }
 
     // Knock away from the attacker (falls back to "backwards" when unknown).
@@ -536,6 +604,26 @@ class Player {
   }
 
   /**
+   * Starvation damage.
+   *
+   * This used to go through takeDamage(), which was wrong twice over. takeDamage
+   * is a *hit* reaction: it applies hurt knockback (vx/vy), plays the hurt sound
+   * and spawns blood, so an empty stomach physically threw the player around and
+   * screamed at them. On top of that it floors every tick to a minimum of 1 HP
+   * and hands out 0.6s of i-frames, so the real 3 HP/s trickle was silently
+   * rounded *up* to 1 HP per frame (a 60x damage rate) and then throttled back
+   * down by the i-frames it had just granted itself.
+   *
+   * Starving is a bleed, not an attack, so it is applied as a plain HP decrement
+   * with no knockback, no sound and no i-frames. The Game's death check still
+   * picks the player up when this reaches 0, and `starving` is left set so the
+   * death screen can name starvation as the cause.
+   */
+  applyStarvation(dt) {
+    this.hp = Math.max(0, this.hp - dt * STARVATION_DPS);
+  }
+
+  /**
    * Per-frame player simulation: resources, states, movement and collisions.
    */
   update(dt, input, world, soundSystem, particleSystem) {
@@ -545,7 +633,10 @@ class Player {
     // Hunger drains gently: a full 100-point bar lasts about 20 minutes.
     this.hunger = Math.max(0, this.hunger - dt * 0.0833333333);
     if (this.hunger <= 0) {
-      this.takeDamage(dt * 3, soundSystem, particleSystem);
+      this.starving = true;
+      this.applyStarvation(dt);
+    } else {
+      this.starving = false;
     }
 
     // Coyote time + buffered jumps let the player press jump slightly early/late.
@@ -561,6 +652,11 @@ class Player {
 
     if (this.invulnerableTime > 0) {
       this.invulnerableTime -= dt;
+    }
+
+    // Armour flash decays on its own so renderArmor() can just read it.
+    if (this.armorFlash > 0) {
+      this.armorFlash = Math.max(0, this.armorFlash - dt * 2.5);
     }
 
     // Dodge roll update
@@ -648,6 +744,31 @@ class Player {
     // Gravity
     this.vy += this.gravity;
     if (this.vy > this.terminalVel) this.vy = this.terminalVel;
+
+    // ---- Dragon Wings: hold jump in the air to beat them --------------------
+    // A short tank of powered ascent that only refills with both feet on the
+    // ground, so flight is a resource you spend rather than a hover you keep.
+    // Thrust is frame-based like gravity above, but the tank drains against dt
+    // so the flight time stays identical at any framerate.
+    const wingJumpHeld = input.keys['Space'] || input.keys['KeyW'] || input.keys['ArrowUp'];
+    const wasFlying = this.isFlying;
+    this.isFlying = false;
+    if (this.hasWings && wingJumpHeld && !this.onGround && this.flightFuel > 0) {
+      this.flightFuel = Math.max(0, this.flightFuel - dt);
+      this.vy -= this.gravity * 2.4;
+      if (this.vy < -this.flightAscent) this.vy = -this.flightAscent;
+      this.isFlying = true;
+      if (!wasFlying && soundSystem) soundSystem.playDoubleJump();
+      if (particleSystem && Math.random() < 0.4) {
+        particleSystem.addParticle(
+          this.x + this.width / 2 - this.facing * 4, this.y + this.height,
+          -this.facing * 0.6, 0.8, 'rgba(196, 181, 253, 0.55)', 3, 0.25, 0.01
+        );
+      }
+    }
+    if (this.onGround) {
+      this.flightFuel = Math.min(this.maxFlightFuel, this.flightFuel + dt * this.flightRefill);
+    }
 
     // Wall slide detection
     this.isWallSliding = false;
@@ -791,6 +912,7 @@ class Player {
       const rollProgress = 1 - (this.dodgeTime / this.dodgeDuration);
       ctx.translate(sx + this.width / 2, sy + this.height / 2);
       ctx.rotate(this.facing * rollProgress * Math.PI * 2);
+      if (this.hasWings) this.renderWings(ctx, -this.width / 2, -this.height / 2);
       this.drawPlayerBody(ctx, -this.width / 2, -this.height / 2);
       this.renderArmor(ctx, armorItem, -this.width / 2, -this.height / 2);
     } else {
@@ -799,6 +921,8 @@ class Player {
         ctx.scale(-1, 1);
         ctx.translate(-this.width, 0);
       }
+      // Wings go behind the body so the plate and held item stay readable.
+      if (this.hasWings) this.renderWings(ctx, 0, 0);
       this.drawPlayerBody(ctx, 0, 0);
       this.renderArmor(ctx, armorItem, 0, 0);
 
@@ -808,6 +932,48 @@ class Player {
       }
     }
 
+    ctx.restore();
+  }
+
+  /**
+   * Dragon Wings, drawn behind the player. The flap follows the flight state:
+   * a slow idle sway on the ground, a hard fast beat while the tank is spent
+   * climbing (this.isFlying), and a mid beat when airborne but passive.
+   */
+  renderWings(ctx, ox, oy) {
+    const t = Date.now() * 0.001;
+    const beat = this.isFlying ? Math.sin(t * 26) * 5 + 6
+      : this.onGround ? Math.sin(t * 3) * 1.5
+        : Math.sin(t * 9) * 3;
+    const reach = 15 + beat;
+    const membrane = this.isFlying ? '#8b5cf6' : '#6d28d9';
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    // Upper wing: a swept spike up-and-back from the shoulder.
+    ctx.fillStyle = membrane;
+    ctx.beginPath();
+    ctx.moveTo(ox + 7, oy + 15);
+    ctx.lineTo(ox + 7 - reach, oy + 4 - beat * 0.8);
+    ctx.lineTo(ox + 7 - reach * 0.45, oy + 17);
+    ctx.closePath();
+    ctx.fill();
+    // Lower wing: the long trailing membrane that reads as "dragon".
+    ctx.fillStyle = this.isFlying ? '#7c3aed' : '#5b21b6';
+    ctx.beginPath();
+    ctx.moveTo(ox + 7, oy + 18);
+    ctx.lineTo(ox + 7 - reach * 1.15, oy + 24 + beat);
+    ctx.lineTo(ox + 7 - reach * 0.5, oy + 32 + beat * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    // Bone fingers keep it from reading as a flat purple triangle.
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.75)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ox + 7, oy + 15);
+    ctx.lineTo(ox + 7 - reach, oy + 4 - beat * 0.8);
+    ctx.moveTo(ox + 7, oy + 18);
+    ctx.lineTo(ox + 7 - reach * 1.15, oy + 24 + beat);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -861,12 +1027,21 @@ class Player {
       diamond_armor: ['#67e8f9', '#155e75'],
       crystal_armor: ['#1e3a8a', '#0f172a'],
       rainbow_armor: ['#f0abfc', '#3730a3'],
-      fallen_star_armor: ['#fef3c7', '#78350f']
+      fallen_star_armor: ['#fef3c7', '#78350f'],
+      demon_armor: ['#f87171', '#450a0a']
     };
     const armorColors = colors[armorItem.id];
     if (!armorColors) return;
 
     ctx.save();
+    // A hit that the plate soaked sets armorFlash to 1; it decays over ~0.4s.
+    // This is the main reason armour "feels" like it works — a real 8% cut is
+    // only a couple of HP, which is invisible without a visible reaction.
+    const flash = Math.max(0, Math.min(1, this.armorFlash || 0));
+    if (flash > 0) {
+      ctx.shadowColor = armorColors[0];
+      ctx.shadowBlur = 14 * flash;
+    }
     ctx.fillStyle = armorColors[0];
     ctx.fillRect(ox + 2, oy + 2, 14, 6);
     ctx.fillRect(ox + 2, oy + 14, 14, 11);
@@ -878,6 +1053,15 @@ class Player {
     ctx.fillStyle = '#f8fafc';
     ctx.globalAlpha = 0.55;
     ctx.fillRect(ox + 4, oy + 15, 2, 6);
+    // White-hot wash across the whole plate on impact.
+    if (flash > 0) {
+      ctx.globalAlpha = 0.75 * flash;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(ox + 2, oy + 2, 14, 6);
+      ctx.fillRect(ox + 2, oy + 14, 14, 11);
+      ctx.fillRect(ox, oy + 15, 4, 7);
+      ctx.fillRect(ox + 14, oy + 15, 4, 7);
+    }
     ctx.restore();
   }
 
@@ -990,6 +1174,14 @@ class Monster {
     this.facing = 1;
     this.dead = false;
     this.lightRadius = 0;
+    // ---- Status effects ----
+    // `poisonTime` is seconds of Hellfire Venom remaining; `poisonTick` is the
+    // countdown to the next damage-over-time tick. Stacking refreshes the
+    // duration and takes the stronger of the two intensities rather than
+    // adding, so repeated hits from a fast weapon can't runaway-scale a mob.
+    this.poisonTime = 0;
+    this.poisonTick = 0;
+    this.poisonDps = 0;
 
     if (type === 'zombie') {
       this.width = 18;
@@ -1189,6 +1381,53 @@ class Monster {
     return dealt;
   }
 
+  /**
+   * Apply Hellfire Venom (poison): damage over time for a few seconds.
+   *
+   * Re-applying refreshes the duration and keeps the STRONGER intensity rather
+   * than stacking additively. The Hellstone Greatblade swings roughly three
+   * times a second, so an additive stack would multiply a single mob's damage
+   * by an unbounded amount within a couple of seconds.
+   */
+  applyPoison(duration, dps, particleSystem) {
+    if (this.dead) return false;
+    this.poisonTime = Math.max(this.poisonTime, duration);
+    this.poisonDps = Math.max(this.poisonDps, dps);
+    // Snap the next tick close so the effect reads immediately instead of after
+    // a full interval of the victim apparently being unaffected.
+    if (this.poisonTick <= 0) this.poisonTick = 0.5;
+    if (particleSystem) {
+      particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#84cc16', 6);
+    }
+    return true;
+  }
+
+  /**
+   * Tick poison damage over time. Returns the damage dealt this frame so the
+   * caller can credit it to stats and to the kill that ends the mob.
+   */
+  tickPoison(dt, particleSystem) {
+    if (this.dead || this.poisonTime <= 0) return 0;
+    this.poisonTime = Math.max(0, this.poisonTime - dt);
+    this.poisonTick -= dt;
+    if (this.poisonTick > 0) return 0;
+
+    this.poisonTick = 0.5;
+    // Fractional damage is carried, not rounded away: a 6 dps venom would
+    // otherwise floor to 3 per tick and quietly halve itself.
+    const dealt = Math.max(1, Math.round(this.poisonDps * 0.5));
+    this.hp -= dealt;
+    this.hitFlash = Math.max(this.hitFlash, 0.06);
+    if (particleSystem) {
+      particleSystem.addDamageText(this.x + this.width / 2, this.y, dealt, '#84cc16', false);
+    }
+    // Expire the intensity with the duration so a re-poisoned mob always starts
+    // from the fresh weapon's value rather than a stale stronger one.
+    if (this.poisonTime <= 0) this.poisonDps = 0;
+    if (this.hp <= 0) this.die(particleSystem);
+    return dealt;
+  }
+
   update(dt, player, world) {
     if (this.hurtCooldown > 0) this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
     if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
@@ -1374,6 +1613,28 @@ class Monster {
   render(ctx, camera) {
     const sx = this.x - camera.x;
     const sy = this.y - camera.y;
+    // Hellfire Venom tell: a sickly green wash over the body that fades as the
+    // poison runs down, so a poisoned mob is identifiable at a glance and the
+    // player can see the effect wearing off instead of guessing.
+    if (this.poisonTime > 0) {
+      const fade = Math.max(0, Math.min(1, this.poisonTime / 1.2));
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.16 + fade * 0.26;
+      ctx.fillStyle = '#84cc16';
+      ctx.fillRect(sx - 2, sy - 2, this.width + 4, this.height + 4);
+      ctx.globalCompositeOperation = 'source-over';
+      // A few rising motes make it read as an active status, not a colour swap.
+      ctx.globalAlpha = 0.3 + fade * 0.5;
+      ctx.fillStyle = '#a3e635';
+      for (let i = 0; i < 3; i++) {
+        const t = (this.animT || 0) * 1.4 + i * 2.1;
+        const px = sx + 4 + ((i * 5 + Math.sin(t) * 2) % Math.max(1, this.width - 8));
+        const py = sy + this.height - ((t * 9) % (this.height + 6));
+        ctx.fillRect(px, py, 2, 2);
+      }
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.translate(sx, sy);

@@ -147,6 +147,28 @@ canvas#glowCanvas {
 
 .weather-badge.hidden { display: none; }
 
+/* Dimension chip: only ever visible inside the Space Dimension. */
+.dimension-badge {
+  font-size: 10px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(12, 2, 32, 0.9);
+  border: 1px solid #a78bfa;
+  color: #ddd6fe;
+  white-space: nowrap;
+  animation: ossuary-pulse 2.4s infinite ease-in-out;
+}
+
+.dimension-badge.hidden { display: none; }
+
+@keyframes ossuary-pulse {
+  0%,
+  100% { box-shadow: 0 0 0 rgba(167, 139, 250, 0); }
+
+  50% { box-shadow: 0 0 12px rgba(167, 139, 250, 0.85); }
+}
+
 .weather-rain   { color: #7dd3fc; }
 .weather-storm  { color: #c084fc; animation: pulse-night 0.9s infinite ease-in-out; }
 .weather-blizzard { color: #e0f2fe; }
@@ -1673,6 +1695,7 @@ kbd {
 .clock-display { gap: 7px; font-size: 17px; }
 .badge-day, .badge-night { font-size: 10px; padding: 2px 5px; }
 .weather-badge { font-size: 8px; padding: 2px 5px; }
+.dimension-badge { font-size: 8px; padding: 2px 5px; }
 .top-right-status { top: 12px; right: 12px; gap: 5px; }
 .ui-btn { padding: 5px 9px; font-size: 8px; border-width: 2px; }
 .right-hud-column { top: 48px; right: 12px; gap: 6px; }

@@ -817,7 +817,8 @@ const ITEM_TYPE_LABELS = {
   ammo: 'Ammunition',
   tool: 'Tool',
   weapon: 'Weapon',
-  armor: 'Armour'
+  armor: 'Armour',
+  accessory: 'Accessory'
 };
 
 const WEAPON_KIND_LABELS = {
@@ -856,6 +857,10 @@ function describeItem(id, game) {
   if (item.manaCost) rows.push({ label: 'Mana', value: `${item.manaCost}` });
   if (item.toolPower) rows.push({ label: 'Pick power', value: `${item.toolPower}` });
   if (item.defense) rows.push({ label: 'Defense', value: `+${item.defense}` });
+  if (item.reduction) {
+    rows.push({ label: 'Damage reduction', value: `${Math.round(item.reduction * 100)}%` });
+  }
+  if (item.grantsFlight) rows.push({ label: 'Flight', value: 'Hold JUMP in the air to fly' });
   if (item.heal) rows.push({ label: 'Restores', value: `+${item.heal} life` });
   if (item.hunger) rows.push({ label: 'Fills', value: `+${item.hunger} hunger` });
   if (item.mana) rows.push({ label: 'Restores', value: `+${item.mana} mana` });
@@ -866,6 +871,10 @@ function describeItem(id, game) {
     if (def) rows.push({ label: 'Grants', value: `${def.icon} ${def.name} (${Math.round(item.buffTime || 0)}s)` });
   }
   if (item.lifesteal) rows.push({ label: 'Life steal', value: `${Math.round(item.lifesteal * 100)}% of damage dealt` });
+  if (item.poisonChance) {
+    rows.push({ label: 'Hellfire Venom', value: `${Math.round(item.poisonChance * 100)}% chance per hit` });
+    if (item.poisonDps) rows.push({ label: 'Venom', value: `${item.poisonDps}/s for ${item.poisonDuration}s` });
+  }
   if (item.radius) rows.push({ label: 'Blast', value: `${item.radius}px` });
   if (item.type === 'ammo') rows.push({ label: 'Used by', value: 'Bows' });
   if (item.stackMax > 1) rows.push({ label: 'Stacks to', value: `${item.stackMax}` });
