@@ -180,27 +180,59 @@ const NEW_ITEMS = {
   },
   void_star_blade: {
     id: 'void_star_blade', name: 'Voidstar Cleaver', type: 'weapon', weaponType: 'melee',
-    // Forged from the Sovereign's own skeleton: the strongest blade in the game,
-    // gated behind the strongest boss. Lifesteal is the reward for standing your
-    // ground in the arena instead of kiting forever.
-    damage: 214, range: 142, useTime: 0.27, critBonus: 0.24, lifesteal: 0.12,
+    // Forged from the Sovereign's own skeleton, gated behind the strongest boss
+    // until the Ossuary plate arrived. The lifesteal used to be 12%, which —
+    // stacked on Voidscale's soak and a Regeneration potion — turned the final
+    // fight into a health bar race the player always won. It is now a reward
+    // for a good hit, not a second life bar.
+    damage: 214, range: 142, useTime: 0.27, critBonus: 0.24, lifesteal: 0.07,
     icon: '🌌', stackMax: 1
   },
   voidscale_armor: {
-    // New apex of the ladder: 46% + 36 defence. Not 48% — at 48% the flat slice
-    // (0.15/point) swallowed a 14 HP slime bite whole and the plate fell through
-    // the 1 HP floor, exactly the mistake Demonplate was pulled back from. 46%
-    // keeps that bite at 2 HP while still beating Demonplate on both axes
-    // (small hit 2 vs 3, boss slam 35 vs 37).
-    id: 'voidscale_armor', name: 'Voidscale Armor', type: 'armor', defense: 36, reduction: 0.46,
+    // Pulled down the ladder from 46% + 36 to 43% + 24. Voidscale used to sit
+    // on top of everything and, with the old Regeneration numbers, made the
+    // Sovereign's arena feel survivable by standing still. It is still a
+    // superb plate — it is just no longer the answer to every fight, and
+    // Demonplate now soaks more of both a small bite (3 HP vs 4) and a boss
+    // slam (37 vs 39) than it does.
+    id: 'voidscale_armor', name: 'Voidscale Armor', type: 'armor', defense: 24, reduction: 0.43,
     icon: '🌌', stackMax: 1
+  },
+  // ---- The Ossuary's own gear: what the Sovereign actually drops ----------
+  ossuary_armor: {
+    // The new apex, and deliberately only one step above Demonplate. 47% + 34
+    // leaves a 14 HP slime bite at 2 HP rather than the 1 HP floor: the flat
+    // defense slice is weighted at 0.15/point precisely so no plate can ever
+    // negate a hit outright. Best in the game, not a win button.
+    id: 'ossuary_armor', name: 'Skeletal Wyrmplate', type: 'armor', defense: 34, reduction: 0.47,
+    icon: '💀', stackMax: 1
+  },
+  ossuary_blade: {
+    // The Sovereign's fused ribs, torn out and honed. Highest raw damage in
+    // the game and a slightly faster swing than the Cleaver — but far less
+    // crit and far less lifesteal, so it does not also solve the survivability
+    // problem the Cleaver + Voidscale + Regeneration combo used to.
+    id: 'ossuary_blade', name: "Sovereign's Fang", type: 'weapon', weaponType: 'melee',
+    damage: 248, range: 150, useTime: 0.25, critBonus: 0.16, lifesteal: 0.05,
+    icon: '🦴', stackMax: 1
+  },
+  angel_wings: {
+    // The craftable flight tier: thirty seconds of powered ascent, then the
+    // wings clamp shut for thirty seconds. Reachable before the Sovereign
+    // (wool, crystal, gold, fallen stars), so the sky is not boss-gated.
+    id: 'angel_wings', name: 'Angel Wings', type: 'accessory', grantsFlight: true,
+    feathered: true, flightTime: 30, flightCooldown: 30,
+    icon: '🕊️', stackMax: 1
   },
   dragon_wings: {
     // The Sovereign's own wings. They live in the accessory slot — NOT the
     // armour slot — so the plate and the wings can be worn together. Deliberately
     // no defense/reduction: the flat slice would drag the apex tier back onto
     // the 1 HP floor the ladder was tuned away from, and flight is the stat.
+    // Three minutes of powered ascent is the entire game's worth of sky; the
+    // thirty second cooldown afterwards is what keeps that from being boring.
     id: 'dragon_wings', name: 'Dragon Wings', type: 'accessory', grantsFlight: true,
+    flightTime: 180, flightCooldown: 30,
     icon: '🪽', stackMax: 1
   },
   // ---- Fishing ----
@@ -250,7 +282,12 @@ const NEW_ITEMS = {
     icon: '🌈', stackMax: 1
   },
   fallen_star_armor: {
-    id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 28, reduction: 0.40,
+    // Defence trimmed 28 -> 22 when the Ossuary plate joined the ladder. The
+    // small-hit ladder has to stay strictly monotonic in whole HP (there are
+    // only ~7 integer steps to share between nine plates), and a nerfed
+    // Voidscale landing at 4 HP on a slime bite meant this tier had to move one
+    // step down to keep every plate a distinct rung.
+    id: 'fallen_star_armor', name: 'Fallen Star Armor', type: 'armor', defense: 22, reduction: 0.40,
     icon: '🌟', stackMax: 1
   },
   demon_armor: {
@@ -280,14 +317,15 @@ Object.assign(ITEMS, NEW_ITEMS);
 // armour still lets most of a big hit through.
 // ============================================================
 const ARMOR_TIERS = [
-  'voidscale_armor',    // 1st - 46%  (forged from the Ossuary Sovereign)
+  'ossuary_armor',      // 1st - 47%  (pried off the Ossuary Sovereign itself)
   'demon_armor',        // 2nd - 44%  (forged from the Demon himself)
-  'fallen_star_armor',  // 3rd - 40%
-  'rainbow_armor',      // 4th - 32%
-  'crystal_armor',      // 5th - 25%
-  'diamond_armor',      // 6th - 18%
-  'iron_armor',         // 7th - 12%
-  'gold_armor',         // 8th - 8%
+  'voidscale_armor',    // 3rd - 43% at less defence (nerfed: see the item)
+  'fallen_star_armor',  // 4th - 40%
+  'rainbow_armor',      // 5th - 32%
+  'crystal_armor',      // 6th - 25%
+  'diamond_armor',      // 7th - 18%
+  'iron_armor',         // 8th - 12%
+  'gold_armor',         // 9th - 8%
   'anglers_charm'       // accessory - 4%
 ];
 
@@ -528,7 +566,7 @@ const RECIPES = [
       { id: 'hellstone', count: 25 }, { id: 'obsidian_block', count: 12 },
       { id: 'demon_soul', count: 8 }, { id: 'castle_brick', count: 10 }
     ],
-    name: 'Demonplate Armor (48% damage reduction)'
+    name: 'Demonplate Armor (44% damage reduction)'
   },
   // ---- Space dimension recipes -------------------------------------------------
   // The beacon is the gateway to the Ossuary and is deliberately priced in
@@ -553,7 +591,7 @@ const RECIPES = [
       { id: 'dragonbone', count: 14 }, { id: 'meteor_shard', count: 10 },
       { id: 'nebula_crystal', count: 6 }
     ],
-    name: 'Voidstar Cleaver (214 damage, 12% lifesteal)'
+    name: 'Voidstar Cleaver (214 damage, 7% lifesteal)'
   },
   {
     result: { id: 'voidscale_armor', count: 1 },
@@ -561,7 +599,39 @@ const RECIPES = [
       { id: 'dragon_trophy', count: 1 }, { id: 'dragonbone', count: 24 },
       { id: 'nebula_crystal', count: 12 }, { id: 'meteor_shard', count: 16 }
     ],
-    name: 'Voidscale Armor (48% damage reduction)'
+    name: 'Voidscale Armor (43% damage reduction)'
+  },
+  // ---- The Sovereign's own gear ------------------------------------------------
+  // The dragon hands these over when it dies; the recipes are the backup, for a
+  // plate or a blade lost to a bad respawn. Both are priced in the trophy so
+  // nothing here is obtainable without winning the fight first.
+  {
+    result: { id: 'ossuary_armor', count: 1 },
+    materials: [
+      { id: 'dragon_trophy', count: 1 }, { id: 'dragonbone', count: 34 },
+      { id: 'nebula_crystal', count: 16 }, { id: 'meteor_shard', count: 20 }
+    ],
+    name: 'Skeletal Wyrmplate (47% damage reduction)'
+  },
+  {
+    result: { id: 'ossuary_blade', count: 1 },
+    materials: [
+      { id: 'dragonbone', count: 26 }, { id: 'nebula_crystal', count: 12 },
+      { id: 'meteor_shard', count: 16 }
+    ],
+    name: "Sovereign's Fang (248 damage, 5% lifesteal)"
+  },
+  // ---- Flight -----------------------------------------------------------------
+  // Angel Wings are the pre-boss flight tier: everything on this list is
+  // farmable in the overworld (sheep, caves, gold veins, night sky), so the
+  // sky is open to anyone willing to gather. Thirty seconds up, thirty back.
+  {
+    result: { id: 'angel_wings', count: 1 },
+    materials: [
+      { id: 'wool', count: 12 }, { id: 'crystal', count: 8 },
+      { id: 'gold_ore', count: 6 }, { id: 'fallen_star', count: 4 }
+    ],
+    name: 'Angel Wings (30s flight, 30s cooldown)'
   }
 ];
 
@@ -734,6 +804,9 @@ class Game {
     this.riftUses = 0;           // rifts opened so far — later ones tear in faster
     this.dragonHP = null;        // Sovereign's damaged HP, kept across a death/retreat
     this.riftReturnDelay = 0;    // beats until a post-death re-entry fires
+    // Seconds of "you were just hit" during which no regeneration runs.
+    this.regenLock = 0;
+    this._wingsLocked = false;   // so the wings-recharged toast fires once
     this.bedNagTimer = 0; // throttles "can't sleep" toasts while mouse is held
     this.undergroundTime = 0;
     this.nightAnnounced = false;
@@ -2128,13 +2201,19 @@ class Game {
     this.renderInventoryGrid();
   }
 
-  /** Accessory slot (Dragon Wings). Deliberately separate from the plate. */
+  /** Accessory slot (wings). Deliberately separate from the plate. */
   equipAccessory(id) {
     if (!ITEMS[id] || ITEMS[id].type !== 'accessory' || this.countItem(id) <= 0) return;
     this.equippedAccessoryId = id;
-    this.player.activeWings = ITEMS[id];
-    this.player.hasWings = ITEMS[id].grantsFlight === true;
-    this.showToast(`🪽 Equipped ${ITEMS[id].name} — hold JUMP in the air to fly`);
+    // setWings sizes the flight tank and the cooldown off the item and hands
+    // back a full tank for the new pair, so swapping Angel -> Dragon never
+    // leaves you holding an empty tank you did not spend.
+    this.player.setWings(ITEMS[id]);
+    const wing = ITEMS[id];
+    const detail = wing.grantsFlight
+      ? ` — ${Math.round(wing.flightTime || 0)}s of flight, then ${Math.round(wing.flightCooldown || 0)}s to recharge`
+      : '';
+    this.showToast(`🪽 Equipped ${wing.name}${detail}`);
     this.renderHotbarUI();
     this.renderInventoryGrid();
   }
@@ -2317,6 +2396,8 @@ class Game {
   damagePlayer(amount, sourceX, cause) {
     const taken = this.player.takeDamage(amount, this.sound, this.particles, sourceX);
     if (taken <= 0) return 0;
+    // Any hit interrupts regeneration for four seconds. See updatePlayer.
+    this.regenLock = 4;
     this.stats.damageTaken += taken;
     this.feel.hurt(Math.min(0.85, 0.32 + taken / 60));
     this.feel.shake(0.22 + Math.min(0.3, taken / 90));
@@ -3718,6 +3799,12 @@ class Game {
     this.player.vy = 0;
     this.player.hp = this.player.maxHp;
     this.player.mana = this.player.maxMana;
+    // Death also resets the wings and the regen lockout: you should never
+    // respawn into a cooldown you did not spend in this life.
+    this.player.wingsUsed = null;
+    this.player.setWings(this.equippedAccessoryId ? ITEMS[this.equippedAccessoryId] : null);
+    this._wingsLocked = false;
+    this.regenLock = 0;
     this.player.stamina = this.player.maxStamina;
     this.isDead = false;
 this.player.invulnerableTime = 1.0;
@@ -3810,9 +3897,19 @@ this.player.dodgeTime = 0;
       this.equippedAccessoryId = null;
     }
     const wornAccessory = this.equippedAccessoryId ? ITEMS[this.equippedAccessoryId] : null;
-    this.player.activeWings = wornAccessory;
-    this.player.hasWings = !!(wornAccessory && wornAccessory.grantsFlight);
-    if (!this.player.hasWings) this.player.isFlying = false;
+    this.player.setWings(wornAccessory);
+
+    // Tell the player ONCE when the wings clamp shut, and once more when they
+    // re-arm — a toast per frame would be unreadable.
+    if (this.player.flightCooldown > 0) {
+      if (!this._wingsLocked) {
+        this._wingsLocked = true;
+        this.showToast(`🪽 ${wornAccessory ? wornAccessory.name : 'Wings'} spent — recharging for ${Math.ceil(this.player.flightCooldown)}s`);
+      }
+    } else if (this._wingsLocked) {
+      this._wingsLocked = false;
+      this.showToast('🪽 Wings recharged — hold JUMP in the air to fly');
+    }
 
     // Percentage soak is the main effect; flat defense and the Ironskin /
     // Well Fed bonuses stack additively on top of it.
@@ -3824,10 +3921,17 @@ this.player.dodgeTime = 0;
     // Swiftness and similar buffs feed straight into movement speed.
     this.player.speedMultiplier = this.buffs.multiplier('speed');
 
-    // Regeneration buffs tick life/mana back up outside of combat.
+    // Regeneration. This used to run flat-out all the time, which — with the
+    // old 1.5 HP/s and a Voidscale plate soaking most of a hit — meant the
+    // Sovereign could out-damage nothing and the arena could be won by
+    // standing in the middle of it. Regen now pauses for four seconds after
+    // any hit, so it is downtime recovery, not a second health bar.
+    if (this.regenLock > 0) this.regenLock = Math.max(0, this.regenLock - dt);
     const regenHp = this.buffs.bonus('regenHp');
     const regenMana = this.buffs.bonus('regenMana');
-    if (regenHp > 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + dt * regenHp);
+    if (regenHp > 0 && this.regenLock <= 0) {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + dt * regenHp);
+    }
     if (regenMana > 0) this.player.mana = Math.min(this.player.maxMana, this.player.mana + dt * regenMana);
 
     // Fishing resolves before ordinary movement so a bite is never eaten by
@@ -4163,12 +4267,16 @@ this.player.dodgeTime = 0;
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'void_star_blade', 1));
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 18, 'dragon_wings', 1));
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 2, this.boss.y - 34, 'voidscale_armor', 1));
+      // Its own plate and its own fang: the apex gear, scattered with the rest
+      // of its skeleton. A 100,000 HP fight should not end in one item.
+      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x - 30, this.boss.y - 40, 'ossuary_armor', 1));
+      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 28, this.boss.y - 8, 'ossuary_blade', 1));
       if (defeatedDragon) this.onDragonDefeated();
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
       if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
-        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings and Voidscale plate fell with it. The rift home is still open — and the arena is full of treasure.';
+        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it. The rift home is still open — and the arena is full of treasure.';
       } else if (defeatedDemon) {
         if (vTitle) vTitle.textContent = '🔥 THE HELLBOUND DEMON IS UNDONE!';
         if (vLead) vLead.textContent = 'The infernal king has fallen. The Underworld is finally quiet... for now.';
@@ -4512,12 +4620,19 @@ this.player.dodgeTime = 0;
     }
 
     // Wings chip: the flight tank is the only resource the accessory spends,
-    // so "can I still climb?" needs to be answerable without opening the bag.
+    // so "can I still climb?" has to be answerable without opening the bag —
+    // and so does "how long until I can?", which is the cooldown half.
     const wingsChip = this.hudEl('wings-chip');
     if (wingsChip) {
       if (p.hasWings) {
-        const pct = Math.max(0, Math.round((p.flightFuel / p.maxFlightFuel) * 100));
-        const label = p.isFlying ? `🪽 FLAPPING ${pct}%` : `🪽 ${pct}%`;
+        let label;
+        if (p.flightCooldown > 0) {
+          label = `🪽 RECHARGE ${Math.ceil(p.flightCooldown)}s`;
+        } else {
+          const pct = Math.max(0, Math.round((p.flightFuel / Math.max(0.1, p.maxFlightFuel)) * 100));
+          const secs = Math.ceil(p.flightFuel);
+          label = p.isFlying ? `🪽 FLAPPING ${pct}% · ${secs}s` : `🪽 ${pct}% · ${secs}s`;
+        }
         if (wingsChip.textContent !== label) wingsChip.textContent = label;
         wingsChip.classList.remove('hidden');
       } else if (!wingsChip.classList.contains('hidden')) {

@@ -67,13 +67,25 @@ World.prototype.isInSpace = function() {
 };
 
 /**
- * Carve the arena the final fight happens in.
+ * Carve the arena the final fight happens in — the Ossuary in the sky.
  *
- * Shape: a wide rune-walled bowl with an open top, three star-platform tiers
- * for dodging, a couple of bone piles for cover, and asteroid islands drifting
- * above it. Deliberately generous (100 tiles wide) so a 3-phase dragon that
- * dashes, rains meteors and sweeps beams is actually dodgeable — a cramped
- * arena is what makes bullet-hell bosses unfair rather than hard.
+ * Two rules make this arena work, and both exist because of problems players
+ * could actually feel:
+ *
+ *   1. NOTHING SOLID IS EVER GENERATED INSIDE THE FLIGHT BOX (the rows between
+ *      the floor and the ceiling). Asteroid islands hang ABOVE the ceiling or
+ *      OUTSIDE the rune flanks, where they read as scenery but the Sovereign
+ *      can never fly into them. Islands used to drift straight through the
+ *      middle of the arena, which is why the dragon snagged and stalled.
+ *   2. NO WALL LAYER BEHIND THE FIGHT. The wall layer is opaque and is painted
+ *      over the star backdrop, so filling it turned "deep space" into a dark
+ *      cave. The sky now shows straight through the arena.
+ *
+ * Everything else is a dodge route: six one-way star tiers in a staggered
+ * herringbone (platforms are air to the dragon, a jump-up for you), bone piles
+ * on the floor for cover, and every mineable seam UNDER the crust so mining the
+ * arena apart can never sprinkle rock into the flight path. The layout is
+ * seeded rather than random, so it reads as designed architecture — twice.
  */
 World.prototype.generateSpaceArena = function() {
   const w = this.width;
@@ -81,83 +93,116 @@ World.prototype.generateSpaceArena = function() {
   this.tiles.fill(TILES.AIR);
   this.walls.fill(0);
 
+  // Deterministic little RNG (xorshift32): a composed arena, and the SAME arena
+  // every time the rift opens, rather than a different cave each trip.
+  let rs = 0x9e3779b9;
+  const rng = () => {
+    rs ^= rs << 13; rs ^= rs >>> 17; rs ^= rs << 5;
+    return (rs >>> 0) / 4294967296;
+  };
+
   const arenaCX = Math.floor(w / 2);
-  const halfW = 50;                       // 100 tiles wide
+  const halfW = 56;                       // 112 tiles of duelling ground
   const floorY = h - 26;                  // arena floor row
-  const left = arenaCX - halfW;
-  const right = arenaCX + halfW;
+  const left = Math.max(3, arenaCX - halfW);
+  const right = Math.min(w - 4, arenaCX + halfW);
+  const span = right - left;
+  const ceilY = floorY - 46;              // ceiling of the fight box
 
-  // Deep nebula haze behind everything: a wall layer gives the room depth
-  // instead of leaving a flat black void behind the tiles.
-  for (let x = left - 14; x <= right + 14; x++) {
-    for (let y = floorY - 46; y <= floorY + 8; y++) {
-      if (x < 0 || x >= w || y < 0 || y >= h) continue;
-      this.walls[y * w + x] = TILES.VOID_STONE;
-    }
-  }
-
-  // ---- The floor: starstone with molten seams and crystal clusters ----
+  // ---- The floor: a starstone crust over a mined-out ore body ----
+  // Every seam sits BELOW the crust on purpose: mining the arena for meteor
+  // shards and nebula crystals is the reward for exploring it, and rock can
+  // never end up standing in the dragon's lane because of it.
   for (let x = left; x <= right; x++) {
-    this.setTile(x, floorY, TILES.STARSTONE);
-    for (let y = floorY + 1; y <= floorY + 5; y++) {
-      const roll = Math.random();
-      const tile = roll < 0.09 ? TILES.METEOR_ORE
-        : roll < 0.15 ? TILES.NEBULA_CRYSTAL
-          : TILES.VOID_STONE;
+    for (let y = floorY; y <= floorY + 9; y++) {
+      const depth = y - floorY;
+      const seam = Math.sin((x - left) * 0.31) + Math.cos(x * 0.11 + depth * 0.9);
+      let tile = TILES.VOID_STONE;
+      if (depth === 0) tile = TILES.STARSTONE;
+      else if (depth === 1) tile = rng() < 0.20 ? TILES.METEOR_ORE : TILES.STARSTONE;
+      else if (seam > 1.5) tile = TILES.METEOR_ORE;
+      else if (seam < -1.55) tile = TILES.NEBULA_CRYSTAL;
+      else if (depth >= 5 && rng() < 0.18) tile = TILES.SOUL_GLASS;
+      else if (rng() < 0.05) tile = TILES.BONE_PILE;
       this.setTile(x, y, tile);
     }
   }
 
   // ---- Rune pillars on both flanks (indestructible; they frame the arena) ----
-  for (const x of [left, right]) {
-    for (let y = floorY - 24; y <= floorY; y++) {
+  // They stand one tile OUTSIDE the boss clamp and their capitals lean away
+  // from the fight, so no rune brick can ever sit in the lane the serpent
+  // flies down. The double-width base is where the player can safely stand.
+  for (const inward of [1, -1]) {
+    const x = inward === 1 ? left : right;
+    for (let y = floorY - 30; y <= floorY; y++) {
       this.setTile(x, y, TILES.SPACE_RUNE);
-      if (y > floorY - 6) this.setTile(x + (x === left ? 1 : -1), y, TILES.SPACE_RUNE);
+      if (y > floorY - 4) this.setTile(x + inward, y, TILES.SPACE_RUNE);
+    }
+    for (let k = 1; k <= 4; k++) {
+      this.setTile(x - inward * k, floorY - 31, TILES.SPACE_RUNE);
+      this.setTile(x - inward * k, floorY - 32, TILES.SPACE_RUNE);
     }
   }
 
-  // ---- Three tiers of star platforms to kite and dodge on ----
-  const tiers = [
-    { y: floorY - 9, x0: left + 8, x1: right - 8, gapEvery: 13 },
-    { y: floorY - 19, x0: left + 16, x1: right - 16, gapEvery: 15 },
-    { y: floorY - 29, x0: left + 24, x1: right - 24, gapEvery: 17 }
+  // ---- The dodge lattice: six one-way tiers in a staggered herringbone ----
+  // Spans are fractions of the arena width, offset tier to tier: wherever you
+  // are standing there is a platform one jump up and a gap to drop through.
+  // They are platforms, which means the dragon reads them as air (see
+  // SkeletonDragonBoss.blocksDragon) while they stay real cover for you.
+  const lattice = [
+    [-6, [[0.05, 0.32], [0.41, 0.59], [0.68, 0.95]]],
+    [-13, [[0.13, 0.38], [0.50, 0.66], [0.77, 0.93]]],
+    [-20, [[0.04, 0.21], [0.30, 0.51], [0.61, 0.82], [0.90, 0.97]]],
+    [-27, [[0.16, 0.36], [0.45, 0.67], [0.76, 0.90]]],
+    [-34, [[0.06, 0.25], [0.37, 0.63], [0.73, 0.94]]],
+    [-41, [[0.26, 0.44], [0.56, 0.74]]]
   ];
-  for (const tier of tiers) {
-    for (let x = tier.x0; x <= tier.x1; x++) {
-      // Punch regular gaps so the tiers are a route, not a ceiling to hide under.
-      if ((x - tier.x0) % tier.gapEvery === 0) continue;
-      this.setTile(x, tier.y, TILES.VOID_PLATFORM);
+  for (const [dy, runs] of lattice) {
+    for (const [a, b] of runs) {
+      const x0 = Math.round(left + a * span);
+      const x1 = Math.round(left + b * span);
+      for (let x = x0; x <= x1; x++) {
+        // Never let a tier touch a flank: the lanes in and out must stay open.
+        if (x <= left + 1 || x >= right - 1) continue;
+        this.setTile(x, floorY + dy, TILES.VOID_PLATFORM);
+      }
     }
   }
 
-  // ---- Cover: bone piles to break line of sight and block charges ----
-  for (let i = 0; i < 10; i++) {
-    const x = Math.floor(left + 10 + Math.random() * (halfW * 2 - 20));
-    for (let k = 0; k < 1 + Math.floor(Math.random() * 2); k++) {
-      this.setTile(x + k, floorY - 1, TILES.BONE_PILE);
-    }
-  }
-
-  // ---- Soul glass panes below the rim, catching the rune light ----
+  // ---- Cover: bone piles along the floor ----
+  // Line-of-sight breaks, something to hide behind during a Grave Ring, and
+  // the dragonbone farm the Sovereign's gear is forged from. They sit on the
+  // crust only — the dragon's floor clamp keeps its skull above them.
   for (let i = 0; i < 16; i++) {
-    const x = Math.floor(left + 6 + Math.random() * (halfW * 2 - 12));
-    const y = floorY + 6 + Math.floor(Math.random() * 6);
-    if (y < h) this.setTile(x, y, TILES.SOUL_GLASS);
+    const x = Math.round(left + 5 + rng() * (span - 10));
+    const stack = 1 + (rng() < 0.3 ? 1 : 0);
+    for (let k = 0; k < stack; k++) this.setTile(x + k, floorY - 1, TILES.BONE_PILE);
   }
 
-  // ---- Drifting asteroid islands above the arena ----
-  for (let i = 0; i < 9; i++) {
-    const cx = Math.floor(left + 6 + Math.random() * (halfW * 2 - 12));
-    const cy = floorY - 40 + Math.floor(Math.random() * 16);
-    const rx = 3 + Math.floor(Math.random() * 5);
-    const ry = 2 + Math.floor(Math.random() * 2);
+  // ---- Drifting asteroid islands, always OUTSIDE the flight box ----
+  // Either above the ceiling (visible when the dragon rears up, and reachable
+  // once you can fly) or beyond the rune flanks. Keeping every one of them out
+  // of the clamp box is the change that stops the Sovereign wedging into rock.
+  for (let i = 0; i < 16; i++) {
+    const overhead = i % 4 !== 3;
+    const cx = overhead
+      ? Math.round(left - 20 + rng() * (span + 40))
+      : (rng() < 0.5
+        ? Math.round(left - 18 - rng() * 14)
+        : Math.round(right + 18 + rng() * 14));
+    const cy = overhead
+      ? ceilY - 6 - Math.round(rng() * 20)
+      : floorY - 4 - Math.round(rng() * 34);
+    const rx = 3 + Math.round(rng() * 5);
+    const ry = 2 + Math.round(rng() * 2);
     for (let y = cy - ry; y <= cy + ry; y++) {
       for (let x = cx - rx; x <= cx + rx; x++) {
         if (x < 1 || x >= w - 1 || y < 1 || y >= h - 1) continue;
         const norm = ((x - cx) ** 2) / (rx ** 2) + ((y - cy) ** 2) / (ry ** 2);
         if (norm > 1) continue;
-        const roll = Math.random();
-        this.setTile(x, y, roll < 0.10 ? TILES.NEBULA_CRYSTAL : roll < 0.18 ? TILES.METEOR_ORE : TILES.ASTEROID);
+        const roll = rng();
+        this.setTile(x, y, roll < 0.12 ? TILES.NEBULA_CRYSTAL
+          : roll < 0.24 ? TILES.METEOR_ORE : TILES.ASTEROID);
       }
     }
   }
@@ -185,7 +230,12 @@ World.prototype.generateSpaceArena = function() {
     left: left + 2,
     right: right - 2,
     floorY,
-    top: floorY - 46,
+    top: ceilY,
+    // Rows the dragon is allowed to occupy. `ceil` and `crust` are the
+    // guaranteed-empty band: the generator promises no solid tile other than
+    // one-way platforms and loose bone piles lives between them.
+    ceil: ceilY,
+    crust: floorY,
     cx: arenaCX,
     gateX,
     gateY: floorY - 3,
@@ -322,6 +372,12 @@ World.prototype.renderSpaceBackground = function(ctx, camera) {
     }
   }
   if (this._spaceBgCanvas) ctx.drawImage(this._spaceBgCanvas, 0, 0);
+
+  // The cached sky only repaints every 1.5s — cheap, but frozen. The things
+  // that should actually MOVE (dust drifting past, a comet falling, stars
+  // twinkling) are painted live on top, so deep space never reads as a
+  // wallpaper the player is standing in front of.
+  this._paintSpaceLive(ctx, w, h, camera, Date.now() * 0.001);
 };
 
 World.prototype._paintSpaceBackdrop = function(target, w, h, camera) {
@@ -330,15 +386,16 @@ World.prototype._paintSpaceBackdrop = function(target, w, h, camera) {
   const ctx = target.getContext && target.getContext('2d');
   if (!ctx) return false;
 
-  // ---- Deep space base ----
-  const base = ctx.createLinearGradient(0, 0, 0, h);
-  base.addColorStop(0, '#04010f');
-  base.addColorStop(0.55, '#0a0524');
-  base.addColorStop(1, '#140a33');
+  // ---- Deep space base: not black. Real sky has colour in it. ----
+  const base = ctx.createLinearGradient(0, 0, w * 0.3, h);
+  base.addColorStop(0, '#02000a');
+  base.addColorStop(0.42, '#080420');
+  base.addColorStop(0.74, '#150a33');
+  base.addColorStop(1, '#22103f');
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, w, h);
 
-  // ---- Nebulae: soft additive blobs, slow parallax so they feel distant ----
+  // ---- Nebulae: soft additive cells with slow parallax so they feel far ----
   const px = camera.x * 0.05;
   const py = camera.y * 0.05;
   ctx.save();
@@ -346,26 +403,86 @@ World.prototype._paintSpaceBackdrop = function(target, w, h, camera) {
   const nebulae = [
     [0.22, 0.28, 0.55, '#4c1d95'], [0.72, 0.18, 0.42, '#0e7490'],
     [0.55, 0.72, 0.60, '#7e22ce'], [0.12, 0.78, 0.38, '#1d4ed8'],
-    [0.88, 0.62, 0.34, '#9d174d']
+    [0.88, 0.62, 0.34, '#9d174d'], [0.40, 0.44, 0.46, '#0f766e']
   ];
   for (let i = 0; i < nebulae.length; i++) {
     const [nx, ny, nr, color] = nebulae[i];
     const cx = ((nx * w - px * (1 + i * 0.35)) % (w + 600) + w + 600) % (w + 600) - 300;
     const cy = ((ny * h - py * (1 + i * 0.25)) % (h + 400) + h + 400) % (h + 400) - 200;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, nr * Math.max(w, h) * 0.7);
+    const rad = nr * Math.max(w, h) * 0.7;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
     grad.addColorStop(0, color);
+    grad.addColorStop(0.45, 'rgba(20,8,48,0.35)');
     grad.addColorStop(1, 'rgba(4,1,15,0)');
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = 0.26;
     ctx.fillStyle = grad;
-    ctx.fillRect(cx - nr * w, cy - nr * h, nr * w * 2, nr * h * 2);
+    ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+
+    // Filaments: thin bright arcs draped across the cell. This is what makes
+    // a nebula look like gas instead of a blurred circle.
+    ctx.globalAlpha = 0.13;
+    ctx.strokeStyle = color;
+    for (let f = 0; f < 7; f++) {
+      const fr = rad * (0.24 + spaceHash(f * 3.7 + i, i * 2.3) * 0.62);
+      const a0 = spaceHash(f * 1.9 + i * 4.1, i * 0.7) * Math.PI * 2;
+      ctx.lineWidth = 2 + spaceHash(f * 5.3, i * 1.7) * 7;
+      ctx.beginPath();
+      ctx.arc(cx, cy, fr, a0, a0 + 0.9 + spaceHash(f * 2.2, i * 3.3) * 1.7);
+      ctx.stroke();
+    }
+  }
+
+  // ---- The Milky Way: a diagonal band of unresolved starlight ----
+  // The single cheapest "this is space" cue there is, and it was missing.
+  const milky = ctx.createLinearGradient(0, h * 0.92, w, h * 0.02);
+  milky.addColorStop(0, 'rgba(99,102,241,0)');
+  milky.addColorStop(0.35, 'rgba(165,180,252,0.16)');
+  milky.addColorStop(0.55, 'rgba(226,232,240,0.20)');
+  milky.addColorStop(0.72, 'rgba(196,181,253,0.13)');
+  milky.addColorStop(1, 'rgba(56,189,248,0)');
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = milky;
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-0.42);
+  ctx.fillRect(-w * 1.2, -h * 0.13, w * 2.4, h * 0.26);
+  ctx.restore();
+
+  // Dust lane: the dark ribbon that cuts the band in half, so it is not just
+  // a glow. Absorbing light is what gives a galaxy its shape.
+  ctx.globalCompositeOperation = 'source-over';
+  const lane = ctx.createLinearGradient(0, h * 0.9, w, h * 0.05);
+  lane.addColorStop(0, 'rgba(2,0,10,0)');
+  lane.addColorStop(0.5, 'rgba(2,0,10,0.55)');
+  lane.addColorStop(1, 'rgba(2,0,10,0)');
+  ctx.fillStyle = lane;
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-0.42);
+  ctx.fillRect(-w * 1.2, -h * 0.035, w * 2.4, h * 0.07);
+  ctx.restore();
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Dense faint stars packed along that band — the unresolved billions.
+  for (let i = 0; i < 520; i++) {
+    const t = spaceHash(i * 1.3, 7.7);
+    const off = (spaceHash(i * 2.9, 3.1) - 0.5) * h * 0.24;
+    const sx = ((t * (w + 400) - camera.x * 0.06) % (w + 400) + w + 400) % (w + 400) - 200;
+    const along = (sx / w - 0.5) * Math.tan(-0.42) * w;
+    const sy = h * 0.5 + along + off - camera.y * 0.05;
+    if (sy < -4 || sy > h + 4) continue;
+    ctx.globalAlpha = 0.16 + spaceHash(i * 4.4, 1.1) * 0.3;
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(sx, sy, 1, 1);
   }
   ctx.restore();
 
-  // ---- Starfield: three parallax layers, brighter and rarer up close ----
+  // ---- Starfield: four parallax layers, brighter and rarer as they come ----
   const layers = [
-    { factor: 0.08, count: 260, size: 1, alpha: 0.5 },
-    { factor: 0.18, count: 150, size: 1.4, alpha: 0.75 },
-    { factor: 0.34, count: 70, size: 2.1, alpha: 1 }
+    { factor: 0.08, count: 320, size: 1, alpha: 0.55 },
+    { factor: 0.18, count: 190, size: 1.4, alpha: 0.8 },
+    { factor: 0.34, count: 95, size: 2, alpha: 1 },
+    { factor: 0.52, count: 34, size: 2.8, alpha: 1 }
   ];
   for (let li = 0; li < layers.length; li++) {
     const layer = layers[li];
@@ -376,15 +493,59 @@ World.prototype._paintSpaceBackdrop = function(target, w, h, camera) {
       const sx = ((hx * w * 1.2 - camera.x * layer.factor) % w + w) % w;
       const sy = ((hy * h * 1.2 - camera.y * layer.factor) % h + h) % h;
       const tintRoll = spaceHash(i * 2.3, li * 4.4);
-      ctx.fillStyle = tintRoll < 0.62 ? '#f8fafc' : tintRoll < 0.8 ? '#bae6fd' : tintRoll < 0.92 ? '#fde68a' : '#f0abfc';
+      ctx.fillStyle = tintRoll < 0.58 ? '#f8fafc' : tintRoll < 0.76 ? '#bae6fd' : tintRoll < 0.9 ? '#fde68a' : '#f0abfc';
       ctx.globalAlpha = layer.alpha * (0.55 + spaceHash(i * 0.9, li * 2.2) * 0.45);
       ctx.fillRect(sx, sy, layer.size, layer.size);
-      // The brightest stars get a tiny cross flare; it reads as real starlight.
-      if (li === 2) {
+      // The bright layers get a cross flare and a halo: point-source
+      // diffraction is what makes a starfield look photographed rather than
+      // sprinkled.
+      if (li >= 2) {
         ctx.globalAlpha *= 0.4;
-        ctx.fillRect(sx - 2, sy + 0.5, 5, 1);
-        ctx.fillRect(sx + 0.5, sy - 2, 1, 5);
+        ctx.fillRect(sx - 2, sy + 0.5, 5 + li, 1);
+        ctx.fillRect(sx + 0.5, sy - 2, 1, 5 + li);
+        if (li === 3) {
+          ctx.globalAlpha *= 0.22;
+          ctx.beginPath();
+          ctx.arc(sx + 0.5, sy + 0.5, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
+    }
+    ctx.restore();
+  }
+
+  // ---- A spiral galaxy, far off in the corner of the sky ----
+  {
+    const galX = w * 0.2 - camera.x * 0.02;
+    const galY = h * 0.16 - camera.y * 0.02;
+    const gr = Math.min(w, h) * 0.11;
+    ctx.save();
+    ctx.translate(galX, galY);
+    ctx.rotate(0.7);
+    ctx.scale(1, 0.38);
+    ctx.globalCompositeOperation = 'lighter';
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, gr);
+    core.addColorStop(0, 'rgba(255,244,214,0.85)');
+    core.addColorStop(0.28, 'rgba(196,181,253,0.32)');
+    core.addColorStop(1, 'rgba(30,27,75,0)');
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, gr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(224,231,255,0.5)';
+    for (let arm = 0; arm < 2; arm++) {
+      ctx.lineWidth = gr * 0.1;
+      ctx.beginPath();
+      for (let s = 0; s <= 40; s++) {
+        const t = s / 40;
+        const a = arm * Math.PI + t * 3.4;
+        const r = gr * (0.18 + t * 0.86);
+        const px2 = Math.cos(a) * r;
+        const py2 = Math.sin(a) * r;
+        if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+      }
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -425,6 +586,43 @@ World.prototype._paintSpaceBackdrop = function(target, w, h, camera) {
     ctx.stroke();
   }
   ctx.restore();
+
+  // ---- A cratered moon in the opposite corner, with a day/night terminator --
+  {
+    const mx = w * 0.12 - camera.x * 0.05;
+    const my = h * 0.72 - camera.y * 0.05;
+    const mr = Math.min(w, h) * 0.075;
+    ctx.save();
+    const moon = ctx.createRadialGradient(mx - mr * 0.4, my - mr * 0.4, mr * 0.1, mx, my, mr);
+    moon.addColorStop(0, '#e2e8f0');
+    moon.addColorStop(0.6, '#94a3b8');
+    moon.addColorStop(1, '#1e293b');
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = moon;
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(51,65,85,0.55)';
+    for (let c = 0; c < 9; c++) {
+      const ca = spaceHash(c * 3.1, 5.5) * Math.PI * 2;
+      const cd = spaceHash(c * 7.3, 2.2) * mr * 0.8;
+      ctx.beginPath();
+      ctx.arc(mx + Math.cos(ca) * cd, my + Math.sin(ca) * cd,
+        mr * (0.06 + spaceHash(c * 1.7, 9.1) * 0.15), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // The terminator: a lit sphere rather than a grey disc.
+    const night = ctx.createLinearGradient(mx - mr, my - mr, mx + mr, my + mr);
+    night.addColorStop(0, 'rgba(2,0,10,0)');
+    night.addColorStop(0.55, 'rgba(2,0,10,0.35)');
+    night.addColorStop(1, 'rgba(2,0,10,0.92)');
+    ctx.fillStyle = night;
+    ctx.fillRect(mx - mr, my - mr, mr * 2, mr * 2);
+    ctx.restore();
+  }
 
   // ---- Aurora ribbons: additive sine bands near the top ----
   ctx.save();
@@ -467,8 +665,78 @@ World.prototype._paintSpaceBackdrop = function(target, w, h, camera) {
     ctx.lineTo(cx + 90, cy - 40);
     ctx.stroke();
   }
-  ctx.restore();
+  ctx.globalCompositeOperation = 'source-over';
   return true;
+};
+
+/**
+ * The live half of the sky: dust drifting past, a handful of twinkling
+ * beacons, and comets that fall on a schedule.
+ *
+ * The cached backdrop only repaints every 1.5 seconds, which is perfect for
+ * nebulae and useless for anything meant to be moving. This layer is small,
+ * cheap and drawn every frame, and it is the difference between "space" and a
+ * photograph of space taped behind the arena.
+ */
+World.prototype._paintSpaceLive = function(ctx, w, h, camera, t) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Dust: fine motes on a fast parallax, so flying left/right has a feel.
+  for (let i = 0; i < 46; i++) {
+    const hx = spaceHash(i * 5.7, 2.9);
+    const hy = spaceHash(i * 8.3, 6.1);
+    const spd = 6 + spaceHash(i * 1.3, 4.4) * 22;
+    const sx = ((hx * w + t * spd - camera.x * 0.8) % w + w) % w;
+    const sy = ((hy * h + Math.sin(t * 0.5 + i) * 14 - camera.y * 0.8) % h + h) % h;
+    ctx.globalAlpha = 0.05 + spaceHash(i * 2.2, 7.3) * 0.12;
+    ctx.fillStyle = '#dbeafe';
+    ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
+
+  // Twinkle: the brightest stars breathing on their own clocks.
+  for (let i = 0; i < 30; i++) {
+    const sx = ((spaceHash(i * 12.7, 3.3) * w - camera.x * 0.34) % w + w) % w;
+    const sy = ((spaceHash(i * 9.1, 8.8) * h - camera.y * 0.34) % h + h) % h;
+    const breathe = 0.5 + 0.5 * Math.sin(t * (1.1 + spaceHash(i * 3.7, 1.9) * 2.4) + i);
+    ctx.globalAlpha = 0.25 + breathe * 0.6;
+    ctx.fillStyle = i % 3 === 0 ? '#bae6fd' : '#f8fafc';
+    const s = 1.5 + breathe * 1.5;
+    ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
+    ctx.globalAlpha *= 0.35;
+    ctx.fillRect(sx - 4, sy - 0.5, 8, 1);
+    ctx.fillRect(sx - 0.5, sy - 4, 1, 8);
+  }
+
+  // Comets: three slots on long unsynchronised periods, so a streak crosses
+  // now and then without the game having to carry any state for it.
+  for (let i = 0; i < 3; i++) {
+    const period = 14 + i * 9;
+    const phase = (t / period + spaceHash(i * 4.4, 6.6)) % 1;
+    if (phase > 0.16) continue;
+    const p = phase / 0.16;
+    const x0 = w * (0.05 + spaceHash(i * 2.7, 9.4) * 0.9);
+    const y0 = h * (0.04 + spaceHash(i * 6.1, 3.7) * 0.5);
+    const cx = x0 + p * w * 0.36;
+    const cy = y0 + p * h * 0.2;
+    const tail = 90 + p * 60;
+    const fade = Math.sin(p * Math.PI);
+    const grad = ctx.createLinearGradient(cx, cy, cx - tail * 0.86, cy - tail * 0.48);
+    grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+    grad.addColorStop(0.35, 'rgba(186,230,253,0.35)');
+    grad.addColorStop(1, 'rgba(147,197,253,0)');
+    ctx.globalAlpha = 0.85 * fade;
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - tail * 0.86, cy - tail * 0.48);
+    ctx.stroke();
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
+  }
+  ctx.restore();
 };
 
 /**
@@ -487,7 +755,10 @@ World.prototype.renderLighting = function(lightCtx, camera, player, entities) {
 
   lightCtx.save();
   lightCtx.globalCompositeOperation = 'source-over';
-  lightCtx.fillStyle = 'rgba(2, 0, 10, 0.55)';
+  // Only a light veil. The old 0.55 crushes the star backdrop into a cave
+  // wall, which is most of why the Ossuary did not read as "space": the sky
+  // was being painted, then immediately dimmed by more than half.
+  lightCtx.fillStyle = 'rgba(3, 1, 14, 0.30)';
   lightCtx.fillRect(0, 0, camera.viewportWidth, camera.viewportHeight);
   lightCtx.globalCompositeOperation = 'destination-out';
   this.carveLightCircle(lightCtx, player.x + player.width / 2 - camera.x,
@@ -937,19 +1208,23 @@ function spawnSpaceProjectile(list, x, y, vx, vy, type, damage, life, lightRadiu
 // stats and the archer's bow are new. `space` marks them so the Game can keep
 // them out of the overworld's loot tables and clean them up when the rift
 // closes behind the player.
-
+//
+// These numbers are the reason the Sovereign's arena stops being a walkover:
+// Voidscale plate and lifesteal used to make the adds free XP. Every species
+// now survives long enough to demand a real swing, hits hard enough to punish
+// standing still, and is scaled AGAIN by the dragon's phase in summonMinions.
 const SKELETON_SPECIES = {
   skeleton_warrior: {
-    name: 'Ossuary Warrior', width: 20, height: 34, hp: 320, speed: 3.0, damage: 48,
-    knockbackResist: 0.30, lightRadius: 55
+    name: 'Ossuary Warrior', width: 20, height: 34, hp: 780, speed: 3.4, damage: 96,
+    knockbackResist: 0.42, lightRadius: 55
   },
   bone_archer: {
-    name: 'Marrow Archer', width: 20, height: 34, hp: 240, speed: 2.5, damage: 42,
-    knockbackResist: 0.24, lightRadius: 60
+    name: 'Marrow Archer', width: 20, height: 34, hp: 560, speed: 2.8, damage: 88,
+    knockbackResist: 0.34, lightRadius: 60
   },
   bone_colossus: {
-    name: 'Bone Colossus', width: 34, height: 48, hp: 1150, speed: 1.6, damage: 74,
-    knockbackResist: 0.62, lightRadius: 85
+    name: 'Bone Colossus', width: 34, height: 48, hp: 2900, speed: 2.0, damage: 168,
+    knockbackResist: 0.74, lightRadius: 85
   }
 };
 
@@ -990,12 +1265,12 @@ class SkeletonMinion extends Monster {
       // Bows only fire with line of sight: no sniping through the arena walls.
       const blocked = world && !this.hasLineOfSight(player, world);
       this.bowTimer -= dt;
-      if (this.bowTimer <= 0 && dist < 620 && !blocked) {
-        this.bowTimer = 1.5 + Math.random() * 0.7;
+      if (this.bowTimer <= 0 && dist < 720 && !blocked) {
+        this.bowTimer = 1.05 + Math.random() * 0.55;
         const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.05;
         spawnSpaceProjectile(this.game.projectiles,
           this.x + this.width / 2, this.y + this.height / 2,
-          Math.cos(a) * 7.4, Math.sin(a) * 7.4,
+          Math.cos(a) * 8.6, Math.sin(a) * 8.6,
           'bone_shard', this.damage, 3.2, 60, [226, 232, 240]);
         if (this.game.sound) this.game.sound.playBow();
       }
@@ -1163,10 +1438,11 @@ class SkeletonDragonBoss {
     this.vy = 0;
     this.facing = -1;
     // The apex of the game. Everything the world can throw at the player has
-    // been practice for this: 62k health with no i-frames means sustained
-    // damage is rewarded, and the fight simply cannot be out-traded.
-    this.maxHp = 62000;
-    this.hp = 62000;
+    // been practice for this: 100,000 health with no i-frames means sustained
+    // damage is rewarded, and the fight simply cannot be out-traded. The
+    // phases break at 66% and 33%, so each third is a fight in its own right.
+    this.maxHp = 100000;
+    this.hp = 100000;
     this.phase = 1;
     this.name = 'SKELETON DRAGON, THE OSSUARY SOVEREIGN';
     this.dead = false;
@@ -1196,6 +1472,8 @@ class SkeletonDragonBoss {
     this.dashTimer = 0;
     this.dashDir = { x: -1, y: 0 };
     this.dashHitPlayer = false;
+    // How long the skull has been inside rock. See unstick().
+    this.stuckTimer = 0;
     // ---- Cataclysm ----
     this.cataclysmCooldown = 16;
     // DemonBoss carries its own poison state (it does not extend Monster), and
@@ -1298,23 +1576,102 @@ class SkeletonDragonBoss {
     };
   }
 
-  /** Clamp a candidate position into the arena and out of solid rock. */
+  /**
+   * Does this tile physically stop the dragon?
+   *
+   * One-way star platforms and loose bone piles deliberately do NOT. They are
+   * the player's dodge route, and counting them as rock is exactly what made
+   * the Sovereign claw at its own arena and stall mid-sweep. Everything else —
+   * void stone, asteroid, rune brick — is real rock, and generateSpaceArena now
+   * keeps every block of it outside the flight box.
+   */
+  blocksDragon(tx, ty) {
+    const world = this.game && this.game.world;
+    if (!world || typeof world.getTile !== 'function') return false;
+    const tile = world.getTile(tx, ty);
+    if (!tile || tile === TILES.AIR) return false;
+    const prop = TILE_PROPERTIES[tile];
+    if (!prop || !prop.solid) return false;
+    if (prop.isPlatform) return false;
+    if (tile === TILES.BONE_PILE) return false;   // loose bones: it comes through
+    return true;
+  }
+
+  /** True when the dragon's skull sits inside rock at this position. */
+  wedgedAt(x, y) {
+    return this.blocksDragon(
+      Math.floor((x + this.width / 2) / TILE_SIZE),
+      Math.floor((y + this.height / 2) / TILE_SIZE)
+    );
+  }
+
+  /**
+   * Clamp a candidate position into the arena box.
+   *
+   * Rock is deliberately no longer nudged out of the way here. The old version
+   * lifted the dragon a tile per frame whenever its centre touched anything
+   * solid — including its own platforms — which is how it ended up jerking and
+   * wedging. Anything still inside rock is handled by unstick() below.
+   */
   clampToArena(x, y, world) {
     const b = this.arenaBounds(world);
     if (!b) return { x, y };
-    let cx = Math.max(b.left, Math.min(b.right, x));
-    let cy = Math.max(b.top, Math.min(b.bottom, y));
-    if (world) {
-      // Nudge up out of anything solid (asteroid islands drift through the box).
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const tx = Math.floor((cx + this.width / 2) / TILE_SIZE);
-        const ty = Math.floor((cy + this.height / 2) / TILE_SIZE);
-        if (!world.isSolid(tx, ty)) break;
-        cy -= TILE_SIZE;
-        if (cy < b.top) { cy = b.top; break; }
+    return {
+      x: Math.max(b.left, Math.min(b.right, x)),
+      y: Math.max(b.top, Math.min(b.bottom, y))
+    };
+  }
+
+  /**
+   * The nearest open position, searched as an expanding ring so the head slides
+   * out along the shortest way rather than being yanked. Null only if the whole
+   * box is plugged.
+   */
+  nearestOpenSpot(x, y, world) {
+    const b = this.arenaBounds(world);
+    if (!b) return { x, y };
+    for (let r = 1; r <= 16; r++) {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const nx = Math.max(b.left, Math.min(b.right, x + Math.cos(a) * r * TILE_SIZE));
+        const ny = Math.max(b.top, Math.min(b.bottom, y + Math.sin(a) * r * TILE_SIZE));
+        if (this.wedgedAt(nx, ny)) continue;
+        return { x: nx, y: ny };
       }
     }
-    return { x: cx, y: cy };
+    return null;
+  }
+
+  /**
+   * Get unstuck, every frame. The moment the skull is inside rock a timer
+   * starts and the head eases toward the nearest open lane at a visible speed;
+   * if the rock somehow cannot be left — a player who mined the arena and
+   * stacked stone across the lane — the dragon is placed in the open after a
+   * second and a half. The fight can never be won by hiding in a tunnel, and
+   * the Sovereign can never be stranded inside a rock.
+   */
+  unstick(dt, world) {
+    if (!world) return false;
+    if (!this.wedgedAt(this.x, this.y)) { this.stuckTimer = 0; return false; }
+    this.stuckTimer = (this.stuckTimer || 0) + dt;
+    const target = this.nearestOpenSpot(this.x, this.y, world);
+    if (!target) return false;
+    const dx = target.x - this.x;
+    const dy = target.y - this.y;
+    const len = Math.hypot(dx, dy) || 1;
+    this.dashing = false;
+    if (this.stuckTimer > 1.5) {
+      this.x = target.x;
+      this.y = target.y;
+      this.vx = 0;
+      this.vy = 0;
+      this.stuckTimer = 0;
+      return true;
+    }
+    const glide = Math.min(len, 2.5 + this.stuckTimer * 9);
+    this.x += (dx / len) * glide;
+    this.y += (dy / len) * glide;
+    return true;
   }
 
   /**
@@ -1347,8 +1704,8 @@ class SkeletonDragonBoss {
   /** Contact damage, scaled hard by phase — this is the final boss. */
   touchDamage() {
     return this.dashing
-      ? ([0, 90, 110, 130][this.phase] || 90)
-      : ([0, 55, 70, 85][this.phase] || 55);
+      ? ([0, 150, 185, 220][this.phase] || 150)
+      : ([0, 95, 125, 155][this.phase] || 95);
   }
 
   /** Where minions are allowed to be summoned: the arena floor, spread out. */
@@ -1368,7 +1725,7 @@ class SkeletonDragonBoss {
   /** 14–26 homing bone shards fanned toward the player. */
   spawnBoneVolley(projectiles, player, soundSystem, particleSystem) {
     const count = this.phase === 1 ? 14 : this.phase === 2 ? 20 : 26;
-    const damage = [0, 42, 52, 64][this.phase];
+    const damage = [0, 72, 90, 110][this.phase];
     const spread = this.phase === 1 ? 1.15 : this.phase === 2 ? 1.5 : 1.9;
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
@@ -1395,7 +1752,7 @@ class SkeletonDragonBoss {
    */
   spawnGraveRing(projectiles, soundSystem, particleSystem, ringIndex = 0) {
     const count = (this.phase === 1 ? 18 : this.phase === 2 ? 24 : 30) + ringIndex * 4;
-    const damage = [0, 38, 48, 60][this.phase];
+    const damage = [0, 64, 82, 100][this.phase];
     const speed = 4.0 + this.phase * 0.45;
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
@@ -1419,7 +1776,7 @@ class SkeletonDragonBoss {
    */
   spawnMeteorRain(projectiles, player, soundSystem, particleSystem) {
     const count = this.phase === 1 ? 7 : this.phase === 2 ? 11 : 15;
-    const damage = [0, 55, 70, 85][this.phase];
+    const damage = [0, 92, 115, 140][this.phase];
     const world = this.game && this.game.world;
     const a = world && world.spaceArena;
     const leftPx = (a ? a.left : 0) * TILE_SIZE;
@@ -1459,10 +1816,14 @@ class SkeletonDragonBoss {
           : (i === 0 ? 'bone_colossus' : i % 2 ? 'bone_archer' : 'skeleton_warrior');
       const spot = spots[i];
       const minion = new SkeletonMinion(spot.x, spot.y, species, this.game);
-      // Minions scale with the phase so late adds are a real threat, and with
-      // the player's own progression so the fight does not get easier as the
-      // rest of the world does.
-      minion.damage = Math.round(minion.damage * (1 + (this.phase - 1) * 0.22));
+      // Minions scale with the phase on BOTH axes so late adds are a real
+      // threat rather than a crowd of speed bumps, and with the player's own
+      // progression so the fight does not get easier as the rest of the world
+      // does. A phase-3 colossus is meant to be a second, smaller boss.
+      const phaseScale = 1 + (this.phase - 1) * 0.35;
+      minion.damage = Math.round(minion.damage * (1 + (this.phase - 1) * 0.30));
+      minion.hp = minion.maxHp = Math.round(minion.maxHp * phaseScale);
+      minion.speed = +(minion.speed * (1 + (this.phase - 1) * 0.08)).toFixed(2);
       this.game.monsters.push(minion);
       summoned++;
       if (particleSystem) {
@@ -1501,7 +1862,7 @@ class SkeletonDragonBoss {
         const a = this.beamAngle + offset;
         const bolt = spawnSpaceProjectile(projectiles, cx, cy,
           Math.cos(a) * 8.4, Math.sin(a) * 8.4,
-          'dragon_breath', 52, 2.6, 80, [34, 211, 238]);
+          'dragon_breath', 95, 2.6, 80, [34, 211, 238]);
         bolt.hitRadius = 22;
       }
       if (particleSystem && Math.random() < 0.6) particleSystem.magicSparkle(cx, cy, '#67e8f9', 4);
@@ -1565,7 +1926,7 @@ class SkeletonDragonBoss {
           spawnSpaceProjectile(projectiles, cx, cy,
             Math.cos(a) * side * 3.2 - this.dashDir.x * 1.6,
             Math.sin(a) * side * 3.2 - this.dashDir.y * 1.6,
-            'bone_shard', 46, 2.4, 60, [226, 232, 240]);
+            'bone_shard', 82, 2.4, 60, [226, 232, 240]);
         }
       }
     }
@@ -1672,6 +2033,15 @@ class SkeletonDragonBoss {
     this.updateBeam(dt, projectiles, soundSystem, particleSystem);
     this.updateDash(dt, world, projectiles, soundSystem, particleSystem);
 
+    // ---- Never wedge ----
+    // The arena is generated with an empty flight box, so this should never
+    // fire. It exists for the cases it can still: the player mining the crust
+    // and stacking stone across a lane, or a dash aimed into a rune pillar.
+    if (this.unstick(dt, world)) {
+      this.updateSegments(dt);
+      return;
+    }
+
     // Fast afterimages for the dive and the weaving flight.
     const speed = Math.hypot(this.vx, this.vy);
     if (speed > 2.5 || this.dashing) {
@@ -1720,8 +2090,12 @@ class SkeletonDragonBoss {
         this.y + (targetY - this.y) * Math.min(1, dt * 2.2),
         world
       );
-      this.x = desired.x;
-      this.y = desired.y;
+      // Hold station rather than grinding into rock: unstick() takes over on
+      // the frame after if the holding spot is itself the problem.
+      if (!this.wedgedAt(desired.x, desired.y)) {
+        this.x = desired.x;
+        this.y = desired.y;
+      }
       if (this.stateTimer <= 0) this.chooseAttack(player);
     } else if (this.attackState.startsWith('tell_')) {
       if (this.telegraph) this.telegraph.timer = Math.max(0, this.stateTimer);

@@ -129,11 +129,11 @@ class GameFeel {
 const BUFF_DEFS = {
   well_fed: {
     name: 'Well Fed', icon: '🍗', color: '#f59e0b', good: true,
-    modifiers: { speed: 1.08, damage: 1.05, defense: 2, regenHp: 0.8 }
+    modifiers: { speed: 1.08, damage: 1.05, defense: 2, regenHp: 0.5 }
   },
   campfire: {
     name: 'Cozy Fire', icon: '🔥', color: '#fb923c', good: true,
-    modifiers: { regenHp: 1.6, regenMana: 1.2 }
+    modifiers: { regenHp: 1.0, regenMana: 1.2 }
   },
   swiftness: {
     name: 'Swiftness', icon: '🏃', color: '#38bdf8', good: true,
@@ -148,8 +148,12 @@ const BUFF_DEFS = {
     modifiers: { damage: 1.15, crit: 0.08 }
   },
   regeneration: {
+    // Halved, and it now stops for four seconds after any hit (see
+    // Game.damagePlayer / updatePlayer). At 1.5 HP/s, running continuously,
+    // this out-healed the Ossuary Sovereign's chip damage — which is the real
+    // reason Voidscale felt unkillable rather than the plate's numbers.
     name: 'Regeneration', icon: '💚', color: '#4ade80', good: true,
-    modifiers: { regenHp: 1.5 }
+    modifiers: { regenHp: 0.6 }
   },
   miners_focus: {
     name: "Miner's Focus", icon: '⛏️', color: '#fbbf24', good: true,
@@ -860,7 +864,16 @@ function describeItem(id, game) {
   if (item.reduction) {
     rows.push({ label: 'Damage reduction', value: `${Math.round(item.reduction * 100)}%` });
   }
-  if (item.grantsFlight) rows.push({ label: 'Flight', value: 'Hold JUMP in the air to fly' });
+  if (item.grantsFlight) {
+    const tank = Math.round(item.flightTime || 0);
+    const cool = Math.round(item.flightCooldown || 0);
+    rows.push({
+      label: 'Flight',
+      value: tank > 0
+        ? `Hold JUMP in the air to fly — ${tank}s of flight, then ${cool}s to recharge`
+        : 'Hold JUMP in the air to fly'
+    });
+  }
   if (item.heal) rows.push({ label: 'Restores', value: `+${item.heal} life` });
   if (item.hunger) rows.push({ label: 'Fills', value: `+${item.hunger} hunger` });
   if (item.mana) rows.push({ label: 'Restores', value: `+${item.mana} mana` });

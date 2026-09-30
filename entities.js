@@ -462,14 +462,53 @@ class Player {
     this.armorFlash = 0;      // 0..1, drives the "the plate caught it" flash
     this.lastAbsorbed = 0;    // damage the armour soaked on the last hit
 
-    // ---- Dragon Wings (accessory slot, equipped by the Game each frame) ----
-    this.hasWings = false;      // a grantsFlight accessory is worn
-    this.isFlying = false;      // beating the wings right now (drives FX + HUD)
-    this.flightFuel = 1.6;      // seconds of powered ascent left
-    this.maxFlightFuel = 1.6;
-    this.flightAscent = 4.2;    // px/frame upward cap while flapping
-    this.flightRefill = 1.4;    // fuel/second regained while standing on ground
-    this.activeWings = null;    // the equipped accessory item (for tooltips/HUD)
+    // ---- Wings (accessory slot, equipped by the Game each frame) ----------
+    // A wing set is a tank plus a cooldown, and the ITEM defines both: Angel
+    // Wings give 30 seconds of flight and then ask for 30 seconds back, Dragon
+    // Wings give three minutes. Spending the tank locks the wings instead of
+    // trickling fuel back at your feet, so flight has a rhythm — fly, land,
+    // wait, fly — rather than being a hover you can hold forever.
+    this.hasWings = false;       // a grantsFlight accessory is worn
+    this.isFlying = false;       // beating the wings right now (drives FX + HUD)
+    this.flightFuel = 0;         // seconds of powered ascent left
+    this.maxFlightFuel = 0;      // seconds the worn wings hold
+    this.flightCooldown = 0;     // seconds until the tank re-arms
+    this.maxFlightCooldown = 0;  // seconds the worn wings demand
+    this.flightAscent = 4.2;     // px/frame upward cap while flapping
+    this.activeWings = null;     // the equipped accessory item (for tooltips/HUD)
+    this.wingsUsed = null;       // which wing id the tank is currently sized for
+  }
+
+  /**
+   * Fit the flight tank to a wing item (null = nothing worn). Game calls this
+   * whenever the accessory slot changes, on load, and on respawn.
+   *
+   * Putting on a different pair always hands back a full tank and clears the
+   * cooldown: swapping Angel Wings for Dragon Wings mid-dive must never leave
+   * you holding an empty tank you did not spend.
+   */
+  setWings(item) {
+    this.activeWings = item || null;
+    this.hasWings = !!(item && item.grantsFlight);
+    if (!this.hasWings) {
+      this.isFlying = false;
+      this.maxFlightFuel = 0;
+      this.flightFuel = 0;
+      this.maxFlightCooldown = 0;
+      this.flightCooldown = 0;
+      this.wingsUsed = null;
+      return;
+    }
+    const tank = Math.max(0.1, Number(item.flightTime) || 1.6);
+    this.maxFlightFuel = tank;
+    this.maxFlightCooldown = Math.max(0, Number(item.flightCooldown) || 0);
+    if (this.wingsUsed !== item.id) {
+      this.wingsUsed = item.id;
+      this.flightFuel = tank;
+      this.flightCooldown = 0;
+    } else {
+      this.flightFuel = Math.min(this.flightFuel, tank);
+    }
   }
 
   /**
@@ -745,15 +784,27 @@ class Player {
     this.vy += this.gravity;
     if (this.vy > this.terminalVel) this.vy = this.terminalVel;
 
-    // ---- Dragon Wings: hold jump in the air to beat them --------------------
-    // A short tank of powered ascent that only refills with both feet on the
-    // ground, so flight is a resource you spend rather than a hover you keep.
-    // Thrust is frame-based like gravity above, but the tank drains against dt
-    // so the flight time stays identical at any framerate.
+    // ---- Wings: hold jump in the air to beat them -------------------------
+    // The tank drains against dt so the flight time is identical at any
+    // framerate. Running it dry does NOT refill at your feet: the wings lock
+    // for their cooldown, which ticks twice as fast with both boots on the
+    // ground. That is the intended rhythm — spend it, land, catch your breath.
     const wingJumpHeld = input.keys['Space'] || input.keys['KeyW'] || input.keys['ArrowUp'];
     const wasFlying = this.isFlying;
     this.isFlying = false;
-    if (this.hasWings && wingJumpHeld && !this.onGround && this.flightFuel > 0) {
+
+    if (this.flightCooldown > 0) {
+      this.flightCooldown = Math.max(0, this.flightCooldown - dt * (this.onGround ? 2 : 1));
+      if (this.flightCooldown === 0) {
+        this.flightFuel = this.maxFlightFuel;
+        if (particleSystem) {
+          particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#a5b4fc', 12);
+        }
+      }
+    }
+
+    if (this.hasWings && wingJumpHeld && !this.onGround &&
+        this.flightFuel > 0 && this.flightCooldown <= 0) {
       this.flightFuel = Math.max(0, this.flightFuel - dt);
       this.vy -= this.gravity * 2.4;
       if (this.vy < -this.flightAscent) this.vy = -this.flightAscent;
@@ -765,9 +816,11 @@ class Player {
           -this.facing * 0.6, 0.8, 'rgba(196, 181, 253, 0.55)', 3, 0.25, 0.01
         );
       }
-    }
-    if (this.onGround) {
-      this.flightFuel = Math.min(this.maxFlightFuel, this.flightFuel + dt * this.flightRefill);
+      // Out of fuel mid-air: the wings clamp shut. The HUD chip and a Game
+      // toast tell the player; this only has to survive being read at 60fps.
+      if (this.flightFuel <= 0 && this.maxFlightCooldown > 0) {
+        this.flightCooldown = this.maxFlightCooldown;
+      }
     }
 
     // Wall slide detection
@@ -936,17 +989,24 @@ class Player {
   }
 
   /**
-   * Dragon Wings, drawn behind the player. The flap follows the flight state:
-   * a slow idle sway on the ground, a hard fast beat while the tank is spent
-   * climbing (this.isFlying), and a mid beat when airborne but passive.
+   * Wings, drawn behind the player. The flap follows the flight state: a slow
+   * idle sway on the ground, a hard fast beat while the tank is spent climbing
+   * (this.isFlying), and a mid beat when airborne but passive. Angel Wings are
+   * feathered and pale; the Sovereign's are membranes over bone.
    */
   renderWings(ctx, ox, oy) {
     const t = Date.now() * 0.001;
+    const angel = !!(this.activeWings && this.activeWings.feathered);
     const beat = this.isFlying ? Math.sin(t * 26) * 5 + 6
       : this.onGround ? Math.sin(t * 3) * 1.5
         : Math.sin(t * 9) * 3;
-    const reach = 15 + beat;
-    const membrane = this.isFlying ? '#8b5cf6' : '#6d28d9';
+    const reach = (angel ? 13 : 15) + beat;
+    const membrane = angel
+      ? (this.isFlying ? '#f8fafc' : '#cbd5e1')
+      : (this.isFlying ? '#8b5cf6' : '#6d28d9');
+    const under = angel
+      ? (this.isFlying ? '#e2e8f0' : '#94a3b8')
+      : (this.isFlying ? '#7c3aed' : '#5b21b6');
     ctx.save();
     ctx.globalAlpha = 0.92;
     // Upper wing: a swept spike up-and-back from the shoulder.
@@ -958,15 +1018,15 @@ class Player {
     ctx.closePath();
     ctx.fill();
     // Lower wing: the long trailing membrane that reads as "dragon".
-    ctx.fillStyle = this.isFlying ? '#7c3aed' : '#5b21b6';
+    ctx.fillStyle = under;
     ctx.beginPath();
     ctx.moveTo(ox + 7, oy + 18);
     ctx.lineTo(ox + 7 - reach * 1.15, oy + 24 + beat);
     ctx.lineTo(ox + 7 - reach * 0.5, oy + 32 + beat * 0.5);
     ctx.closePath();
     ctx.fill();
-    // Bone fingers keep it from reading as a flat purple triangle.
-    ctx.strokeStyle = 'rgba(226, 232, 240, 0.75)';
+    // Bone fingers keep it from reading as a flat triangle.
+    ctx.strokeStyle = angel ? 'rgba(148, 163, 184, 0.8)' : 'rgba(226, 232, 240, 0.75)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(ox + 7, oy + 15);
@@ -1028,7 +1088,9 @@ class Player {
       crystal_armor: ['#1e3a8a', '#0f172a'],
       rainbow_armor: ['#f0abfc', '#3730a3'],
       fallen_star_armor: ['#fef3c7', '#78350f'],
-      demon_armor: ['#f87171', '#450a0a']
+      demon_armor: ['#f87171', '#450a0a'],
+      voidscale_armor: ['#a78bfa', '#1e1b4b'],
+      ossuary_armor: ['#e7e5e4', '#292524']
     };
     const armorColors = colors[armorItem.id];
     if (!armorColors) return;
