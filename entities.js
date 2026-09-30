@@ -380,6 +380,13 @@ class Projectile {
 // warning you can still walk out of, fast enough that ignoring it kills you.
 const STARVATION_DPS = 3;
 
+// What a wing asks for when it runs dry and the item forgot to say. Flight
+// without a price is a hover, and a wing with no cooldown is the one state in
+// the flight loop nothing can recover from — see the spent-tank invariant in
+// Player.update() — so every flight-granting item is given a price by default
+// rather than being allowed to freeze itself out of existence.
+const DEFAULT_WING_COOLDOWN = 20;
+
 // How much of an armour piece's raw `defense` stat is subtracted from a hit,
 // on top of its percentage `reduction`. Kept small on purpose: the percentage
 // is meant to drive the tier ladder, and letting the flat stat apply at full
@@ -500,8 +507,13 @@ class Player {
       return;
     }
     const tank = Math.max(0.1, Number(item.flightTime) || 1.6);
+    const lockOut = Number(item.flightCooldown);
     this.maxFlightFuel = tank;
-    this.maxFlightCooldown = Math.max(0, Number(item.flightCooldown) || 0);
+    // A wing that can run dry has to pay for it. An item that declares flight
+    // but forgets its cooldown would otherwise sit at zero fuel with a zero
+    // lock-out, which is the one state this class cannot climb out of.
+    this.maxFlightCooldown = Number.isFinite(lockOut) && lockOut > 0
+      ? lockOut : DEFAULT_WING_COOLDOWN;
     if (this.wingsUsed !== item.id) {
       this.wingsUsed = item.id;
       this.flightFuel = tank;
@@ -789,9 +801,25 @@ class Player {
     // framerate. Running it dry does NOT refill at your feet: the wings lock
     // for their cooldown, which ticks twice as fast with both boots on the
     // ground. That is the intended rhythm — spend it, land, catch your breath.
+    //
+    // The lock-out used to be armed only on the single frame the tank crossed
+    // zero *while the player was mid-flap*. Anything that missed that frame —
+    // touching down with a stub of fuel left, letting go of jump, a wing with
+    // no cooldown configured — left the player at zero fuel with no lock-out
+    // running, and nothing else in the class ever hands fuel back except the
+    // end of a lock-out. The wings looked spent forever: no recharge, no
+    // countdown, and a fresh pair only arrived by dying or swapping gear.
+    // A spent tank and a running lock-out are now the same fact: whichever
+    // half is missing gets created here, so the pair can never desync.
     const wingJumpHeld = input.keys['Space'] || input.keys['KeyW'] || input.keys['ArrowUp'];
     const wasFlying = this.isFlying;
     this.isFlying = false;
+
+    if (this.hasWings && this.flightCooldown <= 0 && this.flightFuel <= 0) {
+      // A dry tank with a silent lock-out: start the clock, whatever emptied
+      // the tank. This is the "cooldown never comes" bug, closed at the source.
+      this.flightCooldown = this.maxFlightCooldown;
+    }
 
     if (this.flightCooldown > 0) {
       this.flightCooldown = Math.max(0, this.flightCooldown - dt * (this.onGround ? 2 : 1));
@@ -816,8 +844,9 @@ class Player {
           -this.facing * 0.6, 0.8, 'rgba(196, 181, 253, 0.55)', 3, 0.25, 0.01
         );
       }
-      // Out of fuel mid-air: the wings clamp shut. The HUD chip and a Game
-      // toast tell the player; this only has to survive being read at 60fps.
+      // Out of fuel mid-air: the wings clamp shut. The next frame's invariant
+      // above keeps the lock-out honest even if this frame's landing interrupts
+      // the flap; the HUD chip and a Game toast tell the player.
       if (this.flightFuel <= 0 && this.maxFlightCooldown > 0) {
         this.flightCooldown = this.maxFlightCooldown;
       }

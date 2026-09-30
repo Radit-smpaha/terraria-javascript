@@ -158,6 +158,14 @@ const NEW_ITEMS = {
     id: 'void_rift_beacon', name: 'Void Rift Beacon', type: 'consumable',
     riftBeacon: true, icon: '🌀', stackMax: 5
   },
+  // What you burn to wake the Sovereign after you have already killed it. A dead
+  // dragon stays dead: the arena stops being a fight the moment it is won and
+  // becomes a quarry, and going back for another round has to be a deliberate,
+  // priced decision rather than something the world does to you on the visit.
+  rite_of_bones: {
+    id: 'rite_of_bones', name: 'Rite of Bones', type: 'consumable',
+    dragonRite: true, icon: '🦴', stackMax: 3
+  },
   meteor_shard: {
     id: 'meteor_shard', name: 'Meteor Shard', type: 'material',
     icon: '☄️', stackMax: 999
@@ -580,6 +588,18 @@ const RECIPES = [
     ],
     name: 'Void Rift Beacon (tears open the Ossuary)'
   },
+  // Waking the Sovereign a second time costs the arena's own leftovers plus the
+  // Underworld's souls: harvesting a whole expedition of dragonbone is the price
+  // of another round with the hardest thing in the game, and the price is what
+  // makes walking away from a win the cheap, normal option.
+  {
+    result: { id: 'rite_of_bones', count: 1 },
+    materials: [
+      { id: 'dragonbone', count: 25 }, { id: 'meteor_shard', count: 10 },
+      { id: 'demon_soul', count: 4 }
+    ],
+    name: 'Rite of Bones (wakes a new Sovereign in the Ossuary)'
+  },
   {
     result: { id: 'star_platform', count: 4 },
     materials: [{ id: 'meteor_shard', count: 1 }, { id: 'stone', count: 4 }],
@@ -803,6 +823,11 @@ class Game {
     this.wormholeIntent = null;  // 'space' | 'overworld': what the collapse does
     this.riftUses = 0;           // rifts opened so far — later ones tear in faster
     this.dragonHP = null;        // Sovereign's damaged HP, kept across a death/retreat
+    // True once the Sovereign has been killed. A dead dragon STAYS dead: walking
+    // back into the Ossuary is a trip to a quarry, and only a Rite of Bones can
+    // raise another. This flag is what stops a cleared arena from re-arming a
+    // fight the player has already won.
+    this.dragonSlain = false;
     this.riftReturnDelay = 0;    // beats until a post-death re-entry fires
     // Seconds of "you were just hit" during which no regeneration runs.
     this.regenLock = 0;
@@ -1629,6 +1654,10 @@ class Game {
       // so it survives a reload too — otherwise a player who quits during the
       // few seconds a rift takes to reopen loses the way back to their fight.
       riftReturnDelay: this.riftReturnDelay > 0 ? this.riftReturnDelay : null,
+      // Whether the Sovereign has been killed. A dead dragon stays dead, so this
+      // has to persist exactly as persistently as the banked HP does — a reload
+      // must not re-arm a fight that was already won.
+      dragonSlain: this.dragonSlain === true,
       // A battle is never carried through a save: quitting or refreshing the page
       // ends the encounter (see loadGame), so there is no live boss left to write.
       // The key is kept so version-11 saves keep their exact shape.
@@ -1748,9 +1777,14 @@ class Game {
     this.dimensionStash = null;
     this.sound.isBoss = false;
     this.dragonHP = Number.isFinite(save.dragonHP) ? save.dragonHP : null;
+    // Killing the Sovereign is a fact about the world, not about the live boss,
+    // so it survives the reload the same way the banked HP does. Without this,
+    // refreshing the page after a kill re-armed the very fight the player won.
+    this.dragonSlain = save.dragonSlain === true;
     // Re-arm a re-entry that was still counting down when the tab died, but only
-    // while there is actually a wounded Sovereign to go back to.
-    this.riftReturnDelay = (Number.isFinite(this.dragonHP) && Number.isFinite(save.riftReturnDelay))
+    // while there is actually a wounded Sovereign to go back to — and never after
+    // the killing blow, because a slain dragon has nothing to return to.
+    this.riftReturnDelay = (!this.dragonSlain && Number.isFinite(this.dragonHP) && Number.isFinite(save.riftReturnDelay))
       ? Math.max(1.5, save.riftReturnDelay) : 0;
     // Boss battles deliberately do NOT survive a reload. Re-instantiating the
     // saved boss used to drop it right back onto the player's saved position,
@@ -2898,8 +2932,21 @@ class Game {
         monster.takeDamage(45, this.sound, this.particles, true);
       }
     }
-    if (this.boss && !this.boss.dead && Math.hypot(this.boss.x + this.boss.width / 2 - centerX, this.boss.y + this.boss.height / 2 - centerY) <= 105) {
-      this.boss.takeDamage(45, this.sound, this.particles, true);
+    if (this.boss && !this.boss.dead) {
+      // A bomb is a wide blast, so it is allowed to catch the spine too — and
+      // whatever it catches pays that part's own price.
+      const struck = typeof this.boss.nearestHitTarget === 'function'
+        ? this.boss.nearestHitTarget(centerX, centerY, 105)
+        : (Math.hypot(this.boss.x + this.boss.width / 2 - centerX,
+                      this.boss.y + this.boss.height / 2 - centerY) <= 105
+            ? { x: this.boss.x + this.boss.width / 2, y: this.boss.y + this.boss.height / 2, head: true }
+            : null);
+      if (struck) {
+        this.boss.takeDamage(
+          typeof this.boss.scaleDamageFor === 'function'
+            ? this.boss.scaleDamageFor(struck, 45) : 45,
+          this.sound, this.particles, true);
+      }
     }
     this.sound.playDig(true);
     this.showToast('💥 Bomb detonated!');
@@ -3169,9 +3216,26 @@ class Game {
       if (this.boss && !this.boss.dead) {
         const bMidX = this.boss.x + this.boss.width / 2;
         const bMidY = this.boss.y + this.boss.height / 2;
-        if (Math.hypot(bMidX - pMidX, bMidY - pMidY) <= itemData.range + this.boss.width / 2 && inArc(bMidX, bMidY)) {
+        // The Sovereign is four hundred pixels of spine behind one skull, and
+        // this used to test the skull only — every swing that visibly passed
+        // through the body did nothing at all. Route the arc through the boss's
+        // hittable points instead, and let the spine pay the 8% body tax.
+        // Bosses without that API (Guardian, Knight, Demon) keep the old
+        // centre test untouched.
+        let struck = null;
+        if (typeof this.boss.nearestHitTarget === 'function') {
+          const target = this.boss.nearestHitTarget(pMidX, pMidY, itemData.range);
+          if (target && inArc(target.x, target.y)) struck = target;
+        } else if (Math.hypot(bMidX - pMidX, bMidY - pMidY) <= itemData.range + this.boss.width / 2 &&
+                   inArc(bMidX, bMidY)) {
+          struck = { x: bMidX, y: bMidY, head: true };
+        }
+        if (struck) {
           const roll = this.rollDamage(itemData.damage, itemData);
-          const dealt = this.boss.takeDamage(roll.damage, this.sound, this.particles, roll.crit) || 0;
+          const dealt = this.boss.takeDamage(
+            typeof this.boss.scaleDamageFor === 'function'
+              ? this.boss.scaleDamageFor(struck, roll.damage) : roll.damage,
+            this.sound, this.particles, roll.crit) || 0;
           if (dealt > 0) {
             totalDealt += dealt;
             hitAnything = true;
@@ -3369,6 +3433,14 @@ class Game {
     // must never fall into the potion/healing pipeline.
     if (itemData && itemData.riftBeacon) {
       this.useVoidRiftBeacon();
+      return;
+    }
+
+    // Rite of Bones: same reason — a consumable that has nothing to do with
+    // healing, and the only thing in the game that can start a Sovereign fight
+    // after the first one has been killed.
+    if (itemData && itemData.dragonRite) {
+      this.performBoneRite();
       return;
     }
 
@@ -3585,6 +3657,16 @@ class Game {
       // Dying in the Ossuary banks the fight, then the rift comes back for you:
       // the retry is instant and the Sovereign resumes at the damage it had
       // already taken, so a death is a setback rather than a reset.
+      //
+      // Once the Sovereign has been killed there is nothing to go back to, and
+      // the auto-rift is the thing that used to yank a victorious player out of
+      // their own house the moment they died standing over the bones. The pull is
+      // banked off entirely — the arena only reopens on a beacon, and only
+      // re-arms a dragon on a rite.
+      if (this.dragonSlain && !Number.isFinite(this.dragonHP)) {
+        this.riftReturnDelay = 0;
+        return false;
+      }
       if (this.riftReturnDelay > 0) {
         if (this.isDead || this.world.isInSpace() || this.boss) return false;
         this.riftReturnDelay -= dt;
@@ -3662,6 +3744,45 @@ class Game {
   }
 
   /**
+   * Right-click a Rite of Bones inside the Ossuary: the harvested bones burn and
+   * a whole Sovereign rises to replace the one in the ground.
+   *
+   * This is the only door back into the fight once the first dragon has been
+   * killed. The arena never re-arms itself, and neither does a beacon, a reload,
+   * a death, or a return trip — the player has to decide, in the Ossuary, with
+   * bones they mined, that they want to fight it again. Returns true when the
+   * rite was read, which is also when the bones are spent.
+   */
+  performBoneRite() {
+    if (!this.world.isInSpace()) {
+      this.showToast('🦴 The rite has to be read where the bones are. Tear the Ossuary open first.');
+      return false;
+    }
+    if (this.wormhole) {
+      this.showToast('🌀 Wait for the rift to finish tearing.');
+      return false;
+    }
+    if (this.boss && !this.boss.dead) {
+      this.showToast('🦴 A Sovereign is already awake in the arena.');
+      return false;
+    }
+    const arena = this.world.spaceArena;
+    if (!arena) {
+      this.showToast('🦴 There is no arena here to hold a rite.');
+      return false;
+    }
+    if (!this.removeItem('rite_of_bones', 1)) {
+      this.showToast('🦴 The rite needs a Rite of Bones: 25 Dragonbone, 10 Meteor Shards, 4 Demon Souls.');
+      return false;
+    }
+    this.showAnnouncement('🕯️ THE BONES BURN — BONE BY BONE, IT COMES BACK.');
+    this.sound.playBossRoar?.();
+    this.particles.magicSparkle(this.player.x, this.player.y, '#fbcfe8', 60);
+    this.dragonHP = null;
+    return this.wakeSovereign(arena, null) !== null;
+  }
+
+  /**
    * Swap the world buffers for the arena, drop the player onto its floor and
    * wake the Sovereign. Called by updateWormhole at the moment of collapse.
    */
@@ -3690,18 +3811,41 @@ class Game {
     this.player.vy = 0;
 
     // ---- Wake the Sovereign, resuming any damage it already took ----
+    // Unless the player has already killed one: a slain Sovereign stays dead in
+    // the ground, and the Ossuary becomes a quarry to be mined rather than a
+    // fight that reopens itself every time someone walks in. Only a Rite of
+    // Bones raises another (see performBoneRite).
+    if (this.dragonSlain && !Number.isFinite(this.dragonHP)) {
+      this.showToast('🕳️ Quiet as a church. The Sovereign you killed stays killed — read a 🦴 Rite of Bones here to wake another.');
+    } else {
+      this.wakeSovereign(arena);
+    }
+    this.showToast('🌌 The only way home is the 🕳️ Rift Gate on the west wall.');
+    this.particles.magicSparkle(this.player.x, this.player.y, '#c4b5fd', 40);
+  }
+
+  /**
+   * Stand a Sovereign up in the arena. `resumeHP` is the banked HP of a fight the
+   * player walked out on; pass null (or leave it banked-empty) for a whole one.
+   *
+   * Waking is never implicit: enterSpaceDimension calls this only while the first
+   * dragon is still unavenged, and every dragon after that has to be asked for by
+   * name and paid for in bones.
+   */
+  wakeSovereign(arena, resumeHP = this.dragonHP) {
+    if (!arena) return null;
     this.boss = new SkeletonDragonBoss(arena.cx * TILE_SIZE, (arena.floorY - 16) * TILE_SIZE, this);
-    if (Number.isFinite(this.dragonHP)) {
-      this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, this.dragonHP));
+    if (Number.isFinite(resumeHP)) {
+      this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, resumeHP));
       this.showToast('🦴 It remembers you.');
     }
     this.dragonHP = null;
+    this.dragonSlain = false;
     this.sound.isBoss = true;
     const panel = document.getElementById('boss-panel');
     if (panel) panel.classList.remove('hidden');
     this.showAnnouncement('🦴 THE OSSUARY SOVEREIGN AWAKENS!');
-    this.showToast('🌌 The only way home is the 🕳️ Rift Gate on the west wall.');
-    this.particles.magicSparkle(this.player.x, this.player.y, '#c4b5fd', 40);
+    return this.boss;
   }
 
   /**
@@ -3753,8 +3897,9 @@ class Game {
     // Leaving the Sovereign alive is allowed, losing your way back to it is not:
     // a wounded dragon re-tears the sky a few seconds after the retreat, so a
     // deliberate withdrawal is a pause rather than a forfeit. respawnPlayer
-    // overwrites this with its own shorter delay after the bed maths.
-    if (Number.isFinite(this.dragonHP)) this.riftReturnDelay = Math.max(this.riftReturnDelay, 5.0);
+    // overwrites this with its own shorter delay after the bed maths. A slain
+    // dragon is the opposite case — there is nothing left to be pulled back to.
+    if (!this.dragonSlain && Number.isFinite(this.dragonHP)) this.riftReturnDelay = Math.max(this.riftReturnDelay, 5.0);
     this.saveGame(true);
   }
 
@@ -3766,7 +3911,14 @@ class Game {
    */
   onDragonDefeated() {
     this.dragonHP = null;
-    this.showToast('🦴 Mine the 🟠 meteor seams and bone piles before you leave — every trip rebuilds the arena.');
+    // The kill is permanent until a rite says otherwise. Clearing the pending
+    // re-entry here is what keeps the sky from tearing open over the player's own
+    // base a few seconds after they have already won, and the flag is what keeps
+    // every later trip quiet.
+    this.dragonSlain = true;
+    this.riftReturnDelay = 0;
+    this.showToast('🦴 Mine the 🟠 meteor seams and bone piles before you leave — the Ossuary stays yours now.');
+    this.showToast('🕯️ The Sovereign stays dead. Craft a 🦴 Rite of Bones (25 Dragonbone, 10 Meteor Shards, 4 Demon Souls) and right-click it in the Ossuary to wake another.');
   }
 
   respawnPlayer() {
@@ -3776,7 +3928,10 @@ class Game {
     // few seconds later to drag you straight back in for the retry.
     if (this.world.isInSpace()) {
       this.returnToOverworld();
-      this.riftReturnDelay = 3.2;
+      // Only a Sovereign that is still standing — or banked with damage on it —
+      // pulls you back in. Dying in an arena whose dragon you already killed
+      // just wakes you at home: the Ossuary waits there for a beacon.
+      if (!this.dragonSlain || Number.isFinite(this.dragonHP)) this.riftReturnDelay = 3.2;
     }
     const spawnX = Math.floor(this.world.width / 2) * TILE_SIZE;
     const spawnY = (this.world.surfaceHeights[Math.floor(this.world.width / 2)] - 3) * TILE_SIZE;
@@ -4276,7 +4431,7 @@ this.player.dodgeTime = 0;
       const vLead = document.querySelector('#victory-screen .victory-content > p');
       if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
-        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it. The rift home is still open — and the arena is full of treasure.';
+        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and only a Rite of Bones read on them will bring another.';
       } else if (defeatedDemon) {
         if (vTitle) vTitle.textContent = '🔥 THE HELLBOUND DEMON IS UNDONE!';
         if (vLead) vLead.textContent = 'The infernal king has fallen. The Underworld is finally quiet... for now.';
@@ -4431,10 +4586,23 @@ this.player.dodgeTime = 0;
         if (this.boss && !this.boss.dead) {
           const bMidX = this.boss.x + this.boss.width / 2;
           const bMidY = this.boss.y + this.boss.height / 2;
-          if (Math.hypot(p.x - bMidX, p.y - bMidY) < 36) {
+          // Same story as the melee path: an arrow that clearly crosses the
+          // serpent's body has to bite. The skull pays full, the spine pays the
+          // 8% body tax; bosses without hit points of their own keep the old
+          // 36px centre test.
+          let struck = null;
+          if (typeof this.boss.nearestHitTarget === 'function') {
+            struck = this.boss.nearestHitTarget(p.x, p.y, 0);
+          } else if (Math.hypot(p.x - bMidX, p.y - bMidY) < 36) {
+            struck = { x: bMidX, y: bMidY, head: true };
+          }
+          if (struck) {
             p.dead = true;
             const roll = this.rollDamage(p.damage, null);
-            const dealt = this.boss.takeDamage(roll.damage, this.sound, this.particles, roll.crit) || 0;
+            const dealt = this.boss.takeDamage(
+              typeof this.boss.scaleDamageFor === 'function'
+                ? this.boss.scaleDamageFor(struck, roll.damage) : roll.damage,
+              this.sound, this.particles, roll.crit) || 0;
             if (dealt > 0) {
               this.stats.damageDealt += dealt;
               this.feel.stop(roll.crit ? 0.06 : 0.035, 0.07);

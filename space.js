@@ -1215,18 +1215,24 @@ function spawnSpaceProjectile(list, x, y, vx, vy, type, damage, life, lightRadiu
 // standing still, and is scaled AGAIN by the dragon's phase in summonMinions.
 const SKELETON_SPECIES = {
   skeleton_warrior: {
-    name: 'Ossuary Warrior', width: 20, height: 34, hp: 780, speed: 3.4, damage: 96,
+    name: 'Ossuary Warrior', width: 20, height: 34, hp: 660, speed: 3.4, damage: 82,
     knockbackResist: 0.42, lightRadius: 55
   },
   bone_archer: {
-    name: 'Marrow Archer', width: 20, height: 34, hp: 560, speed: 2.8, damage: 88,
+    name: 'Marrow Archer', width: 20, height: 34, hp: 480, speed: 2.8, damage: 74,
     knockbackResist: 0.34, lightRadius: 60
   },
   bone_colossus: {
-    name: 'Bone Colossus', width: 34, height: 48, hp: 2900, speed: 2.0, damage: 168,
+    name: 'Bone Colossus', width: 34, height: 48, hp: 2400, speed: 2.0, damage: 142,
     knockbackResist: 0.74, lightRadius: 85
   }
 };
+
+// The most bone the arena is allowed to hold at once. Every summon path reads it
+// — the passive trickle and the burst waves alike — because a cap that only one
+// of them obeys is not a cap: the old 9 lived in the passive branch only, and a
+// phase-3 burst of five dropped straight on top of it.
+const MINION_CAP = 9;
 
 class SkeletonMinion extends Monster {
   constructor(x, y, species = 'skeleton_warrior', game = null) {
@@ -1438,11 +1444,14 @@ class SkeletonDragonBoss {
     this.vy = 0;
     this.facing = -1;
     // The apex of the game. Everything the world can throw at the player has
-    // been practice for this: 100,000 health with no i-frames means sustained
-    // damage is rewarded, and the fight simply cannot be out-traded. The
-    // phases break at 66% and 33%, so each third is a fight in its own right.
-    this.maxHp = 100000;
-    this.hp = 100000;
+    // been practice for this: a six-figure health pool with no i-frames means
+    // sustained damage is rewarded, and the fight simply cannot be out-traded.
+    // The phases break at 66% and 33%, so each third is a fight in its own
+    // right. It used to be 100,000 — full Voidstar Cleaver swings into a
+    // fully-soaked plate stretched the last third past the point of being a
+    // test of patience rather than a test of reads, so the pool came down 12%.
+    this.maxHp = 88000;
+    this.hp = 88000;
     this.phase = 1;
     this.name = 'SKELETON DRAGON, THE OSSUARY SOVEREIGN';
     this.dead = false;
@@ -1474,6 +1483,10 @@ class SkeletonDragonBoss {
     this.dashHitPlayer = false;
     // How long the skull has been inside rock. See unstick().
     this.stuckTimer = 0;
+    // Blows landing on the spine instead of the skull are worth 8% less. The
+    // whole serpent is hittable (see hitTargets/nearestHitTarget), but the head
+    // is where the killing work happens, so the body must never out-DPS it.
+    this.bodyDamageScale = 0.92;
     // ---- Cataclysm ----
     this.cataclysmCooldown = 16;
     // DemonBoss carries its own poison state (it does not extend Monster), and
@@ -1679,14 +1692,50 @@ class SkeletonDragonBoss {
    * vertebra. The Game routes melee swings and player projectiles through this,
    * so the whole serpent is a target instead of just its head — a long boss you
    * can only hurt at the tip is a boss nobody can hit while it flies.
+   *
+   * Each point carries `head`, and the caller multiplies the blow by
+   * `bodyDamageScale` when it is false: the spine is flesh-of-the-skeleton and
+   * takes the hit, but the skull is where the killing blows land.
    */
   hitTargets() {
-    const list = [{ x: this.x + this.width / 2, y: this.y + this.height / 2, r: this.width / 2 }];
+    const list = [{ x: this.x + this.width / 2, y: this.y + this.height / 2, r: this.width / 2, head: true }];
     for (let i = 1; i < this.segments.length; i += 3) {
       const s = this.segments[i];
-      list.push({ x: s.x, y: s.y, r: 30 });
+      list.push({ x: s.x, y: s.y, r: 30, head: false });
     }
     return list;
+  }
+
+  /**
+   * The hittable point nearest (x, y) that lies within `reach` of it, or null
+   * when the dragon is clean out of range. `reach` is the weapon's range for a
+   * swing and 0 for a point-in-circle test, so callers can pass whatever their
+   * own collision shape implies. The skull wins ties: hit it on purpose.
+   */
+  nearestHitTarget(x, y, reach = 0) {
+    let best = null;
+    let bestGap = Infinity;
+    for (const t of this.hitTargets()) {
+      const gap = Math.hypot(t.x - x, t.y - y) - t.r;
+      if (gap > reach) continue;
+      if (gap < bestGap - 0.001 || (Math.abs(gap - bestGap) < 0.001 && t.head)) {
+        bestGap = gap;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * What a blow landing on the spine rather than the skull is worth: 8% less
+   * (see `bodyDamageScale`, set in the constructor). Body hits are the reward
+   * for committing to the serpent instead of dancing under its head, so the tax
+   * is small enough to always be worth taking and large enough that sniping the
+   * skull still pays best.
+   */
+  scaleDamageFor(target, amount) {
+    if (!target || target.head) return Math.max(1, Math.round(amount));
+    return Math.max(1, Math.round(amount * this.bodyDamageScale));
   }
 
   /** True when any part of the serpent overlaps the player. */
@@ -1704,8 +1753,8 @@ class SkeletonDragonBoss {
   /** Contact damage, scaled hard by phase — this is the final boss. */
   touchDamage() {
     return this.dashing
-      ? ([0, 150, 185, 220][this.phase] || 150)
-      : ([0, 95, 125, 155][this.phase] || 95);
+      ? ([0, 128, 158, 188][this.phase] || 128)
+      : ([0, 80, 105, 130][this.phase] || 80);
   }
 
   /** Where minions are allowed to be summoned: the arena floor, spread out. */
@@ -1725,7 +1774,7 @@ class SkeletonDragonBoss {
   /** 14–26 homing bone shards fanned toward the player. */
   spawnBoneVolley(projectiles, player, soundSystem, particleSystem) {
     const count = this.phase === 1 ? 14 : this.phase === 2 ? 20 : 26;
-    const damage = [0, 72, 90, 110][this.phase];
+    const damage = [0, 60, 76, 92][this.phase];
     const spread = this.phase === 1 ? 1.15 : this.phase === 2 ? 1.5 : 1.9;
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
@@ -1752,7 +1801,7 @@ class SkeletonDragonBoss {
    */
   spawnGraveRing(projectiles, soundSystem, particleSystem, ringIndex = 0) {
     const count = (this.phase === 1 ? 18 : this.phase === 2 ? 24 : 30) + ringIndex * 4;
-    const damage = [0, 64, 82, 100][this.phase];
+    const damage = [0, 54, 69, 84][this.phase];
     const speed = 4.0 + this.phase * 0.45;
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
@@ -1776,7 +1825,7 @@ class SkeletonDragonBoss {
    */
   spawnMeteorRain(projectiles, player, soundSystem, particleSystem) {
     const count = this.phase === 1 ? 7 : this.phase === 2 ? 11 : 15;
-    const damage = [0, 92, 115, 140][this.phase];
+    const damage = [0, 78, 98, 118][this.phase];
     const world = this.game && this.game.world;
     const a = world && world.spaceArena;
     const leftPx = (a ? a.left : 0) * TILE_SIZE;
@@ -1805,7 +1854,20 @@ class SkeletonDragonBoss {
    */
   summonMinions(projectiles, soundSystem, particleSystem) {
     if (!this.game) return 0;
-    const count = this.phase === 1 ? 3 : this.phase === 2 ? 4 : 5;
+    // A wave is a maximum, not a quota: whatever is already standing in the arena
+    // counts against the cap. Clamping here is what makes the number mean
+    // something — it used to be read only by the passive summon, so a phase
+    // change could park a full wave on top of a full arena.
+    const alive = this.game.monsters.filter(m => m.space && !m.dead).length;
+    const count = Math.max(0, Math.min(
+      this.phase === 1 ? 3 : this.phase === 2 ? 4 : 5,
+      MINION_CAP - alive));
+    if (count <= 0) {
+      // Full house: check again soon rather than on the long phase timer, so the
+      // first add to fall is replaced promptly instead of the arena sitting thin.
+      this.minionTimer = 2;
+      return 0;
+    }
     const spots = this.summonSpots(count);
     let summoned = 0;
     for (let i = 0; i < count; i++) {
@@ -1819,9 +1881,12 @@ class SkeletonDragonBoss {
       // Minions scale with the phase on BOTH axes so late adds are a real
       // threat rather than a crowd of speed bumps, and with the player's own
       // progression so the fight does not get easier as the rest of the world
-      // does. A phase-3 colossus is meant to be a second, smaller boss.
-      const phaseScale = 1 + (this.phase - 1) * 0.35;
-      minion.damage = Math.round(minion.damage * (1 + (this.phase - 1) * 0.30));
+      // does. A phase-3 colossus is meant to be a second, smaller boss — but
+      // "smaller" is the keyword: the multipliers used to be 0.35/0.30, which
+      // stacked on the already-raised base stats to put a phase-3 warrior above
+      // the Demon's own hits while the dragon was still sweeping the arena.
+      const phaseScale = 1 + (this.phase - 1) * 0.26;
+      minion.damage = Math.round(minion.damage * (1 + (this.phase - 1) * 0.22));
       minion.hp = minion.maxHp = Math.round(minion.maxHp * phaseScale);
       minion.speed = +(minion.speed * (1 + (this.phase - 1) * 0.08)).toFixed(2);
       this.game.monsters.push(minion);
@@ -1862,7 +1927,7 @@ class SkeletonDragonBoss {
         const a = this.beamAngle + offset;
         const bolt = spawnSpaceProjectile(projectiles, cx, cy,
           Math.cos(a) * 8.4, Math.sin(a) * 8.4,
-          'dragon_breath', 95, 2.6, 80, [34, 211, 238]);
+          'dragon_breath', 80, 2.6, 80, [34, 211, 238]);
         bolt.hitRadius = 22;
       }
       if (particleSystem && Math.random() < 0.6) particleSystem.magicSparkle(cx, cy, '#67e8f9', 4);
@@ -1926,7 +1991,7 @@ class SkeletonDragonBoss {
           spawnSpaceProjectile(projectiles, cx, cy,
             Math.cos(a) * side * 3.2 - this.dashDir.x * 1.6,
             Math.sin(a) * side * 3.2 - this.dashDir.y * 1.6,
-            'bone_shard', 82, 2.4, 60, [226, 232, 240]);
+            'bone_shard', 70, 2.4, 60, [226, 232, 240]);
         }
       }
     }
@@ -2055,9 +2120,12 @@ class SkeletonDragonBoss {
 
     // ---- Passive pressure: the Sovereign never stops summoning ----
     if (this.minionTimer <= 0) {
-      // Never more than 12 minions alive, or the arena turns into a mosh pit.
+      // Never more than MINION_CAP alive, or the arena turns into a mosh pit. It
+      // used to be 12, which on top of the raised per-minion stats meant a
+      // phase-3 screen was unreadable rather than hard. summonMinions clamps to
+      // the same number, so this branch is only the early-out.
       const alive = this.game ? this.game.monsters.filter(m => m.space && !m.dead).length : 0;
-      if (alive < 12) this.summonMinions(projectiles, soundSystem, particleSystem);
+      if (alive < MINION_CAP) this.summonMinions(projectiles, soundSystem, particleSystem);
       else this.minionTimer = 4;
     }
     if (this.phase === 3) {

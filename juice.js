@@ -875,6 +875,15 @@ function describeItem(id, game) {
     });
   }
   if (item.heal) rows.push({ label: 'Restores', value: `+${item.heal} life` });
+  // The two rift items are consumables that do nothing when drunk, so the tooltip
+  // has to say what they actually are — otherwise the Rite of Bones reads like a
+  // potion and the one mechanic that can restart the Sovereign goes undiscovered.
+  if (item.riftBeacon) {
+    rows.push({ label: 'Use', value: 'Right-click under open sky — tears a wormhole to the Ossuary' });
+  }
+  if (item.dragonRite) {
+    rows.push({ label: 'Use', value: 'Right-click inside the Ossuary — burns the bones and wakes a new Sovereign' });
+  }
   if (item.hunger) rows.push({ label: 'Fills', value: `+${item.hunger} hunger` });
   if (item.mana) rows.push({ label: 'Restores', value: `+${item.mana} mana` });
   if (item.maxHpBonus) rows.push({ label: 'Permanent', value: `+${item.maxHpBonus} max life` });
