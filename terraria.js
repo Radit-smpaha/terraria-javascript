@@ -914,6 +914,10 @@ class Game {
     // raise another. This flag is what stops a cleared arena from re-arming a
     // fight the player has already won.
     this.dragonSlain = false;
+    // The Sovereign's death show (space.js DragonFinale) and the victory
+    // screen it holds back — both exist only for the seconds after the kill.
+    this.dragonFinale = null;
+    this.victoryDelay = 0;
     this.riftReturnDelay = 0;    // beats until a post-death re-entry fires
     // Seconds of "you were just hit" during which no regeneration runs.
     this.regenLock = 0;
@@ -2163,6 +2167,10 @@ class Game {
     // so it survives the reload the same way the banked HP does. Without this,
     // refreshing the page after a kill re-armed the very fight the player won.
     this.dragonSlain = save.dragonSlain === true;
+    // A reload describes the overworld: any death show still in the air — and
+    // the victory screen it was holding back — both end here.
+    this.dragonFinale = null;
+    this.victoryDelay = 0;
     // Re-arm a re-entry that was still counting down when the tab died, but only
     // while there is actually a wounded Sovereign to go back to — and never after
     // the killing blow, because a slain dragon has nothing to return to.
@@ -4261,6 +4269,10 @@ class Game {
     // An unfinished fight is banked, not forgotten.
     if (this.boss && !this.boss.dead && this.boss.kind === 'dragon') this.dragonHP = this.boss.hp;
     this.boss = null;
+    // The death show belongs to the arena: leaving (or being dragged out by
+    // death) ends it. The held victory screen keeps its own timer — the kill
+    // still deserves its curtain wherever the player ends up.
+    this.dragonFinale = null;
     this.sound.isBoss = false;
     const panel = document.getElementById('boss-panel');
     if (panel) panel.classList.add('hidden');
@@ -4832,6 +4844,14 @@ this.player.dodgeTime = 0;
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x - 30, this.boss.y - 40, 'ossuary_armor', 1));
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 28, this.boss.y - 8, 'ossuary_blade', 1));
       if (defeatedDragon) this.onDragonDefeated();
+      // The final boss gets a finale: snapshot the spine while the boss object
+      // still exists (this block nulls it below), and hold the victory screen
+      // until the show has had its moment — it is a full-screen overlay and
+      // would cover the whole spectacle if it dropped now.
+      if (defeatedDragon && typeof DragonFinale === 'function') {
+        this.dragonFinale = new DragonFinale(this.boss);
+        this.victoryDelay = 6.0;
+      }
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
       if (defeatedDragon) {
@@ -4850,8 +4870,25 @@ this.player.dodgeTime = 0;
       const victoryStats = document.getElementById('victory-stats');
       if (victoryStats) victoryStats.textContent = this.describeRun();
       const victoryScreen = document.getElementById('victory-screen');
-      if (victoryScreen) victoryScreen.classList.remove('hidden');
+      // Non-dragon bosses curtain-drop immediately; the Sovereign's screen is
+      // raised by the update loop once this.victoryDelay runs out.
+      if (victoryScreen && !defeatedDragon) victoryScreen.classList.remove('hidden');
       this.boss = null;
+    }
+
+    // The Sovereign's death show runs after the boss object itself is gone:
+    // tick it here, and raise the held victory screen when the show is over.
+    if (this.dragonFinale) {
+      this.dragonFinale.update(dt, this);
+      if (this.dragonFinale.done) this.dragonFinale = null;
+    }
+    if (this.victoryDelay > 0 && !this.isDead) {
+      this.victoryDelay -= dt;
+      if (this.victoryDelay <= 0) {
+        this.victoryDelay = 0;
+        const vScreen = document.getElementById('victory-screen');
+        if (vScreen) vScreen.classList.remove('hidden');
+      }
     }
 
     // 7. Update Boss
@@ -5427,6 +5464,10 @@ this.player.dodgeTime = 0;
     // 9. Particles, Slashes & Combat Damage Texts
     this.particles.render(ctx, this.camera);
 
+    // 9b. The Sovereign's death show draws over the debris so the shockwaves
+    // and the soul pillar read against it.
+    if (this.dragonFinale) this.dragonFinale.render(ctx, this.camera);
+
     // 10. Foreground weather (close-up rain streaks + lightning flash)
     if (this.weather && !this.world.isInSpace()) this.weather.render(this, ctx, this.camera, 'front');
 
@@ -5438,6 +5479,7 @@ this.player.dodgeTime = 0;
     for (const m of this.monsters) lit.push(m);
     for (const p of this.projectiles) lit.push(p);
     if (this.boss && !this.boss.dead) lit.push(this.boss);
+    if (this.dragonFinale) lit.push(this.dragonFinale);
     this.world.renderLighting(this.lightCtx, this.camera, this.player, lit);
 
     // 12. Additive bloom pass — light that actually glows
@@ -5447,6 +5489,7 @@ this.player.dodgeTime = 0;
         glows.length = 0;
         for (const p of this.projectiles) glows.push(p);
         if (this.boss && !this.boss.dead) glows.push(this.boss);
+        if (this.dragonFinale) glows.push(this.dragonFinale);
         this.world.renderGlow(this.glowCtx, this.camera, this.player, glows);
       } else {
         this.glowCtx.setTransform(this.internalScale || 1, 0, 0, this.internalScale || 1, 0, 0);
@@ -5468,6 +5511,8 @@ this.player.dodgeTime = 0;
     // tint and the white-out that hides the dimension swap stay crisp whatever
     // the render scale happens to be.
     if (this.wormhole) this.wormhole.renderScreenOverlay(out, this.canvas.width, this.canvas.height);
+    // The Sovereign's white-out rides the same unscaled output layer.
+    if (this.dragonFinale) this.dragonFinale.renderScreenOverlay(out, this.canvas.width, this.canvas.height);
     if (this.showFps) this.renderFpsBadge();
   }
 

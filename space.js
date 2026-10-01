@@ -1548,7 +1548,12 @@ class SkeletonDragonBoss {
       this.dead = true;
       if (soundSystem) soundSystem.playExplosion();
       if (this.game && this.game.feel) this.game.feel.shake(2.0);
-      if (particleSystem) particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#fde047', 140);
+      if (particleSystem) {
+        particleSystem.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#fde047', 140);
+        // The body comes apart on the spot: bone chips explode out of the
+        // skull before the staged DragonFinale takes over on the next frame.
+        particleSystem.bloodBurst(this.x + this.width / 2, this.y + this.height / 2, '#e7e5e4', 30);
+      }
     }
     return dealt;
   }
@@ -2884,10 +2889,195 @@ class WormholeFX {
     }
   }
 }
+// ============================================================
+// 8. THE SOVEREIGN'S FALL — the final boss death spectacle
+// ============================================================
+// The Ossuary Sovereign is the last thing the game asks of the player, so its
+// death is a staged show rather than a despawn. The Game builds one of these
+// the frame the skull dies — while every vertebra is still on the boss object
+// — and snapshots the spine into it, because Game.update nulls this.boss on
+// that same frame. From there it plays itself out over ~7 seconds:
+//
+//   0.0s   white-out; the spine chain-detonates from tail toward the skull
+//   ~1.5s  the skull blows: second flash, shockwave rings, bone nova
+//   1.5s+  rings breathe outward, a pillar of souls climbs, bone dust falls
+//   ~7s    done — the light fades and the arena is just an arena again
+//
+// Pure presentation: no hitboxes, no drops, no rules. All the Game owes it
+// is one tick per update, one world draw and one screen-overlay draw.
+class DragonFinale {
+  constructor(boss) {
+    this.t = 0;
+    this.done = false;
+    this.x = boss.x + boss.width / 2;
+    this.y = boss.y + boss.height / 2;
+    this.phase = boss.phase || 1;
+    this.soul = this.phase === 3 ? '#f0abfc' : this.phase === 2 ? '#c4b5fd' : '#67e8f9';
+    this.soulRGB = this.phase === 3 ? '240,164,252' : this.phase === 2 ? '196,181,253' : '103,232,249';
+    // Tail first, so the wave races toward the skull and the skull takes the
+    // big blast — the same read as a fuse burning down the spine.
+    this.chain = [];
+    const segs = boss.segments || [];
+    for (let i = segs.length - 1; i >= 0; i--) {
+      this.chain.push({ x: segs[i].x, y: segs[i].y, at: 0.08 + this.chain.length * 0.07, popped: false });
+    }
+    this.skullAt = 0.08 + this.chain.length * 0.07 + 0.18;
+    this.skullPopped = false;
+    this.rings = [];
+    this.flash = 1;
+    this.pillar = 0;
+    // The lighting/glow passes read these off any entity in their list, so the
+    // arena is lit by its own corpse-light while the show runs.
+    this.lightRadius = 520;
+    this.glowRadius = 360;
+    this.lightColor = this.phase === 3 ? [240, 164, 252] : [103, 232, 249];
+    this.hitFlash = 0;
+  }
+
+  /** One frame of the show. `game` is only used for particles/sound/feel. */
+  update(dt, game) {
+    if (this.done) return;
+    this.t += dt;
+    const P = game.particles;
+    const S = game.sound;
+
+    // White-out: full the instant the boss dies, gone by ~0.45s, re-triggered
+    // by the skull blast.
+    this.flash = Math.max(0, this.flash - dt * 2.2);
+
+    // ---- The chain: each vertebra detonates as the wave reaches it ----
+    for (const seg of this.chain) {
+      if (seg.popped || this.t < seg.at) continue;
+      seg.popped = true;
+      P.bloodBurst(seg.x, seg.y, '#e7e5e4', 9);      // bone chips, not blood
+      P.magicSparkle(seg.x, seg.y, this.soul, 6);
+      this.rings.push({ x: seg.x, y: seg.y, maxR: 44 + Math.random() * 24, life: 0.55, maxLife: 0.55, color: this.soul, w: 3 });
+      if (S && Math.random() < 0.5) S.playDig(true);  // bone crunch
+      if (game.feel) game.feel.shake(0.05);           // the spine stutters
+    }
+
+    // ---- The skull: the big one ----
+    if (!this.skullPopped && this.t >= this.skullAt) {
+      this.skullPopped = true;
+      this.flash = 1;
+      this.pillar = 1;
+      if (S) { S.playExplosion(); S.playBossRoar(); }
+      if (game.feel) game.feel.shake(1.1);
+      P.bloodBurst(this.x, this.y, '#e7e5e4', 40);
+      P.bloodBurst(this.x, this.y, '#d6d3d1', 24);
+      P.magicSparkle(this.x, this.y, this.soul, 60);
+      P.magicSparkle(this.x, this.y, '#fde047', 30);
+      this.rings.push({ x: this.x, y: this.y, maxR: 280, life: 1.1, maxLife: 1.1, color: '#ffffff', w: 7 });
+      this.rings.push({ x: this.x, y: this.y, maxR: 200, life: 0.9, maxLife: 0.9, color: this.soul, w: 5 });
+      // Bone nova: shrapnel in every direction, gravity pulls it back down.
+      for (let i = 0; i < 46; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 3 + Math.random() * 7;
+        P.addParticle(this.x, this.y, Math.cos(a) * sp, Math.sin(a) * sp - 2,
+          i % 3 ? '#e7e5e4' : this.soul, 2 + Math.random() * 3, 1.6 + Math.random(), 0.14, i % 3 === 0);
+      }
+    }
+
+    // ---- Rings age out here; render() draws them from life/maxLife ----
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      this.rings[i].life -= dt;
+      if (this.rings[i].life <= 0) this.rings.splice(i, 1);
+    }
+
+    // ---- The soul pillar: a geyser of motes climbing out of the corpse ----
+    if (this.skullPopped) {
+      const since = this.t - this.skullAt;
+      this.pillar = Math.max(0, 1 - since / 3.4);
+      if (this.pillar > 0 && P) {
+        const n = this.pillar > 0.6 ? 3 : 2;
+        for (let i = 0; i < n; i++) {
+          P.addParticle(this.x + (Math.random() - 0.5) * 70, this.y + 10,
+            (Math.random() - 0.5) * 0.7, -1.6 - Math.random() * 2.2,
+            Math.random() < 0.7 ? this.soul : '#fde047', 3 + Math.random() * 3,
+            1.2 + Math.random() * 0.8, -0.03, true);
+        }
+      }
+      // Light: a blown-out core settling into a dim, breathing soul glow.
+      const fade = Math.max(0, 1 - since / 4.5);
+      this.lightRadius = 200 + 420 * fade + Math.sin(this.t * 9) * 40 * fade;
+      this.glowRadius = 140 + 300 * fade;
+      if (since > 5.5) this.done = true;   // ~7s from the killing blow
+    }
+  }
+
+  /** World-space draw: shockwave rings, the soul pillar, the blast core. */
+  render(ctx, camera) {
+    const sx = this.x - camera.x;
+    const sy = this.y - camera.y;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // ---- Shockwave rings: ease-out growth, thinning stroke, white edge ----
+    for (const r of this.rings) {
+      const k = 1 - r.life / r.maxLife;
+      const radius = r.maxR * (1 - Math.pow(1 - k, 2.2));
+      ctx.globalAlpha = Math.max(0, (1 - k) * 0.85);
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = Math.max(0.5, r.w * (1 - k));
+      ctx.beginPath();
+      ctx.arc(r.x - camera.x, r.y - camera.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = Math.max(0, (1 - k) * 0.5);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(0.5, r.w * (1 - k) * 0.35);
+      ctx.beginPath();
+      ctx.arc(r.x - camera.x, r.y - camera.y, radius * 0.96, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // ---- The soul pillar column ----
+    if (this.pillar > 0) {
+      const w = 46 + Math.sin(this.t * 7) * 8;
+      const h = 320 * this.pillar;
+      const g = ctx.createLinearGradient(0, sy - h, 0, sy + 30);
+      g.addColorStop(0, 'rgba(' + this.soulRGB + ',0)');
+      g.addColorStop(1, 'rgba(' + this.soulRGB + ',' + (0.5 * this.pillar).toFixed(3) + ')');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.fillRect(sx - w / 2, sy - h, w, h + 30);
+    }
+
+    // ---- The skull blast core: a white-hot ball that goes nova and dies ----
+    if (this.skullPopped && this.t - this.skullAt < 0.8) {
+      const k = (this.t - this.skullAt) / 0.8;
+      const R = 60 + 260 * k;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, R);
+      g.addColorStop(0, 'rgba(255,255,255,' + (0.9 * (1 - k)).toFixed(3) + ')');
+      g.addColorStop(0.4, 'rgba(' + this.soulRGB + ',' + (0.55 * (1 - k)).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(' + this.soulRGB + ',0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(sx, sy, R, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Full-screen draw on the OUTPUT canvas (same contract as WormholeFX):
+   * the white-out that sells the two big blasts, crisp at any render scale.
+   */
+  renderScreenOverlay(ctx, w, h) {
+    if (this.flash <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, this.flash);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+}
 // Expose the new classes the way every other module does, so the page's boot
 // watchdog and the headless harnesses can see them.
 if (typeof window !== 'undefined') {
   window.SkeletonDragonBoss = SkeletonDragonBoss;
+  window.DragonFinale = DragonFinale;
   window.SkeletonMinion = SkeletonMinion;
   window.WormholeFX = WormholeFX;
   window.SPACE_TILE_IDS = SPACE_TILE_IDS;
