@@ -78,7 +78,7 @@ const TILE_PROPERTIES = {
   [TILES.LAVA]: { solid: false, light: 10, color: '#f97316', name: 'Lava', drops: null },
   [TILES.TORCH]: { solid: false, light: 12, color: '#f59e0b', name: 'Torch', drops: { id: 'torch', count: 1 } },
   [TILES.CAMPFIRE]: { solid: false, light: 14, color: '#ef4444', name: 'Campfire', drops: { id: 'wood', count: 5 } },
-  [TILES.CHEST]: { solid: true, light: 0, color: '#d97706', name: 'Forest Chest', drops: null },
+  [TILES.CHEST]: { solid: true, light: 0, color: '#d97706', name: 'Forest Chest', drops: { id: 'chest', count: 1 } },
   [TILES.BED]: { solid: false, light: 0, color: '#60a5fa', name: 'Forest Bed', drops: { id: 'bed', count: 1 } },
   [TILES.CRYSTAL]: { solid: true, light: 6, color: '#67e8f9', name: 'Cave Crystal', drops: { id: 'crystal', count: 1 } }
   , [TILES.SNOW]: { solid: true, light: 0, color: '#e0f2fe', name: 'Snow Block', drops: { id: 'snow_block', count: 1 } }
@@ -89,7 +89,7 @@ const TILE_PROPERTIES = {
   , [TILES.SNOW_PINE_LEAVES]: { solid: false, light: 0, color: '#dbeafe', name: 'Snow Pine Needles', drops: { id: 'acorn', count: 1 } }
   , [TILES.ACACIA_LEAVES]: { solid: false, light: 0, color: '#84cc16', name: 'Acacia Leaves', drops: { id: 'acorn', count: 1 } }
   , [TILES.MANGROVE_LEAVES]: { solid: false, light: 0, color: '#0f766e', name: 'Mangrove Leaves', drops: { id: 'acorn', count: 1 } }
-  , [TILES.CHEST_OPEN]: { solid: false, light: 0, color: '#d97706', name: 'Opened Chest', drops: null }
+  , [TILES.CHEST_OPEN]: { solid: false, light: 0, color: '#d97706', name: 'Opened Chest', drops: { id: 'chest', count: 1 } }
   , [TILES.WOOD_STAIRS]: { solid: true, light: 0, color: '#b45309', name: 'Wood Stairs', drops: { id: 'wood', count: 1 } }
   , [TILES.WATER]: { solid: false, light: 1, color: '#38bdf8', name: 'Water', drops: null }
   // ---- Rich biome tile variants (drops reuse existing item ids so saves stay valid) ----

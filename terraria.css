@@ -640,7 +640,8 @@ kbd {
 }
 
 .chest-modal-content {
-  width: 420px;
+  width: 600px;
+  max-width: 94vw;
   border-color: #d97706;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(217, 119, 6, 0.35);
 }
@@ -680,6 +681,49 @@ kbd {
 .chest-loot-icon {
   font-size: 26px;
   text-align: center;
+}
+
+/* ---- Chest storage panel: the amber sibling of the shared stash ---------- */
+.chest-hint {
+  font-size: 15px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.chest-grid {
+  border: 1px solid rgba(217, 119, 6, 0.55);
+  justify-content: center;
+}
+
+.chest-bag-grid {
+  justify-content: center;
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.chest-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+
+.chest-bag-label {
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #94a3b8;
+  margin-top: 10px;
+}
+
+/* Both grids move items on click rather than dragging, so the slots point. */
+.chest-slot.filled {
+  cursor: pointer;
+  border-color: #b45309;
+}
+
+.chest-slot.filled:hover {
+  border-color: var(--accent-gold);
+  box-shadow: inset 0 0 10px rgba(246, 195, 68, 0.2);
 }
 
 .guide-text {

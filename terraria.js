@@ -22,6 +22,7 @@ const ITEMS = {
   stone_brick: { id: 'stone_brick', name: 'Stone Brick', type: 'tile', tile: TILES.STONE_BRICK, icon: '🧱', stackMax: 999 },
   glass_block: { id: 'glass_block', name: 'Glass Block', type: 'tile', tile: TILES.GLASS, icon: '🔳', stackMax: 999 },
   bed: { id: 'bed', name: 'Forest Bed', type: 'tile', tile: TILES.BED, icon: '🛏️', stackMax: 1 },
+  chest: { id: 'chest', name: 'Chest', type: 'tile', tile: TILES.CHEST, icon: '🧰', stackMax: 99 },
   wood_platform: { id: 'wood_platform', name: 'Wood Platform', type: 'tile', tile: TILES.WOOD_PLATFORM, icon: '🌉', stackMax: 999 },
   // ---- Building set --------------------------------------------------------
   // Ten blocks with no combat role at all: they exist so a player who wants to
@@ -458,6 +459,13 @@ const RECIPES = [
     name: 'Explorer Bed'
   },
   {
+    // Storage furniture: 18 world-side slots per chest, so a base can stock
+    // supplies without the bag (or the cross-world stash) carrying everything.
+    result: { id: 'chest', count: 1 },
+    materials: [{ id: 'wood', count: 8 }, { id: 'iron_ore', count: 2 }],
+    name: 'Chest'
+  },
+  {
     result: { id: 'campfire', count: 1 },
     materials: [{ id: 'wood', count: 10 }, { id: 'torch', count: 2 }],
     name: 'Cozy Campfire'
@@ -870,6 +878,14 @@ class Game {
     this.savedDirty = false;    // persists at most once a second, not per click
     this.loadSharedInventory();
 
+    // ---- Chest storage ----
+    // A chest is world furniture, not bag space: every chest keeps its own 18
+    // slots keyed by the tile it occupies, so the contents follow the chest
+    // (and the world save) instead of the player. openChest points at the
+    // panel currently on screen, or null when it is shut.
+    this.chestStorage = {};
+    this.openChest = null;
+
     // Input state
     this.input = {
       keys: {},
@@ -1123,6 +1139,15 @@ class Game {
         if (e.code === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) {
           this.toggleSettings(false);
           return;
+        }
+        // Escape shuts the chest panel first — otherwise the first press always
+        // opened the pause menu with the storage UI still on screen.
+        if (e.code === 'Escape') {
+          const chestModal = document.getElementById('chest-modal');
+          if (chestModal && !chestModal.classList.contains('hidden')) {
+            this.closeChestUI();
+            return;
+          }
         }
         if (!e.repeat) this.togglePause();
         return;
@@ -1420,9 +1445,14 @@ class Game {
       if (event.target === event.currentTarget) this.toggleInventoryModal(false);
     });
 
-    const closeChestModal = () => document.getElementById('chest-modal')?.classList.add('hidden');
+    const closeChestModal = () => this.closeChestUI();
     document.getElementById('chest-close')?.addEventListener('click', closeChestModal);
     document.getElementById('chest-done')?.addEventListener('click', closeChestModal);
+    document.getElementById('chest-modal')?.addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) closeChestModal();
+    });
+    document.getElementById('chest-deposit-all')?.addEventListener('click', () => this.chestQuickDeposit());
+    document.getElementById('chest-take-all')?.addEventListener('click', () => this.chestTakeAll());
 
     // Respawn button
     const btnRespawn = document.getElementById('btn-respawn');
@@ -1539,19 +1569,285 @@ class Game {
     return true;
   }
 
-  showChestLoot(loot) {
-    const lootGrid = document.getElementById('chest-loot');
-    const chestModal = document.getElementById('chest-modal');
-    if (!lootGrid || !chestModal) return;
-    lootGrid.innerHTML = '';
-    for (const entry of loot) {
-      const item = ITEMS[entry.id];
-      const lootItem = document.createElement('div');
-      lootItem.className = 'chest-loot-item';
-      lootItem.innerHTML = `<span class="chest-loot-icon">${item ? item.icon : '📦'}</span><span>${item ? item.name : entry.id}</span><strong>x${entry.count}</strong>`;
-      lootGrid.appendChild(lootItem);
+  /** A fresh 18-slot chest grid. Fixed length so renders and saves agree. */
+  makeEmptyChestSlots() {
+    const slots = [];
+    for (let i = 0; i < 18; i++) slots.push({ id: 'empty', count: 0 });
+    return slots;
+  }
+
+  /**
+   * The storage grid of the chest sitting at (tileX, tileY). Creates the entry
+   * on first access and sanitises every slot, so a hand-edited or pre-feature
+   * save can never push a broken item id into the panel.
+   */
+  getChestSlots(tileX, tileY) {
+    const key = `${tileX},${tileY}`;
+    let slots = this.chestStorage[key];
+    if (!Array.isArray(slots)) {
+      slots = this.makeEmptyChestSlots();
+      this.chestStorage[key] = slots;
     }
-    chestModal.classList.remove('hidden');
+    slots.length = 18;
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (!s || !ITEMS[s.id] || !Number.isFinite(s.count) || s.count <= 0) slots[i] = { id: 'empty', count: 0 };
+    }
+    return slots;
+  }
+
+  /**
+   * Breaking a chest must not delete what was stored in it: every stack spills
+   * into the world as a pickup, and the storage entry goes with the tile.
+   */
+  spillChestContents(tileX, tileY) {
+    const key = `${tileX},${tileY}`;
+    const slots = this.chestStorage[key];
+    if (!Array.isArray(slots)) return;
+    for (const slot of slots) {
+      if (slot && ITEMS[slot.id] && slot.count > 0) {
+        this.drops.push(new DropItem(tileX * TILE_SIZE + 5, tileY * TILE_SIZE + 5, slot.id, slot.count));
+      }
+    }
+    delete this.chestStorage[key];
+  }
+
+  /**
+   * Open the storage panel for one chest. A world chest that has never been
+   * opened is unsealed here: the old one-shot loot roll is seeded INTO the
+   * chest slots (the player then takes what they want), and the first-chest
+   * bookkeeping still fires. A chest the player placed pre-registered an empty
+   * grid on placement, so crafted chests never roll free treasure.
+   */
+  openChestUI(tileX, tileY) {
+    const key = `${tileX},${tileY}`;
+    const wasClosed = this.world.getTile(tileX, tileY) === TILES.CHEST;
+    if (!this.chestStorage[key]) {
+      if (wasClosed) {
+        const slots = this.makeEmptyChestSlots();
+        const lootTable = [
+          ['iron_ore', 4], ['gold_ore', 2], ['wool', 3], ['healing_potion', 2], ['arrow', 15], ['apple', 3]
+        ];
+        const first = lootTable[Math.floor(Math.random() * lootTable.length)];
+        const bonus = lootTable[Math.floor(Math.random() * lootTable.length)];
+        slots[0] = { id: first[0], count: first[1] };
+        slots[1] = { id: bonus[0], count: bonus[1] };
+        this.chestStorage[key] = slots;
+        this.chestsOpened = (this.chestsOpened || 0) + 1;
+        this.journey?.recordActivity('treasure', tileX * TILE_SIZE + 12, tileY * TILE_SIZE);
+        this.logDiscovery('first_chest', '🧰 First Chest Opened!', 40);
+      } else {
+        // Opened by the pre-storage loot system (or a save that predates it):
+        // that loot already went straight to the bag, so it comes back empty.
+        this.chestStorage[key] = this.makeEmptyChestSlots();
+      }
+    }
+    if (wasClosed) this.world.setTile(tileX, tileY, TILES.CHEST_OPEN);
+    this.openChest = { x: tileX, y: tileY };
+    const modal = document.getElementById('chest-modal');
+    if (modal) modal.classList.remove('hidden');
+    this.renderChestUI();
+  }
+
+  /** Shut the storage panel. Safe to call when nothing is open. */
+  closeChestUI() {
+    const modal = document.getElementById('chest-modal');
+    if (modal) modal.classList.add('hidden');
+    this.openChest = null;
+  }
+
+  /** Draw both grids of the chest panel: the chest slots and a bag mirror. */
+  renderChestUI() {
+    if (!this.openChest) return;
+    const grid = document.getElementById('chest-grid');
+    const invGrid = document.getElementById('chest-inv-grid');
+    if (!grid || !invGrid) return;
+    const slots = this.getChestSlots(this.openChest.x, this.openChest.y);
+
+    grid.innerHTML = '';
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const filled = slot.id !== 'empty';
+      const div = document.createElement('div');
+      div.className = `inv-slot chest-slot ${filled ? 'filled' : ''}`;
+      const data = filled ? ITEMS[slot.id] : null;
+      div.title = data
+        ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take, Shift+click for one`
+        : 'Empty chest slot';
+      if (filled) {
+        div.textContent = data ? data.icon : '📦';
+        if (slot.count > 1) {
+          const c = document.createElement('span');
+          c.className = 'slot-count';
+          c.textContent = slot.count;
+          div.appendChild(c);
+        }
+        div.addEventListener('click', (event) => this.takeFromChest(i, !event.shiftKey));
+      }
+      grid.appendChild(div);
+    }
+
+    const used = slots.filter(s => s.id !== 'empty').length;
+    const countEl = document.getElementById('chest-count');
+    if (countEl) countEl.textContent = `${used} / 18 slots in use`;
+
+    invGrid.innerHTML = '';
+    for (let i = 0; i < this.inventory.length; i++) {
+      const slot = this.inventory[i];
+      const filled = slot && slot.id !== 'empty';
+      const div = document.createElement('div');
+      div.className = `inv-slot chest-slot ${filled ? 'filled' : ''}`;
+      const data = filled ? ITEMS[slot.id] : null;
+      div.title = data
+        ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to store, Shift+click for one`
+        : 'Empty bag slot';
+      if (filled) {
+        div.textContent = data ? data.icon : '📦';
+        if (slot.count > 1) {
+          const c = document.createElement('span');
+          c.className = 'slot-count';
+          c.textContent = slot.count;
+          div.appendChild(c);
+        }
+        div.addEventListener('click', (event) => this.moveToChest(i, !event.shiftKey));
+      }
+      invGrid.appendChild(div);
+    }
+  }
+
+  /**
+   * Bag -> chest. Click moves the whole stack, Shift+click moves one, exactly
+   * what the panel's hint line promises.
+   */
+  moveToChest(index, wholeStack = true) {
+    if (!this.openChest) return false;
+    if (!Number.isInteger(index) || index < 0 || index >= this.inventory.length) return false;
+    const slot = this.inventory[index];
+    if (!slot || slot.id === 'empty' || slot.count <= 0) return false;
+    const item = ITEMS[slot.id];
+    if (!item) return false;
+    const slots = this.getChestSlots(this.openChest.x, this.openChest.y);
+    const stackMax = item.stackMax || 99;
+
+    // Top up a stack of the same item first, then claim an empty slot.
+    let target = slots.find(s => s.id === slot.id && s.count < stackMax);
+    if (!target) {
+      target = slots.find(s => s.id === 'empty');
+      if (!target) {
+        this.showToast('🧰 The chest is full.');
+        return false;
+      }
+      target.id = slot.id;
+      target.count = 0;
+    }
+
+    const moveCount = wholeStack ? slot.count : 1;
+    const moved = Math.min(moveCount, stackMax - target.count, slot.count);
+    target.count += moved;
+    slot.count -= moved;
+    if (slot.count <= 0) this.inventory[index] = { id: 'empty', count: 0 };
+
+    this.sound.playPickup();
+    this.showToast(`🧰 Stored ${moved}× ${item.name}.`);
+    this.renderChestUI();
+    this.renderInventoryGrid();
+    this.renderHotbarUI();
+    return true;
+  }
+
+  /** Chest -> bag. Click takes the whole stack, Shift+click takes one. */
+  takeFromChest(index, wholeStack = true) {
+    if (!this.openChest) return false;
+    const slots = this.getChestSlots(this.openChest.x, this.openChest.y);
+    const slot = slots[index];
+    if (!slot || slot.id === 'empty' || slot.count <= 0) return false;
+    const item = ITEMS[slot.id];
+    if (!item) return false;
+    const take = wholeStack ? slot.count : 1;
+    if (!this.canAddItem(slot.id, take)) {
+      this.showToast('🎒 Your bag is full.');
+      return false;
+    }
+    this.addItem(slot.id, take);
+    slot.count -= take;
+    if (slot.count <= 0) slot.id = 'empty';
+    this.sound.playPickup();
+    this.showToast(`🧰 Took ${take}× ${item.name}.`);
+    this.renderChestUI();
+    this.renderInventoryGrid();
+    this.renderHotbarUI();
+    return true;
+  }
+
+  /** One button that moves everything the bag holds into the chest. */
+  chestQuickDeposit() {
+    if (!this.openChest) return false;
+    const slots = this.getChestSlots(this.openChest.x, this.openChest.y);
+    let moved = 0;
+    for (let i = 0; i < this.inventory.length; i++) {
+      const slot = this.inventory[i];
+      if (!slot || slot.id === 'empty' || slot.count <= 0) continue;
+      const stackMax = ITEMS[slot.id] ? (ITEMS[slot.id].stackMax || 99) : 99;
+      // Existing stacks first, empty slots second — same order addItem uses.
+      for (const target of slots) {
+        if (target.id === slot.id && target.count < stackMax && slot.count > 0) {
+          const m = Math.min(stackMax - target.count, slot.count);
+          target.count += m;
+          slot.count -= m;
+          moved += m;
+        }
+      }
+      for (const target of slots) {
+        if (target.id === 'empty' && slot.count > 0) {
+          const m = Math.min(stackMax, slot.count);
+          target.id = slot.id;
+          target.count = m;
+          slot.count -= m;
+          moved += m;
+        }
+      }
+      if (slot.count <= 0) this.inventory[i] = { id: 'empty', count: 0 };
+    }
+    if (moved <= 0) {
+      this.showToast('🧰 Nothing to deposit — the chest or your bag is empty.');
+      return false;
+    }
+    this.sound.playPickup();
+    this.showToast(`🧰 Deposited ${moved} item${moved === 1 ? '' : 's'}.`);
+    this.renderChestUI();
+    this.renderInventoryGrid();
+    this.renderHotbarUI();
+    return true;
+  }
+
+  /** The other button: everything the chest holds walks back into the bag. */
+  chestTakeAll() {
+    if (!this.openChest) return false;
+    const slots = this.getChestSlots(this.openChest.x, this.openChest.y);
+    let moved = 0;
+    let blocked = false;
+    for (const slot of slots) {
+      if (slot.id === 'empty' || slot.count <= 0) continue;
+      if (!this.canAddItem(slot.id, slot.count)) {
+        blocked = true;
+        continue;
+      }
+      this.addItem(slot.id, slot.count);
+      moved += slot.count;
+      slot.id = 'empty';
+      slot.count = 0;
+    }
+    if (moved <= 0) {
+      this.showToast(blocked ? '🎒 Your bag is full.' : '🧰 The chest is empty.');
+      return false;
+    }
+    this.sound.playPickup();
+    this.showToast(`🎒 Took ${moved} item${moved === 1 ? '' : 's'} from the chest.`);
+    if (blocked) this.showToast('🎒 Some items stayed behind — your bag is full.');
+    this.renderChestUI();
+    this.renderInventoryGrid();
+    this.renderHotbarUI();
+    return true;
   }
 
   renderSaveManager() {
@@ -1707,6 +2003,10 @@ class Game {
         selectedSlot: this.player.selectedSlot
       },
       inventory: this.inventory,
+      // Chest furniture: each chest's 18 slots, keyed by the tile it sits on.
+      // Additive key — saves written before chests existed simply lack it and
+      // load with no stored chest contents.
+      chests: this.chestStorage,
       quests: this.npcs ? this.npcs.toSave() : null,
       underworld: this.world.underworld ? { ...this.world.underworld } : null,
       progress: this.progressToSave(),
@@ -1839,6 +2139,13 @@ class Game {
     this.drops = Array.isArray(save.drops)
       ? save.drops.filter(drop => ITEMS[drop.id]).map(drop => new DropItem(drop.x, drop.y, drop.id, drop.count))
       : [];
+    // Chest contents ride with the world. Saves that predate the feature start
+    // with none, and the open panel is always shut first so a load can never
+    // leave a chest UI pointing at coordinates the reloaded world replaced.
+    this.closeChestUI();
+    this.chestStorage = (save.chests && typeof save.chests === 'object' && !Array.isArray(save.chests))
+      ? save.chests
+      : {};
     this.monsters = [];
     this.projectiles = [];
     this.boss = null;
@@ -1946,6 +2253,7 @@ class Game {
     const isHidden = modal.classList.contains('hidden');
     const show = force !== undefined ? force : isHidden;
     if (show) {
+      this.closeChestUI();
       document.getElementById('inventory-modal')?.classList.add('hidden');
       modal.classList.remove('hidden');
       this.renderCraftingRecipes();
@@ -1960,6 +2268,7 @@ class Game {
     const isHidden = modal.classList.contains('hidden');
     const show = force !== undefined ? force : isHidden;
     if (show) {
+      this.closeChestUI();
       document.getElementById('crafting-modal')?.classList.add('hidden');
       modal.classList.remove('hidden');
       this.renderInventoryGrid();
@@ -3052,10 +3361,8 @@ class Game {
 
   interactWithSpecialTile(tileX, tileY) {
     const tile = this.world.getTile(tileX, tileY);
-    if (tile === TILES.CHEST_OPEN) {
-      this.showToast('🧰 This chest is already open.');
-      return true;
-    }
+    // (CHEST_OPEN is no longer a dead end here — both chest states fall
+    // through to the shared chest branch further down and open the panel.)
     // The drowned chapel oath-seal. Its ward must be defeated before the way opens.
     if (tile === TILES.DUNGEON_GATE) {
       const d = this.world.dungeon;
@@ -3134,25 +3441,20 @@ class Game {
       this.summonCursedKnight();
       return true;
     }
-    if (tile !== TILES.CHEST && tile !== TILES.BED) return false;
+    if (tile !== TILES.CHEST && tile !== TILES.CHEST_OPEN && tile !== TILES.BED) return false;
 
     const pTileX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
     const pTileY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
     if (Math.hypot(tileX - pTileX, tileY - pTileY) > 6.5) return false;
 
-    if (tile === TILES.CHEST) {
-      const lootTable = [
-        ['iron_ore', 4], ['gold_ore', 2], ['wool', 3], ['healing_potion', 2], ['arrow', 15], ['apple', 3]
-      ];
-      const [lootId, lootCount] = lootTable[Math.floor(Math.random() * lootTable.length)];
-      const bonus = lootTable[Math.floor(Math.random() * lootTable.length)];
-      this.world.setTile(tileX, tileY, TILES.CHEST_OPEN);
-      this.addItem(lootId, lootCount);
-      this.addItem(bonus[0], bonus[1]);
-      this.chestsOpened = (this.chestsOpened || 0) + 1;
-      this.journey?.recordActivity('treasure', tileX * TILE_SIZE + 12, tileY * TILE_SIZE);
-      this.logDiscovery('first_chest', '🧰 First Chest Opened!', 40);
-      this.showChestLoot([{ id: lootId, count: lootCount }, { id: bonus[0], count: bonus[1] }]);
+    if (tile === TILES.CHEST || tile === TILES.CHEST_OPEN) {
+      // Swinging a pickaxe (any tool) at a chest mines it instead of opening
+      // it — otherwise the interaction would eat the swing and a placed chest
+      // could never be picked back up. Same rule as the bed below.
+      const heldForChest = this.inventory[this.player.selectedSlot];
+      const heldChestData = heldForChest && ITEMS[heldForChest.id];
+      if (heldChestData && heldChestData.type === 'tool') return false;
+      this.openChestUI(tileX, tileY);
       return true;
     }
 
@@ -3477,6 +3779,10 @@ class Game {
           ));
         }
 
+        // A chest carries its own storage grid: breaking one spills the
+        // contents into the world instead of deleting them with the tile.
+        if (tile === TILES.CHEST || tile === TILES.CHEST_OPEN) this.spillChestContents(tileX, tileY);
+
         this.world.setTile(tileX, tileY, TILES.AIR);
         this.stats.blocksMined += 1;
         this.journey?.recordActivity('mine', tileX * TILE_SIZE + 12, tileY * TILE_SIZE);
@@ -3554,6 +3860,11 @@ class Game {
         this.world.setTile(tileX, tileY, itemData.tile);
         this.sound.playPlace();
         this.removeItem(held.id, 1);
+        // A chest the player places starts with an empty, pre-registered grid:
+        // only a sealed WORLD chest rolls loot on first open (see openChestUI).
+        if (itemData.tile === TILES.CHEST) {
+          this.chestStorage[`${tileX},${tileY}`] = this.makeEmptyChestSlots();
+        }
         this.stats.blocksPlaced += 1;
         this.journey?.recordActivity('build', tileX * TILE_SIZE + 12, tileY * TILE_SIZE);
         this.minimap.markDirty();
