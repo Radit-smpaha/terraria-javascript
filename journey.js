@@ -15,6 +15,8 @@ const JOURNEY_RANKS = [
 const JOURNEY_BIOMES = {
   forest: { name: 'Verdant Reach', icon: '🌲', color: '#4ade80' },
   snow: { name: 'Frostpine Expanse', icon: '❄️', color: '#bae6fd' },
+  // The one biome with a levelled building plot in it, so its name says so.
+  plains: { name: 'Open Meadow', icon: '🌾', color: '#a3e635' },
   savanna: { name: 'Sunscar Plains', icon: '☀️', color: '#fbbf24' },
   swamp: { name: 'Drowned Marsh', icon: '🌫️', color: '#a7f3d0' }
 };

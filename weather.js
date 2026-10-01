@@ -58,6 +58,13 @@ class WeatherSystem {
       return { type: WEATHER_TYPES.CLEAR, hold: 14, label: '' };
     }
 
+    if (biome === 'plains') {
+      // Minecraft's plains are the fair-weather biome: mostly clear, and when it
+      // does rain it is a shower rather than a storm.
+      if (roll < 0.28) return { type: WEATHER_TYPES.RAIN, hold: 18 + Math.random() * 12, label: 'Rain' };
+      return { type: WEATHER_TYPES.CLEAR, hold: 20 + Math.random() * 12, label: '' };
+    }
+
     if (biome === 'savanna') {
       if (roll < 0.45) return { type: WEATHER_TYPES.SAND, hold: 22 + Math.random() * 16, label: 'Sandstorm' };
       return { type: WEATHER_TYPES.CLEAR, hold: 14, label: '' };

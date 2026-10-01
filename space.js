@@ -1849,6 +1849,24 @@ class SkeletonDragonBoss {
   }
 
   /**
+   * How many skeletons the next wave would actually raise: the phase's wave
+   * size clamped by whatever is already standing (never past MINION_CAP).
+   *
+   * This is the one number both halves of a summon agree on — summonMinions
+   * spawns it and renderTelegraph draws exactly that many rise circles —
+   * because a telegraph that reads the raw wave over-promises every time the
+   * arena is near its cap, and drew the circles in the wrong places too
+   * (summonSpots spaces its layout by the count it is given).
+   */
+  plannedWaveSize() {
+    if (!this.game) return 0;
+    const alive = this.game.monsters.filter(m => m.space && !m.dead).length;
+    return Math.max(0, Math.min(
+      this.phase === 1 ? 3 : this.phase === 2 ? 4 : 5,
+      MINION_CAP - alive));
+  }
+
+  /**
    * Skeleton waves. Phase 1 sends warriors; phase 3 adds archers and a Bone
    * Colossus, which is the real "you cannot ignore the adds any more" moment.
    */
@@ -1858,10 +1876,7 @@ class SkeletonDragonBoss {
     // counts against the cap. Clamping here is what makes the number mean
     // something — it used to be read only by the passive summon, so a phase
     // change could park a full wave on top of a full arena.
-    const alive = this.game.monsters.filter(m => m.space && !m.dead).length;
-    const count = Math.max(0, Math.min(
-      this.phase === 1 ? 3 : this.phase === 2 ? 4 : 5,
-      MINION_CAP - alive));
+    const count = this.plannedWaveSize();
     if (count <= 0) {
       // Full house: check again soon rather than on the long phase timer, so the
       // first add to fall is replaced promptly instead of the arena sitting thin.
@@ -2122,10 +2137,9 @@ class SkeletonDragonBoss {
     if (this.minionTimer <= 0) {
       // Never more than MINION_CAP alive, or the arena turns into a mosh pit. It
       // used to be 12, which on top of the raised per-minion stats meant a
-      // phase-3 screen was unreadable rather than hard. summonMinions clamps to
-      // the same number, so this branch is only the early-out.
-      const alive = this.game ? this.game.monsters.filter(m => m.space && !m.dead).length : 0;
-      if (alive < MINION_CAP) this.summonMinions(projectiles, soundSystem, particleSystem);
+      // phase-3 screen was unreadable rather than hard. plannedWaveSize clamps
+      // to the same number, so this branch is only the early-out.
+      if (this.plannedWaveSize() > 0) this.summonMinions(projectiles, soundSystem, particleSystem);
       else this.minionTimer = 4;
     }
     if (this.phase === 3) {
@@ -2456,6 +2470,11 @@ class SkeletonDragonBoss {
   renderTelegraph(ctx, camera) {
     const tg = this.telegraph;
     if (!tg) return;
+    // A summon the cap would swallow entirely has nothing to draw: bone circles
+    // on the floor promise skeletons that cannot rise. Promising the raw wave
+    // is exactly the mismatch plannedWaveSize exists to kill — return early
+    // while the arena is full and draw only what will actually claw out.
+    if (tg.type === 'summon' && this.plannedWaveSize() <= 0) return;
     const progress = 1 - Math.max(0, Math.min(1, tg.timer / Math.max(0.001, tg.total)));
     const cx = this.x + this.width / 2 - camera.x;
     const cy = this.y + this.height / 2 - camera.y;
@@ -2523,8 +2542,11 @@ class SkeletonDragonBoss {
       ctx.arc(cx, cy, 20 + progress * 30, 0, Math.PI * 2);
       ctx.fill();
     } else if (tg.type === 'summon') {
-      // Bone circles on the floor where the skeletons will rise.
-      const spots = this.summonSpots(this.phase === 1 ? 3 : this.phase === 2 ? 4 : 5);
+      // Bone circles on the floor where the skeletons will rise — exactly as
+      // many as summonMinions is about to spawn (same plannedWaveSize, same
+      // count), so the promised layout is the risen layout.
+      const planned = this.plannedWaveSize();
+      const spots = this.summonSpots(planned);
       ctx.globalAlpha = 0.3 + progress * 0.5;
       ctx.strokeStyle = '#67e8f9';
       ctx.lineWidth = 2;

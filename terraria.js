@@ -23,6 +23,21 @@ const ITEMS = {
   glass_block: { id: 'glass_block', name: 'Glass Block', type: 'tile', tile: TILES.GLASS, icon: '🔳', stackMax: 999 },
   bed: { id: 'bed', name: 'Forest Bed', type: 'tile', tile: TILES.BED, icon: '🛏️', stackMax: 1 },
   wood_platform: { id: 'wood_platform', name: 'Wood Platform', type: 'tile', tile: TILES.WOOD_PLATFORM, icon: '🌉', stackMax: 999 },
+  // ---- Building set --------------------------------------------------------
+  // Ten blocks with no combat role at all: they exist so a player who wants to
+  // build a house, a bridge or a whole town has more than four colours to do it
+  // in. Every one of them is craftable from materials the early game already
+  // produces, so none of this is locked behind the bosses.
+  planks: { id: 'planks', name: 'Oak Planks', type: 'tile', tile: TILES.PLANKS, icon: '🟧', stackMax: 999 },
+  cobblestone: { id: 'cobblestone', name: 'Cobblestone', type: 'tile', tile: TILES.COBBLESTONE, icon: '🪨', stackMax: 999 },
+  brick_block: { id: 'brick_block', name: 'Brick Block', type: 'tile', tile: TILES.BRICK_BLOCK, icon: '🧱', stackMax: 999 },
+  polished_stone: { id: 'polished_stone', name: 'Polished Stone', type: 'tile', tile: TILES.POLISHED_STONE, icon: '⬜', stackMax: 999 },
+  sandstone_brick: { id: 'sandstone_brick', name: 'Sandstone Brick', type: 'tile', tile: TILES.SANDSTONE_BRICK, icon: '🟨', stackMax: 999 },
+  hay_block: { id: 'hay_block', name: 'Hay Bale', type: 'tile', tile: TILES.HAY_BLOCK, icon: '🌾', stackMax: 999 },
+  wool_block: { id: 'wool_block', name: 'Wool Block', type: 'tile', tile: TILES.WOOL_BLOCK, icon: '🤍', stackMax: 999 },
+  ice_block: { id: 'ice_block', name: 'Ice Block', type: 'tile', tile: TILES.ICE_BLOCK, icon: '🧊', stackMax: 999 },
+  bookshelf: { id: 'bookshelf', name: 'Bookshelf', type: 'tile', tile: TILES.BOOKSHELF, icon: '📚', stackMax: 999 },
+  lantern: { id: 'lantern', name: 'Lantern', type: 'tile', tile: TILES.LANTERN, icon: '🏮', stackMax: 999 },
   torch: { id: 'torch', name: 'Torch', type: 'tile', tile: TILES.TORCH, icon: '🔥', stackMax: 999 },
   copper_pickaxe: { id: 'copper_pickaxe', name: 'Copper Pickaxe', type: 'tool', toolPower: 1, damage: 6, icon: '⛏️', stackMax: 1 },
   copper_sword: { id: 'copper_sword', name: 'Copper Shortsword', type: 'weapon', weaponType: 'melee', damage: 12, range: 45, icon: '🗡️', stackMax: 1 },
@@ -366,6 +381,61 @@ const RECIPES = [
     result: { id: 'glass_block', count: 4 },
     materials: [{ id: 'stone', count: 2 }, { id: 'sand_block', count: 2 }],
     name: 'Glass Blocks (x4)'
+  },
+  // ---- Building set recipes. Costs are pitched so a first-night base is
+  // reachable from a few minutes of mining, while the nicer materials (brick,
+  // polished stone, ice) want a bit more of the world opened up first.
+  {
+    result: { id: 'planks', count: 4 },
+    materials: [{ id: 'wood', count: 1 }],
+    name: 'Oak Planks (x4)'
+  },
+  {
+    result: { id: 'cobblestone', count: 4 },
+    materials: [{ id: 'stone', count: 4 }],
+    name: 'Cobblestone (x4)'
+  },
+  {
+    result: { id: 'brick_block', count: 4 },
+    materials: [{ id: 'stone', count: 3 }, { id: 'sand_block', count: 1 }],
+    name: 'Brick Blocks (x4)'
+  },
+  {
+    result: { id: 'polished_stone', count: 4 },
+    materials: [{ id: 'stone', count: 4 }, { id: 'crystal', count: 1 }],
+    name: 'Polished Stone (x4)'
+  },
+  {
+    result: { id: 'sandstone_brick', count: 4 },
+    materials: [{ id: 'sand_block', count: 4 }],
+    name: 'Sandstone Bricks (x4)'
+  },
+  {
+    result: { id: 'hay_block', count: 1 },
+    materials: [{ id: 'acorn', count: 6 }],
+    name: 'Hay Bale'
+  },
+  {
+    result: { id: 'wool_block', count: 2 },
+    materials: [{ id: 'wool', count: 3 }],
+    name: 'Wool Blocks (x2)'
+  },
+  {
+    result: { id: 'ice_block', count: 2 },
+    materials: [{ id: 'snow_block', count: 3 }, { id: 'crystal', count: 1 }],
+    name: 'Ice Blocks (x2)'
+  },
+  {
+    result: { id: 'bookshelf', count: 1 },
+    materials: [{ id: 'wood', count: 8 }, { id: 'acorn', count: 4 }],
+    name: 'Bookshelf'
+  },
+  {
+    // A real light source you can hang anywhere, so a build does not have to be
+    // a line of torches. Same light value as a torch but priced higher.
+    result: { id: 'lantern', count: 2 },
+    materials: [{ id: 'iron_ore', count: 2 }, { id: 'torch', count: 1 }, { id: 'crystal', count: 1 }],
+    name: 'Lanterns (x2)'
   },
   {
     result: { id: 'apple', count: 2 },
@@ -1697,6 +1767,11 @@ class Game {
     if (Array.isArray(save.walls) && save.walls.length === this.world.walls.length) {
       this.world.walls.set(save.walls);
     }
+    // Both the static tile cache and the minimap's baked texture describe the
+    // world that was just replaced; a warm cache would otherwise keep showing
+    // the pre-load world until something happened to touch a tile.
+    this.world._tileCacheDirty = true;
+    if (this.minimap) this.minimap.markDirty();
     if (save.underworld && Number.isFinite(save.underworld.start) && Number.isFinite(save.underworld.castleX)) {
       this.world.underworld = { ...save.underworld };
     } else {
@@ -3483,6 +3558,9 @@ class Game {
         this.journey?.recordActivity('build', tileX * TILE_SIZE + 12, tileY * TILE_SIZE);
         this.minimap.markDirty();
         if (itemData.tile === TILES.TORCH) this.particles.addTorchEmber(tileX * TILE_SIZE + 12, tileY * TILE_SIZE + 10);
+        if (itemData.tile === TILES.LANTERN) {
+          this.particles.magicSparkle(tileX * TILE_SIZE + 12, tileY * TILE_SIZE + 12, '#fbbf24', 12);
+        }
       }
     }
   }
@@ -3769,6 +3847,21 @@ class Game {
     const arena = this.world.spaceArena;
     if (!arena) {
       this.showToast('🦴 There is no arena here to hold a rite.');
+      return false;
+    }
+    // A banked fight is a fight in progress, not a finished one. dragonHP is the
+    // wound the Sovereign walked away with; reading a rite over it used to delete
+    // that wound, stand a whole 88,000 HP dragon back up and burn the bones for
+    // the privilege. The rite is for raising a *new* Sovereign over a corpse, so
+    // an unfinished one is refused and the player keeps both the bones and the
+    // ground they already took. Checked before removeItem: a refused rite is
+    // never spent.
+    if (Number.isFinite(this.dragonHP)) {
+      this.showToast('🦴 The old one is not finished — its wound is still waiting. Kill it before you burn bones.');
+      return false;
+    }
+    if (!this.dragonSlain) {
+      this.showToast('🦴 Nothing to bring back yet. Fell the Sovereign before you call another.');
       return false;
     }
     if (!this.removeItem('rite_of_bones', 1)) {
@@ -4253,6 +4346,7 @@ this.player.dodgeTime = 0;
           } else if (night) {
             const roll = Math.random();
             if (biome === 'snow') mType = ['snow_wolf', 'ice_golem', 'snow_bat'][Math.floor(roll * 3)];
+            else if (biome === 'plains') mType = ['savanna_hyena', 'zombie', 'demon_eye'][Math.floor(roll * 3)];
             else if (biome === 'savanna') mType = ['savanna_hyena', 'sun_scorpion', 'ostrich'][Math.floor(roll * 3)];
             else if (biome === 'swamp') mType = ['swamp_slime', 'swamp_mosquito', 'bog_witch'][Math.floor(roll * 3)];
             else if (roll < 0.45) mType = 'demon_eye';

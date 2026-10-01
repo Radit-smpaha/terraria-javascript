@@ -503,7 +503,12 @@ class Player {
       this.flightFuel = 0;
       this.maxFlightCooldown = 0;
       this.flightCooldown = 0;
-      this.wingsUsed = null;
+      // wingsUsed deliberately survives wearing nothing: it is the memory of
+      // which pair was last fitted. Nulling it here made the next fit — even
+      // of the very same pair — look like a different one, which handed back
+      // a full tank and a cleared lock-out: take the wings off, put them back,
+      // and the recharge you owed simply never happened. respawnPlayer still
+      // nulls it on purpose, so a death remains a clean slate.
       return;
     }
     const tank = Math.max(0.1, Number(item.flightTime) || 1.6);
@@ -515,9 +520,19 @@ class Player {
     this.maxFlightCooldown = Number.isFinite(lockOut) && lockOut > 0
       ? lockOut : DEFAULT_WING_COOLDOWN;
     if (this.wingsUsed !== item.id) {
+      // A swap hands back a full tank, but never a skipped lock-out: any
+      // recharge still running carries over to the new pair, capped at what
+      // the new pair itself demands. Without the carry, swapping wings was a
+      // get-out-of-cooldown-free card — spend the tank, change pairs, fly.
+      // wingsUsed === null means nobody was wearing wings a moment ago (a
+      // first fit, or respawnPlayer's deliberate null), and that case still
+      // starts fresh with no lock-out.
+      const carry = this.wingsUsed !== null
+        ? Math.min(this.flightCooldown, this.maxFlightCooldown)
+        : 0;
       this.wingsUsed = item.id;
       this.flightFuel = tank;
-      this.flightCooldown = 0;
+      this.flightCooldown = carry;
     } else {
       this.flightFuel = Math.min(this.flightFuel, tank);
     }

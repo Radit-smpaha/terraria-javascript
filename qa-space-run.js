@@ -543,6 +543,35 @@ check('the real wings fit back on',
   'tank=' + fly.maxFlightFuel + ' cd=' + fly.maxFlightCooldown);
 g.input.keys['Space'] = false;
 
+// ---- A swap is not a pardon ----------------------------------------------
+// Changing pairs mid-lock-out used to reset the recharge to zero: spend the
+// tank, swap wings, fly. The remaining time now follows you to the new pair,
+// capped at what that pair itself charges.
+fly.flightCooldown = 25;               // a lock-out still running…
+fly.flightFuel = 0;                    // …with the tank already spent
+fly.setWings({ id: 'cobalt_wings', grantsFlight: true, flightTime: 90, flightCooldown: 10 });
+check('a wing swap carries the lock-out, capped by the new pair',
+  fly.wingsUsed === 'cobalt_wings' && fly.flightCooldown === 10 &&
+  fly.maxFlightCooldown === 10 && fly.flightFuel === 90,
+  'cd=' + fly.flightCooldown + ' max=' + fly.maxFlightCooldown +
+  ' fuel=' + fly.flightFuel + ' used=' + fly.wingsUsed);
+
+// Taking the wings off and putting the same pair straight back used to read
+// as a brand-new fit — full tank, no lock-out, because the no-wings branch
+// wiped wingsUsed along with the slot. The id is the memory of what was
+// last fitted; only a death (respawnPlayer) clears it.
+fly.setWings(ITEMS.dragon_wings);
+fly.flightFuel = 0;
+fly.flightCooldown = 12;
+fly.setWings(null);                    // they leave the bag's slot…
+fly.setWings(ITEMS.dragon_wings);      // …and go straight back on
+check('re-fitting the same pair is not a fresh pair',
+  fly.wingsUsed === 'dragon_wings' && fly.flightFuel === 0 &&
+  fly.maxFlightFuel === 180,
+  'fuel=' + fly.flightFuel + ' used=' + fly.wingsUsed);
+fly.flightCooldown = 0;
+fly.flightFuel = fly.maxFlightFuel;
+
 // Wearing the plate must not cost any mitigation — flight is the whole stat.
 const redBefore = g.player.armorReduction;
 const defBefore = g.player.armorDefense;
@@ -635,6 +664,19 @@ immortal();
 // ---- The rite: the only way back into the fight ---------------------------
 check('the rite is refused with empty hands', g.performBoneRite() === false && !g.boss);
 g.addItem('rite_of_bones', 1);
+// ---- The rite cannot read over a banked fight ----------------------------
+// dragonHP holds the wound of a fight the player walked out on. Over that,
+// the old rite deleted the wound, stood a whole 88,000-HP dragon back up and
+// burned the bones for the privilege. It refuses instead — and a refused
+// rite is never spent, so there is nothing to farm by mashing the item.
+const dragonHPBefore = g.dragonHP;
+g.dragonHP = 40000;
+const bankedRefused = g.performBoneRite() === false && !g.boss &&
+  g.countItem('rite_of_bones') === 1;
+g.dragonHP = dragonHPBefore;
+check('the rite is refused over a banked fight', bankedRefused,
+  'boss=' + (g.boss ? g.boss.name : 'none') +
+  ' bones=' + g.countItem('rite_of_bones'));
 check('the rite answers in the Ossuary', g.performBoneRite() === true);
 check('a Sovereign stands where the last one fell',
   !!g.boss && g.boss.kind === 'dragon', g.boss && g.boss.kind);
@@ -644,6 +686,53 @@ check('the new dragon is whole',
 check('the bones are burned', g.countItem('rite_of_bones') === 0,
   'left=' + g.countItem('rite_of_bones'));
 check('the arena is a fight again', g.dragonSlain === false && g.sound.isBoss === true);
+// ---- What the wind-up promises is what rises ------------------------------
+// The summon telegraph used to draw the raw phase wave (3/4/5 circles) while
+// summonMinions clamps to MINION_CAP — near a full arena it promised bone
+// circles where no skeleton could rise, in a layout summonSpots would not
+// repeat for the smaller count. One number (plannedWaveSize) now feeds both
+// halves, and a summon the cap would swallow draws nothing at all.
+(() => {
+  const b = g.boss;
+  const monstersBefore = g.monsters.slice();
+  const phaseBefore = b.phase;
+  const timerBefore = b.minionTimer;
+  const spaceAlive = () => g.monsters.filter(m => m.space && !m.dead).length;
+  try {
+    // Park the arena at one slot short of the cap (MINION_CAP is 9).
+    while (spaceAlive() > 8) g.monsters.splice(g.monsters.findIndex(m => m.space && !m.dead), 1);
+    while (spaceAlive() < 8) g.monsters.push({ space: true, dead: false });
+    b.phase = 2;                       // a wave of 4 — but the cap bites
+    const promised = b.plannedWaveSize();
+    // A ctx probe that records every property the renderer reaches for.
+    const draw = () => {
+      const seen = [];
+      b.telegraph = { type: 'summon', timer: 1, total: 1, x: b.x, y: b.y };
+      b.renderTelegraph(new Proxy({}, {
+        get: (t, p) => { seen.push(String(p)); return () => undefined; },
+        set: () => true
+      }), { x: 0, y: 0 });
+      return seen.filter(s => s === 'ellipse').length;
+    };
+    const circles = draw();
+    const spawned = b.summonMinions(g.projectiles, null, null);
+    // A full house: the wind-up goes silent and the wave raises nothing.
+    while (spaceAlive() < 9) g.monsters.push({ space: true, dead: false });
+    const silentFull = draw() === 0;
+    const fullSpawn = b.summonMinions(g.projectiles, null, null);
+    check('the telegraph promises exactly what rises',
+      promised === 1 && circles === promised && spawned === promised &&
+      silentFull && fullSpawn === 0,
+      'promised=' + promised + ' circles=' + circles + ' spawned=' + spawned +
+      ' silentFull=' + silentFull + ' fullSpawn=' + fullSpawn);
+  } finally {
+    g.monsters.length = 0;
+    g.monsters.push(...monstersBefore);
+    b.phase = phaseBefore;
+    b.minionTimer = timerBefore;
+    b.telegraph = null;
+  }
+})();
 check('a rite cannot be read over a live dragon', (() => {
   g.addItem('rite_of_bones', 1);
   return g.performBoneRite() === false && g.countItem('rite_of_bones') === 1;

@@ -1,6 +1,11 @@
 // World, Tiles, Forest Background, Day/Night Cycle, and Dynamic Lighting
 const TILE_SIZE = 24;
 const HOUSE_WALL = 23;
+// PERF: the static-tile render cache is aligned to this many tiles. The camera
+// can travel a whole chunk before the cached window has to be repainted.
+const TILE_CACHE_CHUNK = 8;
+// Half-width, in tiles, of the levelled building plot in the plains.
+const PLAINS_PLOT_HALF = 28;
 
 // Tile types enum
 const TILES = {
@@ -44,6 +49,19 @@ const TILES = {
   RAINBOW_ORE: 38,
   CURSED_BRICK: 39,
   DUNGEON_GATE: 40,
+  // ---- Building set: ten blocks whose only job is to be built with ----------
+  // Ids 41-57 are claimed by underworld.js and space.js, which load after this
+  // file, so the building set starts at 58 and runs consecutively.
+  PLANKS: 58,
+  COBBLESTONE: 59,
+  BRICK_BLOCK: 60,
+  POLISHED_STONE: 61,
+  SANDSTONE_BRICK: 62,
+  HAY_BLOCK: 63,
+  WOOL_BLOCK: 64,
+  ICE_BLOCK: 65,
+  BOOKSHELF: 66,
+  LANTERN: 67,
 };
 
 const TILE_PROPERTIES = {
@@ -88,7 +106,24 @@ const TILE_PROPERTIES = {
   , [TILES.RAINBOW_ORE]: { solid: true, light: 4, color: '#ff7ae0', name: 'Rainbow Ore', drops: { id: 'rainbow_ore', count: 1 } }
   , [TILES.CURSED_BRICK]: { solid: true, light: 2, color: '#312e46', name: 'Cursed Brick', drops: { id: 'stone_brick', count: 1 } }
   , [TILES.DUNGEON_GATE]: { solid: true, light: 3, color: '#1e1b4b', name: 'Sealed Dungeon Gate', drops: null }
+  // ---- Building set --------------------------------------------------------
+  , [TILES.PLANKS]: { solid: true, light: 0, color: '#b45309', name: 'Oak Planks', drops: { id: 'planks', count: 1 } }
+  , [TILES.COBBLESTONE]: { solid: true, light: 0, color: '#78716c', name: 'Cobblestone', drops: { id: 'cobblestone', count: 1 } }
+  , [TILES.BRICK_BLOCK]: { solid: true, light: 0, color: '#9f3a2f', name: 'Brick Block', drops: { id: 'brick_block', count: 1 } }
+  , [TILES.POLISHED_STONE]: { solid: true, light: 0, color: '#a8b0bb', name: 'Polished Stone', drops: { id: 'polished_stone', count: 1 } }
+  , [TILES.SANDSTONE_BRICK]: { solid: true, light: 0, color: '#e0bf7a', name: 'Sandstone Brick', drops: { id: 'sandstone_brick', count: 1 } }
+  , [TILES.HAY_BLOCK]: { solid: true, light: 0, color: '#d4a017', name: 'Hay Bale', drops: { id: 'hay_block', count: 1 } }
+  , [TILES.WOOL_BLOCK]: { solid: true, light: 0, color: '#f5f5f4', name: 'Wool Block', drops: { id: 'wool_block', count: 1 } }
+  , [TILES.ICE_BLOCK]: { solid: true, light: 1, color: '#a5e8f5', name: 'Ice Block', drops: { id: 'ice_block', count: 1 } }
+  , [TILES.BOOKSHELF]: { solid: true, light: 0, color: '#7c4a1e', name: 'Bookshelf', drops: { id: 'bookshelf', count: 1 } }
+  , [TILES.LANTERN]: { solid: false, light: 13, color: '#fbbf24', name: 'Lantern', drops: { id: 'lantern', count: 1 } }
 };
+
+// The world is laid out as equal west→east bands, one per entry, in this order.
+// EVERYTHING biome-shaped reads this list: getBiomeAtX, the border blends, the
+// sky palettes, weather and the spawn tables. Insert a name and the whole world
+// re-divides evenly; there are no hard-coded quarter fractions left to update.
+const BIOME_ORDER = ['snow', 'forest', 'plains', 'savanna', 'swamp'];
 
 class World {
   constructor(width = 300, height = 140) {
@@ -156,19 +191,32 @@ class World {
 
   // Biome id at a tile column. Fractional blending near borders is handled
   // by biomeMix() below; hard borders remain for gameplay (trees, weather).
+  //
+  // The world is a single west→east strip of equal bands, so the biome table
+  // itself is the only place the layout is described. Adding a biome means
+  // adding it to BIOME_ORDER; every border, blend and palette lookup below
+  // derives from that list rather than from four hard-coded fractions.
   getBiomeAtX(tileX) {
     const x = Math.max(0, Math.min(this.width - 1, Math.floor(tileX)));
-    if (x < this.width * 0.25) return 'snow';
-    if (x < this.width * 0.5) return 'forest';
-    if (x < this.width * 0.75) return 'savanna';
-    return 'swamp';
+    const band = Math.min(BIOME_ORDER.length - 1,
+      Math.floor((x / this.width) * BIOME_ORDER.length));
+    return BIOME_ORDER[band];
+  }
+
+  // Equal-band border positions, west→east. For 5 biomes on a 440-tile world:
+  // 88, 176, 264, 352.
+  biomeBorders() {
+    const n = BIOME_ORDER.length;
+    const borders = [];
+    for (let i = 1; i < n; i++) borders.push(this.width * (i / n));
+    return borders;
   }
 
   // 0..1 blend weights for the two biomes meeting at the nearest border.
   // Used for terrain height + surface tiles so biomes melt into each other.
   biomeMix(tileX) {
-    const borders = [this.width * 0.25, this.width * 0.5, this.width * 0.75];
-    const names = ['snow', 'forest', 'savanna', 'swamp'];
+    const borders = this.biomeBorders();
+    const names = BIOME_ORDER;
     let nearest = 0;
     let nearestDist = Infinity;
     for (let i = 0; i < borders.length; i++) {
@@ -183,15 +231,25 @@ class World {
     return { a: names[nearest], b: names[nearest + 1], t: Math.max(0, Math.min(1, t)) };
   }
 
-  // Per-biome surface relief: dunes roll, swamp sags into pools, snow is craggy.
+  // Per-biome surface relief: dunes roll, swamp sags into pools, snow is craggy,
+  // plains are deliberately almost level — the flat one you can build on.
   biomeRelief(biome, x) {
     switch (biome) {
       case 'snow': return Math.sin(x * 0.11) * 4 + Math.sin(x * 0.31) * 1.5;
       case 'forest': return Math.sin(x * 0.06) * 6 + Math.sin(x * 0.21) * 1.5;
+      case 'plains': return Math.sin(x * 0.022 + 0.7) * 1.8 + Math.sin(x * 0.08) * 0.5;
       case 'savanna': return Math.sin(x * 0.045 + 1.3) * 4 + Math.sin(x * 0.13) * 1.2;
       case 'swamp': return Math.sin(x * 0.05 + 2.6) * 3 - 2 + Math.sin(x * 0.4) * 0.8;
       default: return 0;
     }
+  }
+
+  // How much of the fractal base terrain a biome keeps. The base wave is worth
+  // ±10 tiles on its own, which is a hillside; plains damp it to a fifth so the
+  // band reads as open level ground instead of downs. Blended across borders by
+  // generateTerrain, so a plains edge still melts into the neighbouring hills.
+  biomeReliefScale(biome) {
+    return biome === 'plains' ? 0.2 : 1;
   }
 
   generateTerrain() {
@@ -207,9 +265,14 @@ class World {
       const reliefA = this.biomeRelief(mix.a, x);
       const reliefB = mix.b ? this.biomeRelief(mix.b, x) : reliefA;
       const relief = reliefA + ((reliefB - reliefA) * (mix.b ? mix.t : 0));
+      // Same blend for how much of the base hills a biome keeps, so the plains
+      // flattening ramps in over the border instead of snapping to level.
+      const scaleA = this.biomeReliefScale(mix.a);
+      const scaleB = mix.b ? this.biomeReliefScale(mix.b) : scaleA;
+      const reliefScale = scaleA + ((scaleB - scaleA) * (mix.b ? mix.t : 0));
       // Swamp sags a touch lower to make room for pools.
       const sag = biome === 'swamp' ? 2.5 : 0;
-      const surfaceY = Math.floor(baseSurface + base * 0.55 + relief + sag);
+      const surfaceY = Math.floor(baseSurface + base * 0.55 * reliefScale + relief + sag);
       this.surfaceHeights[x] = surfaceY;
       const surfaceTile = biome === 'snow' ? TILES.SNOW : biome === 'savanna' ? TILES.SAND : biome === 'swamp' ? TILES.MUD : TILES.GRASS;
       const dirtTile = biome === 'snow' ? TILES.SNOW : biome === 'savanna' ? TILES.SANDSTONE : biome === 'swamp' ? TILES.MUD : TILES.DIRT;
@@ -271,12 +334,21 @@ class World {
 
     this.decorateSurface();
 
+    // The plains' building plot is levelled and cleared *after* the surface has
+    // been dressed and *before* anything grows or is built on it, so nothing has
+    // to be validated away afterwards: no flowers to uproot, no trees to fell.
+    this.carvePlainsBuildPlot();
+
     // Grow lush Forest Trees!
     for (let x = 10; x < this.width - 10; x += Math.floor(Math.random() * 5 + 4)) {
       const groundY = this.surfaceHeights[x];
       const biome = this.getBiomeAtX(x);
       if (this.getTile(x, groundY) !== TILES.AIR) {
+        // 4 tiles of margin: a canopy is wider than a trunk, and the plot is
+        // meant to be open sky, not a cave of leaves.
+        if (this.isInPlainsBuildPlot(x, 4)) continue;
         if (biome === 'forest') this.growTree(x, groundY - 1);
+        if (biome === 'plains' && Math.random() < 0.30) this.growTree(x, groundY - 1);
         if (biome === 'snow') this.growSnowPine(x, groundY - 1);
         if (biome === 'savanna') this.growAcacia(x, groundY - 1);
         if (biome === 'swamp') this.growMangrove(x, groundY - 1);
@@ -299,6 +371,67 @@ class World {
     this.generateLandmarks();
     this.generateSurfaceStructures();
     this.generateUndergroundFeatures();
+  }
+
+  // ---- The plains build plot -----------------------------------------------
+  // Every biome in this world is a place you travel *through*; the plains are the
+  // place you settle. So the plains band ships with a surveyed, level clearing
+  // roughly 57 tiles across, centred on the spawn point (which sits squarely in
+  // the plains band now that the world is five equal slices): one flat row of
+  // grass, no trees, no shrubs, open sky, and a torch at each corner so it can be
+  // worked after dark. Nothing here is required — it is just a place where the
+  // ground is already right for whatever the player wants to build.
+  // `margin` widens the test by that many tiles: used by the tree pass, because a
+  // trunk outside the plot still drops a canopy several tiles into it.
+  isInPlainsBuildPlot(tileX, margin = 0) {
+    const plot = this.plainsPlot;
+    return !!plot && tileX >= plot.x0 - margin && tileX <= plot.x1 + margin;
+  }
+
+  carvePlainsBuildPlot() {
+    const half = PLAINS_PLOT_HALF;
+    const centre = Math.floor(this.width / 2);
+    const x0 = Math.max(2, centre - half);
+    const x1 = Math.min(this.width - 3, centre + half);
+
+    // Level to the *median* height of the stretch. Cutting to the lowest point
+    // would leave a quarry wall at the edges and filling to the highest would
+    // bury the neighbours, so the middle figure is both the smallest amount of
+    // earth moved and the one that disappears into the surrounding ground.
+    const heights = [];
+    for (let x = x0; x <= x1; x++) heights.push(this.surfaceHeights[x]);
+    heights.sort((a, b) => a - b);
+    const level = heights[Math.floor(heights.length / 2)];
+    this.plainsPlot = { x0, x1, level, centre };
+
+    for (let x = x0; x <= x1; x++) {
+      const old = this.surfaceHeights[x];
+      // Clear the column above the new ground line. Anything the surface pass
+      // dressed the grass with (flowers, tufts) lives in these rows.
+      for (let y = Math.min(old, level) - 12; y < level; y++) {
+        this.setTile(x, y, TILES.AIR);
+      }
+      // Ground: living grass on top, plain soil beneath — the same profile the
+      // plains generate with, just at the levelled height. Six rows of soil is
+      // exactly the dirt band generateTerrain lays down, so the pad matches the
+      // untouched ground beside it and no stone shows through.
+      this.setTile(x, level, TILES.GRASS);
+      this.walls[level * this.width + x] = TILES.DIRT;
+      const floor = Math.max(old, level) + 6;
+      for (let y = level + 1; y <= floor; y++) {
+        this.setTile(x, y, TILES.DIRT);
+        this.walls[y * this.width + x] = TILES.DIRT;
+      }
+      this.surfaceHeights[x] = level;
+    }
+
+    // Corner torches: light for a night build, and four points that make the
+    // clearing read as somewhere chosen rather than as a bald patch.
+    for (const cx of [x0 + 1, x1 - 1]) {
+      this.setTile(cx, level - 1, TILES.TORCH);
+      this.walls[(level - 1) * this.width + cx] = TILES.AIR;
+    }
+    this.landmarks.push({ x: centre, y: level - 4, type: 'plains_plot' });
   }
 
   // ============================================================
@@ -519,7 +652,9 @@ class World {
 
   generateLandmarks() {
     // Small stone shrines give surface exploration recognizable destinations.
-    const shrineXs = [24, 78, 250, 320];
+    // Spread one per biome band (snow, forest, plains, swamp), with the plains one
+    // sitting clear of the building plot so the meadow stays an open field.
+    const shrineXs = [24, 78, 260, 360];
     for (const shrineX of shrineXs) {
       const groundY = this.surfaceHeights[shrineX];
       this.landmarks.push({ x: shrineX, y: groundY - 5, type: 'shrine' });
@@ -708,6 +843,12 @@ class World {
           const h = 2 + Math.floor(Math.random() * 3);
           for (let i = 1; i <= h; i++) this.setTile(x, sy - i, TILES.CACTUS);
         } else if (roll < 0.30) this.setTile(x, sy - 1, TILES.TALL_GRASS);
+      } else if (biome === 'plains' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
+        // Minecraft plains: mostly open grass, thick with flowers and tufts and
+        // nothing that hurts to walk into. Denser than the forest on purpose —
+        // that scatter of flowers is the biome's whole silhouette.
+        if (roll < 0.22) this.setTile(x, sy - 1, TILES.FLOWER);
+        else if (roll < 0.52) this.setTile(x, sy - 1, TILES.TALL_GRASS);
       } else if (biome === 'swamp' && (ground === TILES.MUD || ground === TILES.WATER)) {
         if (ground === TILES.MUD && roll < 0.20) this.setTile(x, sy - 1, TILES.LILY);
         else if (ground === TILES.MUD && roll < 0.44) this.setTile(x, sy - 1, TILES.TALL_GRASS);
@@ -1077,6 +1218,9 @@ class World {
     return {
       snow: { ridge: '#5b6b82', ridgeSnow: '#e2e8f0', far: '#7f8fa6', near: '#a8b8cc', haze: 'rgba(200,225,245,0.20)' },
       forest: { ridge: '#1e293b', ridgeSnow: null, far: '#14532d', near: '#166534', haze: 'rgba(180,220,190,0.14)' },
+      // Plains sit further away than the forest: a paler, hazier green so the
+      // distance reads as open country rather than as more canopy.
+      plains: { ridge: '#3f6212', ridgeSnow: null, far: '#4d7c0f', near: '#65a30d', haze: 'rgba(226,240,200,0.18)' },
       savanna: { ridge: '#8a4a12', ridgeSnow: null, far: '#a16207', near: '#ca8a04', haze: 'rgba(255,215,150,0.22)' },
       swamp: { ridge: '#134e4a', ridgeSnow: null, far: '#115e59', near: '#166534', haze: 'rgba(150,200,175,0.20)' }
     }[biome] || {
@@ -1095,6 +1239,9 @@ class World {
     const horizonBoost = biome === 'savanna' ? [1.06, 0.98, 0.86]
       : biome === 'snow' ? [0.94, 0.99, 1.06]
       : biome === 'swamp' ? [0.9, 1.0, 0.96]
+      // Plains are the one biome with nothing tall in the way, so the horizon
+      // gets a touch more sky behind it.
+      : biome === 'plains' ? [1.02, 1.02, 1.0]
       : [1, 1, 1];
     const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
     const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
@@ -1268,6 +1415,20 @@ class World {
         ctx.lineTo(x + 71, y + 28);
         ctx.closePath();
         ctx.fill();
+      } else if (biome === 'plains') {
+        // Open ground: low grass clumps, a haystack, and a small stone marker —
+        // deliberately sparse, because the emptiness is the point.
+        ctx.fillStyle = night ? '#14532d' : '#4d7c0f';
+        for (let g = 0; g < 7; g++) {
+          const gx = x + 8 + g * 8;
+          const gh = 8 + (g % 3) * 4;
+          ctx.fillRect(gx, y + 26 - gh, 2, gh);
+        }
+        ctx.fillStyle = night ? '#78350f' : '#ca8a04';
+        ctx.fillRect(x + 56, y + 12, 22, 17);
+        ctx.fillRect(x + 59, y + 6, 16, 8);
+        ctx.fillStyle = night ? '#57534e' : '#a8a29e';
+        ctx.fillRect(x + 92, y + 18, 12, 11);
       } else if (biome === 'savanna') {
         // Dry grass clumps, a crooked dead branch, and a small stone marker.
         ctx.fillStyle = night ? '#713f12' : '#a16207';
@@ -1437,8 +1598,23 @@ class World {
           ctx.fillRect(x, y + sway, 30, 4);
         }
       }
+    } else if (biome === 'plains' && !this.isNight()) {
+      // Drifting seed-down and a few butterflies: the plains are busy at knee
+      // height rather than overhead, so the sky stays open.
+      ctx.fillStyle = 'rgba(254, 249, 195, 0.55)';
+      for (let p = 0; p < 14; p++) {
+        const px = ((p * 191 + t * (10 + (p % 4) * 5)) % (w + 30)) - 15;
+        const py = h * 0.34 + ((p * 71) % Math.max(1, h * 0.34)) + Math.sin(t * 1.4 + p * 1.7) * 9;
+        ctx.fillRect(px, py, 2, 2);
+      }
+      ctx.fillStyle = 'rgba(253, 224, 71, 0.35)';
+      for (let b = 0; b < 5; b++) {
+        const bx = ((b * 263 + t * (22 + b * 3)) % (w + 40)) - 20;
+        const by = h * 0.46 + (b % 3) * 22 + Math.sin(t * 2.2 + b * 1.3) * 7;
+        ctx.fillRect(bx, by, 3, 2);
+        ctx.fillRect(bx + 4, by - 1, 3, 2);
+      }
     } else if (biome === 'swamp') {
-      // Low mist sheets hugging the water.
       ctx.fillStyle = this.isNight() ? 'rgba(190, 220, 200, 0.10)' : 'rgba(220, 240, 225, 0.12)';
       for (let b = 0; b < 3; b++) {
         const y = h * 0.5 + b * 30;
@@ -1644,13 +1820,30 @@ class World {
   // Draw the tile grid. PERF: static tiles are pre-rendered once into an
   // offscreen chunk cache; per frame we blit the slice (1 drawImage) and
   // redraw only animated tiles (lava/torch/fire/water). Identical pixels.
+  //
+  // PERF: the cached window is snapped outwards to a CHUNK grid and covers the
+  // viewport plus up to one chunk of slack on the far side. The old cache was
+  // pinned to the viewport's own top-left tile, so simply walking rebuilt the
+  // whole thing every time the camera crossed a tile boundary. Snapping moves
+  // that to once per chunk of travel — same canvas, ~8x fewer rebuilds.
+  //
+  // PERF: the background wall pass is painted into this same canvas (walls are
+  // static too — generation writes them before the first frame, and loading a
+  // save flags the cache dirty, so nothing can go stale), which deletes a
+  // second full sweep of the viewport from every frame.
   renderTiles(ctx, camera) {
-    const minTileX = Math.max(0, Math.floor(camera.x / TILE_SIZE));
-    const maxTileX = Math.min(this.width - 1, Math.ceil((camera.x + camera.viewportWidth) / TILE_SIZE));
-    const minTileY = Math.max(0, Math.floor(camera.y / TILE_SIZE));
-    const maxTileY = Math.min(this.height - 1, Math.ceil((camera.y + camera.viewportHeight) / TILE_SIZE));
+    const viewMinX = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+    const viewMaxX = Math.min(this.width - 1, Math.ceil((camera.x + camera.viewportWidth) / TILE_SIZE));
+    const viewMinY = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+    const viewMaxY = Math.min(this.height - 1, Math.ceil((camera.y + camera.viewportHeight) / TILE_SIZE));
 
-    this.renderWalls(ctx, camera, minTileX, maxTileX, minTileY, maxTileY);
+    // Round the cached window out to chunk boundaries. Both ends move together
+    // (they are the same camera), so the window is stable for a whole chunk of
+    // travel and every frame inside it is a single blit.
+    const minTileX = Math.max(0, Math.floor(viewMinX / TILE_CACHE_CHUNK) * TILE_CACHE_CHUNK);
+    const maxTileX = Math.min(this.width - 1, (Math.floor(viewMaxX / TILE_CACHE_CHUNK) + 1) * TILE_CACHE_CHUNK);
+    const minTileY = Math.max(0, Math.floor(viewMinY / TILE_CACHE_CHUNK) * TILE_CACHE_CHUNK);
+    const maxTileY = Math.min(this.height - 1, (Math.floor(viewMaxY / TILE_CACHE_CHUNK) + 1) * TILE_CACHE_CHUNK);
 
     const sunKey = this.sunCacheKey();
     const cw = maxTileX - minTileX + 1;
@@ -1666,11 +1859,13 @@ class World {
     const c = this._tileCache;
     ctx.drawImage(c.canvas, minTileX * TILE_SIZE - camera.x, minTileY * TILE_SIZE - camera.y);
 
-    // Animated tiles drawn live on top (usually < 40 in view).
+    // Animated tiles drawn live on top (usually < 40 in view). Swept over the
+    // viewport, not the cached window, so the slack chunk costs nothing here.
     const sun = this._cachedSun;
-    for (let y = minTileY; y <= maxTileY; y++) {
-      for (let x = minTileX; x <= maxTileX; x++) {
-        const tile = this.tiles[y * this.width + x];
+    for (let y = viewMinY; y <= viewMaxY; y++) {
+      const rowBase = y * this.width;
+      for (let x = viewMinX; x <= viewMaxX; x++) {
+        const tile = this.tiles[rowBase + x];
         if (!this.isAnimatedTile(tile)) continue;
         const sx = x * TILE_SIZE - camera.x;
         const sy = y * TILE_SIZE - camera.y;
@@ -1690,28 +1885,35 @@ class World {
 
   isAnimatedTile(tile) {
     return tile === TILES.LAVA || tile === TILES.TORCH || tile === TILES.CAMPFIRE ||
-      tile === TILES.WATER || tile === TILES.LILY || tile === TILES.CRYSTAL;
+      tile === TILES.WATER || tile === TILES.LILY || tile === TILES.CRYSTAL ||
+      tile === TILES.LANTERN;
   }
 
-  renderWalls(ctx, camera, minTileX, maxTileX, minTileY, maxTileY) {
-    for (let y = minTileY; y <= maxTileY; y++) {
-      for (let x = minTileX; x <= maxTileX; x++) {
-        const wall = this.walls[y * this.width + x];
-        if (wall && this.getTile(x, y) === TILES.AIR) {
-          const sx = x * TILE_SIZE - camera.x;
-          const sy = y * TILE_SIZE - camera.y;
-          ctx.fillStyle = wall === HOUSE_WALL ? '#171c24' : wall === TILES.STONE ? '#262626' : '#2d1e12';
-          ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-          if (wall === HOUSE_WALL) {
-            ctx.strokeStyle = 'rgba(100, 116, 139, 0.24)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(sx, sy + TILE_SIZE - 1);
-            ctx.lineTo(sx + TILE_SIZE, sy + TILE_SIZE - 1);
-            ctx.moveTo(sx + ((x + y) % 2) * 12, sy);
-            ctx.lineTo(sx + ((x + y) % 2) * 12, sy + TILE_SIZE);
-            ctx.stroke();
-          }
+  // Background walls, painted into the static tile cache instead of the frame
+  // buffer. PERF: this pass used to run over the viewport every single frame —
+  // one getTile + one fillRect per air tile, thousands of times a second for
+  // scenery that never moves. It is identical work, done ~8x less often, and it
+  // composites in the same order (walls first, tiles on top).
+  paintWalls(ctx, originX, originY, cw, ch) {
+    const T = TILE_SIZE;
+    for (let y = originY; y < originY + ch; y++) {
+      const rowBase = y * this.width;
+      const sy = (y - originY) * T;
+      for (let x = originX; x < originX + cw; x++) {
+        const wall = this.walls[rowBase + x];
+        if (!wall || this.tiles[rowBase + x] !== TILES.AIR) continue;
+        const sx = (x - originX) * T;
+        ctx.fillStyle = wall === HOUSE_WALL ? '#171c24' : wall === TILES.STONE ? '#262626' : '#2d1e12';
+        ctx.fillRect(sx, sy, T, T);
+        if (wall === HOUSE_WALL) {
+          ctx.strokeStyle = 'rgba(100, 116, 139, 0.24)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy + T - 1);
+          ctx.lineTo(sx + T, sy + T - 1);
+          ctx.moveTo(sx + ((x + y) % 2) * 12, sy);
+          ctx.lineTo(sx + ((x + y) % 2) * 12, sy + T);
+          ctx.stroke();
         }
       }
     }
@@ -1728,6 +1930,8 @@ class World {
     const cctx = cache.canvas.getContext('2d');
     cctx.imageSmoothingEnabled = false;
     cctx.clearRect(0, 0, cache.canvas.width, cache.canvas.height);
+    // Walls go down first, exactly where the old per-frame wall pass drew them.
+    this.paintWalls(cctx, minTileX, minTileY, cw, ch);
     const sun = this.sunShade();
     sun._topStyle = `rgba(${sun.warm[0]},${sun.warm[1]},${sun.warm[2]},${(sun.top * sun.a * 8).toFixed(3)})`;
     sun._sideStyle = `rgba(${sun.warm[0]},${sun.warm[1]},${sun.warm[2]},${Math.max(sun.lx, sun.rx).toFixed(3)})`;
@@ -2450,6 +2654,211 @@ class World {
         ctx.fillRect(sx + 9, sy + 1, 3, 12);
         break;
       }
+
+      // ============================================================
+      // BUILDING SET — ten blocks drawn flat and tileable, because their whole
+      // job is to sit next to copies of themselves without a visible seam.
+      // `tx`/`ty` only show up where a repeated pattern needs an offset, so a
+      // wall of one block never looks like one block repeated.
+      // ============================================================
+      case TILES.PLANKS: {
+        // Four oak boards with staggered end-joints, so a wall of planks reads
+        // as panelling rather than as stripes.
+        ctx.fillStyle = '#b45309';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#d97706';
+        for (let row = 0; row < 4; row++) ctx.fillRect(sx, sy + row * 6 + 4, TILE_SIZE, 1);
+        ctx.fillStyle = '#92400e';
+        for (let row = 0; row < 4; row++) ctx.fillRect(sx, sy + row * 6 + 5, TILE_SIZE, 1);
+        ctx.fillStyle = '#7c2d12';
+        for (let row = 0; row < 4; row++) {
+          const jx = ((row + tx + ty) % 2) ? sx + 7 : sx + 17;
+          ctx.fillRect(jx, sy + row * 6, 2, 6);
+        }
+        ctx.fillStyle = 'rgba(120, 53, 15, 0.5)';
+        ctx.fillRect(sx + 3, sy + 1, 4, 1);
+        ctx.fillRect(sx + 14, sy + 13, 5, 1);
+        break;
+      }
+      case TILES.COBBLESTONE: {
+        // Rounded stones in mortar, three sizes, hashed so no two cobble tiles
+        // repeat the same arrangement.
+        ctx.fillStyle = '#57534e';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        const cob = (tx * 13 + ty * 29) % 5;
+        ctx.fillStyle = '#78716c';
+        ctx.fillRect(sx + 2, sy + 2, 9, 8);
+        ctx.fillRect(sx + 13, sy + 2, 9, 5);
+        ctx.fillRect(sx + 7, sy + 12, 11, 9);
+        ctx.fillStyle = '#a8a29e';
+        ctx.fillRect(sx + 3, sy + 3, 6, 3);
+        ctx.fillRect(sx + 14, sy + 3, 5, 2);
+        ctx.fillRect(sx + 9, sy + 13, 6, 3);
+        ctx.fillStyle = '#44403c';
+        if (cob === 0) ctx.fillRect(sx + 17, sy + 9, 5, 3);
+        else if (cob === 1) ctx.fillRect(sx + 1, sy + 10, 4, 3);
+        else ctx.fillRect(sx + 2, sy + 20, 4, 2);
+        break;
+      }
+      case TILES.BRICK_BLOCK: {
+        // Four courses of offset brick in pale mortar.
+        ctx.fillStyle = '#c9c1b6';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        for (let row = 0; row < 4; row++) {
+          const by = sy + row * 5 + row;
+          const shift = ((row + tx + ty) % 2) ? 0 : 6;
+          ctx.fillStyle = '#9f3a2f';
+          for (let bx = -6; bx < TILE_SIZE; bx += 12) {
+            ctx.fillRect(sx + bx + shift, by, 10, 5);
+          }
+        }
+        // Highlight along the top of each brick course.
+        ctx.fillStyle = '#b91c1c';
+        for (let row = 0; row < 4; row++) {
+          const by = sy + row * 5 + row;
+          const shift = ((row + tx + ty) % 2) ? 0 : 6;
+          for (let bx = -6; bx < TILE_SIZE; bx += 12) ctx.fillRect(sx + bx + shift, by, 10, 1);
+        }
+        break;
+      }
+      case TILES.POLISHED_STONE: {
+        // Smooth slab with a bevelled edge: the quiet, expensive-looking block.
+        ctx.fillStyle = '#a8b0bb';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(sx, sy, TILE_SIZE, 2);
+        ctx.fillRect(sx, sy, 2, TILE_SIZE);
+        ctx.fillStyle = '#8892a0';
+        ctx.fillRect(sx, sy + TILE_SIZE - 2, TILE_SIZE, 2);
+        ctx.fillRect(sx + TILE_SIZE - 2, sy, 2, TILE_SIZE);
+        // Faint vein, so a large floor is not a dead flat field.
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+        ctx.fillRect(sx + 4, sy + 8, 12, 1);
+        ctx.fillRect(sx + 16, sy + 9, 2, 8);
+        break;
+      }
+      case TILES.SANDSTONE_BRICK: {
+        // Long, low blocks in the ashlar pattern sandstone actually cuts into.
+        ctx.fillStyle = '#b08c48';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#e0bf7a';
+        ctx.fillRect(sx, sy, 11, 7);
+        ctx.fillRect(sx + 13, sy, 11, 7);
+        ctx.fillRect(sx + 5, sy + 9, 11, 7);
+        ctx.fillRect(sx, sy + 18, 11, 6);
+        ctx.fillRect(sx + 13, sy + 18, 11, 6);
+        ctx.fillStyle = '#f3dea6';
+        ctx.fillRect(sx, sy, 11, 1);
+        ctx.fillRect(sx + 5, sy + 9, 11, 1);
+        ctx.fillRect(sx + 13, sy + 18, 11, 1);
+        break;
+      }
+      case TILES.HAY_BLOCK: {
+        // Straw with two twine bands — reads instantly as a hay bale.
+        ctx.fillStyle = '#d4a017';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#a16207';
+        for (let s = 0; s < 12; s++) {
+          const hx = (s * 7 + tx * 3) % TILE_SIZE;
+          ctx.fillRect(sx + hx, sy + 2, 1, TILE_SIZE - 4);
+        }
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(sx, sy, TILE_SIZE, 2);
+        ctx.fillStyle = '#7c2d12';
+        ctx.fillRect(sx, sy + 6, TILE_SIZE, 2);
+        ctx.fillRect(sx, sy + 16, TILE_SIZE, 2);
+        break;
+      }
+      case TILES.WOOL_BLOCK: {
+        ctx.fillStyle = '#e7e5e4';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#fafaf9';
+        ctx.fillRect(sx + 2, sy + 2, 8, 6);
+        ctx.fillRect(sx + 13, sy + 11, 8, 7);
+        ctx.fillStyle = '#d6d3d1';
+        ctx.fillRect(sx + 12, sy + 3, 7, 5);
+        ctx.fillRect(sx + 4, sy + 13, 7, 6);
+        // Fluffed lower edge, so a wall of wool reads as soft.
+        ctx.fillStyle = '#b8b4b1';
+        ctx.fillRect(sx + 3, sy + 21, 4, 2);
+        ctx.fillRect(sx + 15, sy + 20, 5, 2);
+        break;
+      }
+      case TILES.ICE_BLOCK: {
+        ctx.fillStyle = '#a5e8f5';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#d8f6fd';
+        ctx.fillRect(sx, sy, TILE_SIZE, 3);
+        ctx.fillRect(sx, sy, 3, TILE_SIZE);
+        // Interior fractures, hashed so a wall of ice is not the same pane twice.
+        ctx.strokeStyle = 'rgba(240, 249, 255, 0.85)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const crack = (tx * 7 + ty * 11) % 3;
+        if (crack === 0) { ctx.moveTo(sx + 4, sy + 6); ctx.lineTo(sx + 14, sy + 15); ctx.lineTo(sx + 20, sy + 20); }
+        else if (crack === 1) { ctx.moveTo(sx + 18, sy + 4); ctx.lineTo(sx + 9, sy + 13); ctx.lineTo(sx + 12, sy + 21); }
+        else { ctx.moveTo(sx + 2, sy + 17); ctx.lineTo(sx + 11, sy + 9); ctx.lineTo(sx + 21, sy + 12); }
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+        ctx.fillRect(sx + 12, sy + 4, 8, 4);
+        break;
+      }
+      case TILES.BOOKSHELF: {
+        // Timber frame with two shelves of coloured spines.
+        ctx.fillStyle = '#7c4a1e';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#1c1917';
+        ctx.fillRect(sx + 2, sy + 2, TILE_SIZE - 4, 8);
+        ctx.fillRect(sx + 2, sy + 13, TILE_SIZE - 4, 9);
+        const spines = ['#dc2626', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
+        for (let b = 0; b < 6; b++) {
+          const bx = sx + 3 + b * 3;
+          ctx.fillStyle = spines[(b + tx + ty) % spines.length];
+          ctx.fillRect(bx, sy + 3, 2, 6);
+          ctx.fillStyle = spines[(b + tx + ty + 3) % spines.length];
+          ctx.fillRect(bx, sy + 14, 2, 7);
+        }
+        // Shelf boards and top/bottom rails.
+        ctx.fillStyle = '#5b3413';
+        ctx.fillRect(sx, sy + 10, TILE_SIZE, 3);
+        ctx.fillStyle = '#92400e';
+        ctx.fillRect(sx, sy, TILE_SIZE, 1);
+        ctx.fillRect(sx, sy + TILE_SIZE - 1, TILE_SIZE, 1);
+        break;
+      }
+      case TILES.LANTERN: {
+        // A hung iron lantern: chain, ring, cage and a live flame. Drawn two
+        // pixels above centre so it reads as hanging rather than resting.
+        const lT = Date.now() * 0.004;
+        const lPulse = 0.72 + Math.sin(lT + tx) * 0.16 + Math.sin(lT * 2.7 + ty) * 0.12;
+        ctx.fillStyle = '#44403c';
+        ctx.fillRect(sx + 11, sy + 1, 2, 4);
+        ctx.strokeStyle = '#78716c';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(sx + 12, sy + 4, 3, 0, Math.PI * 2);
+        ctx.stroke();
+        // Glass body, faintly lit even before the flame goes on top of it.
+        ctx.fillStyle = '#57534e';
+        ctx.fillRect(sx + 6, sy + 7, 12, 2);
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.22)';
+        ctx.fillRect(sx + 7, sy + 9, 10, 11);
+        ctx.fillStyle = '#3f3f46';
+        ctx.fillRect(sx + 6, sy + 9, 1, 11);
+        ctx.fillRect(sx + 17, sy + 9, 1, 11);
+        ctx.fillRect(sx + 6, sy + 20, 12, 2);
+        // Flame.
+        ctx.save();
+        ctx.globalAlpha = lPulse;
+        ctx.fillStyle = '#fb923c';
+        ctx.fillRect(sx + 9, sy + 12, 6, 7);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(sx + 10, sy + 13, 4, 5);
+        ctx.fillStyle = '#fef3c7';
+        ctx.fillRect(sx + 11, sy + 15, 2, 3);
+        ctx.restore();
+        break;
+      }
     }
   }
 
@@ -2515,7 +2924,7 @@ class World {
       for (let x = minTileX; x <= maxTileX; x++) {
         const tile = this.tiles[rowBase + x];
         if (tile !== TILES.TORCH && tile !== TILES.CAMPFIRE && tile !== TILES.LAVA &&
-            tile !== TILES.CRYSTAL && tile !== TILES.WATER) continue;
+            tile !== TILES.CRYSTAL && tile !== TILES.WATER && tile !== TILES.LANTERN) continue;
         if (tile === TILES.TORCH) {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
@@ -2532,6 +2941,12 @@ class World {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
           this.carveLightCircle(lightCtx, sx, sy, 150, 0.8);
+        } else if (tile === TILES.LANTERN) {
+          // Between a torch and a campfire: it is a placeable room light, so it
+          // has to hold a room rather than a doorstep.
+          const sx = x * TILE_SIZE + 12 - camera.x;
+          const sy = y * TILE_SIZE + 12 - camera.y;
+          this.carveLightCircle(lightCtx, sx, sy, 250, 0.92);
         } else {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
@@ -2668,6 +3083,13 @@ class World {
           case TILES.CRYSTAL:
             this.glowBlob(glowCtx, sx, sy, 62, 90, 220, 255, 0.5);
             break;
+          case TILES.LANTERN: {
+            // Warm, steady, with just enough flicker to feel alive.
+            const lampFlicker = 0.92 + Math.sin(t * 6.2 + x * 1.7) * 0.05 + Math.sin(t * 11.3 + y) * 0.04;
+            this.glowBlob(glowCtx, sx, sy - 2, 96 * lampFlicker, 255, 176, 84, 0.8);
+            this.glowBlob(glowCtx, sx, sy - 2, 34 * lampFlicker, 255, 240, 190, 0.88);
+            break;
+          }
           case TILES.DIAMOND_ORE:
             this.glowBlob(glowCtx, sx, sy, 44, 120, 240, 255, 0.34);
             break;
