@@ -69,6 +69,14 @@ const MARKERS = [
   ['terraria.js', 'rite_of_bones', 'the Rite of Bones recipe'],
   ['juice.js', 'dragonRite', 'the rite tooltip that says where to read it'],
   ['space.js', 'MINION_CAP', 'the bone legion capped at 9 across every summon'],
+  // ---- Chest storage -------------------------------------------------------
+  ['terraria.html', 'chest-grid', 'the chest storage panel grid'],
+  ['terraria.html', 'chest-inv-grid', 'the bag mirror inside the chest panel'],
+  ['terraria.js', 'openChestUI', 'chests open their own storage panel'],
+  ['terraria.js', 'spillChestContents', 'breaking a chest spills its contents'],
+  ['terraria.js', 'chestQuickDeposit', 'the quick deposit / take all buttons'],
+  ["terraria.js", "name: 'Chest'", 'the craftable chest recipe'],
+  ["world.js", "id: 'chest', count: 1", 'the chest tile drops itself when mined'],
 ];
 
 const fails = [];
