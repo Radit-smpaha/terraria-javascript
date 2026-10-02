@@ -2027,17 +2027,24 @@ body {
 
 /* The Minecraft/Terraria blurb that hangs off the top-right of the logo.
    100% here is .title-logo — the h1's own box — so this lands exactly on the
-   Terracraft lettering's right edge rather than somewhere past it. */
+   Terracraft lettering's right edge rather than somewhere past it.
+   white-space MUST be reset to normal: .title-brand sets nowrap, and without
+   this the line never wraps, so it runs off the right of the screen and the
+   rotation clips it against the top. */
 .title-splash {
   position: absolute;
-  top: -2px;
-  left: calc(100% + 10px);
+  /* 9px down, not flush to the top: the box is 2-3 lines tall and the tilt
+     lifts its far end by roughly a third of its width, so top:0 would push
+     the right-hand end off the top of the screen once it wraps. */
+  top: 9px;
+  left: calc(100% + 12px);
   width: 214px;
+  white-space: normal;
   color: #fff16c;
   font: 26px/1.05 'VT323', monospace;
   text-align: left;
   text-shadow: 2px 2px 0 #553d17, 0 0 12px rgba(255, 241, 108, .5);
-  transform: rotate(-11deg);
+  transform: rotate(-7deg);
   transform-origin: left center;
   animation: splash-wiggle 3.8s ease-in-out infinite;
 }
@@ -2122,10 +2129,10 @@ body {
 .coming-soon {
   position: absolute;
   top: 50%;
-  /* No fixed width: the note shrink-wraps to its own text, so this offset is
-     the real gap between the two. A set width would right-align short text
-     inside a wide box and leave the words looking miles from the button. */
-  right: calc(100% + 10px);
+  /* Sits to the RIGHT of the button. No fixed width: the note shrink-wraps to
+     its own text, so this offset is the real gap — a set width would pad out
+     the box and leave the words looking miles from Multiplayer. */
+  left: calc(100% + 10px);
   color: #ffd76e;
   font: 24px/1.05 'VT323', monospace;
   white-space: nowrap;
@@ -2275,8 +2282,10 @@ body {
 
 /* ---- Responsive --------------------------------------------------- */
 @media (max-width: 940px) {
-  /* Not enough room beside the logo any more: park the splash above-right. */
-  .title-splash { top: -34px; left: auto; right: -6px; width: 190px; text-align: right; transform-origin: right center; font-size: 23px; }
+  /* Not enough room beside the logo any more: tuck the splash over the logo's
+     own top-right corner (still anchored to .title-logo) instead of above it,
+     where it would clip off the top of the screen. */
+  .title-splash { top: -6px; left: auto; right: -10px; width: 190px; text-align: right; transform-origin: right center; font-size: 23px; }
 }
 @media (max-width: 680px) {
   .title-brand { top: 8%; }
@@ -2284,13 +2293,12 @@ body {
   .title-tagline { font-size: 19px; letter-spacing: 3px; }
   .title-menu { top: 42%; gap: 4px; }
   .title-button { min-height: 44px; font-size: 31px; }
+  /* Too tight to fit beside the button: tuck the note above its right side. */
   .coming-soon {
     top: -8px;
-    right: auto;
-    left: 0;
-    width: auto;
+    right: 0;
+    left: auto;
     font-size: 19px;
-    text-align: left;
     transform: translateY(-100%);
   }
   .title-worlds { top: 20%; gap: 2px; }

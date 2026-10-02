@@ -1179,19 +1179,19 @@ class Game {
     const NIGHT = {
       skyTop: [7, 13, 40], skyMid: [22, 36, 82], skyBot: [44, 62, 104],
       far: [26, 40, 70], near: [20, 46, 60], hill: [17, 52, 46],
-      grass: [16, 58, 45], deep: [10, 34, 30], water: [24, 48, 72],
+      grass: [16, 58, 45], deep: [10, 34, 30], water: [18, 40, 64],
       leafA: [19, 47, 42], leafB: [25, 58, 50], trunk: [48, 36, 30]
     };
     const DUSK = {
       skyTop: [70, 58, 126], skyMid: [214, 118, 84], skyBot: [246, 194, 128],
       far: [120, 94, 120], near: [98, 98, 118], hill: [58, 72, 68],
-      grass: [52, 74, 62], deep: [36, 48, 48], water: [132, 104, 112],
+      grass: [52, 74, 62], deep: [36, 48, 48], water: [112, 88, 100],
       leafA: [54, 70, 62], leafB: [68, 84, 72], trunk: [86, 64, 52]
     };
     const DAY = {
       skyTop: [46, 103, 223], skyMid: [101, 185, 240], skyBot: [182, 225, 200],
       far: [108, 159, 194], near: [77, 156, 154], hill: [55, 142, 107],
-      grass: [52, 146, 108], deep: [39, 111, 79], water: [74, 160, 196],
+      grass: [52, 146, 108], deep: [39, 111, 79], water: [44, 116, 176],
       leafA: [37, 131, 84], leafB: [46, 145, 90], trunk: [104, 74, 50]
     };
     const KEYS = Object.keys(DAY);
@@ -1434,9 +1434,9 @@ class Game {
       const lakeH = height - lakeY;
       context.fillStyle = css(P.water);
       context.fillRect(lakeX, lakeY, lakeW, lakeH);
-      context.fillStyle = css(mixRGB(P.water, [255, 255, 255], 0.4));
+      context.fillStyle = css(mixRGB(P.water, [255, 255, 255], 0.22));
       context.fillRect(lakeX, lakeY, lakeW, 2);
-      context.fillStyle = 'rgba(255,255,255,' + (0.18 + 0.22 * day).toFixed(3) + ')';
+      context.fillStyle = 'rgba(255,255,255,' + (0.12 + 0.16 * day).toFixed(3) + ')';
       const shimmerSpan = lakeW - 40;
       for (let i = 0; i < 5; i++) {
         const sx = lakeX + 8 + wrapPos(i * 33 + time * 0.011 * (i % 2 ? 1 : -1), shimmerSpan);
