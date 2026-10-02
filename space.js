@@ -1729,11 +1729,12 @@ class SkeletonDragonBoss {
     // been practice for this: a six-figure health pool with no i-frames means
     // sustained damage is rewarded, and the fight simply cannot be out-traded.
     // The phases break at 66% and 33%, so each third is a fight in its own
-    // right. It used to be 100,000 — full Voidstar Cleaver swings into a
-    // fully-soaked plate stretched the last third past the point of being a
-    // test of patience rather than a test of reads, so the pool came down 12%.
-    this.maxHp = 88000;
-    this.hp = 88000;
+    // right. This sat at 88,000 for a while — a full Voidstar Cleaver into a
+    // fully-soaked plate made the last third long enough to stop being a test of
+    // reads — and has been put back to the full 100,000 the fight was designed
+    // around. It is the hardest thing in the game; it is meant to be a wall.
+    this.maxHp = 100000;
+    this.hp = 100000;
     this.phase = 1;
     this.name = 'SKELETON DRAGON, THE OSSUARY SOVEREIGN';
     this.dead = false;

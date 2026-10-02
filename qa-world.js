@@ -501,7 +501,7 @@ check('the rite raises a whole Sovereign', (() => {
 })(), 'boss=' + (g.boss ? g.boss.hp : 'none') +
   ' bones=' + g.countItem('rite_of_bones'));
 check('the raised Sovereign is whole',
-  !!g.boss && g.boss.hp === g.boss.maxHp && g.boss.maxHp === 88000,
+  !!g.boss && g.boss.hp === g.boss.maxHp && g.boss.maxHp === 100000,
   g.boss ? g.boss.hp + '/' + g.boss.maxHp : 'none');
 
 // ---- Walk out mid-fight: the wound must bank and survive a rite attempt. ----

@@ -143,6 +143,67 @@ class SoundSystem {
     osc.stop(now + 0.1);
   }
 
+  // THE BAN HAMMER — a three-layer "system ban" impact, built from the same
+  // oscillator+gain idiom as every other sound here:
+  //   1. a detuned square-wave "ERROR" dyad two octaves down (the sting),
+  //   2. a fast downward sawtooth sweep (the denial),
+  //   3. a burst of white noise gated hard (the CRT power-cut).
+  // The noise is generated into an AudioBuffer rather than a looping node, so
+  // one swing makes exactly one burst and cannot leave a hiss running.
+  playBanHammer() {
+    if (!this.enabled || !this.ctx) return;
+    this.resume();
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    const out = ctx.createGain();
+    out.gain.value = 0.85;
+    out.connect(this.masterGain);
+
+    // 1. ERROR dyad — a minor second, deliberately dissonant.
+    for (const [freq, delay, vol] of [[196, 0, 0.26], [207.65, 0, 0.22]]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, now + delay);
+      gain.gain.setValueAtTime(0, now + delay);
+      gain.gain.linearRampToValueAtTime(vol, now + delay + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.55);
+      osc.connect(gain); gain.connect(out);
+      osc.start(now + delay); osc.stop(now + delay + 0.6);
+    }
+
+    // 2. Denial sweep — 1200Hz down to 90Hz across 0.4s.
+    const saw = ctx.createOscillator();
+    const sawGain = ctx.createGain();
+    saw.type = 'sawtooth';
+    saw.frequency.setValueAtTime(1200, now);
+    saw.frequency.exponentialRampToValueAtTime(90, now + 0.4);
+    sawGain.gain.setValueAtTime(0.22, now);
+    sawGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    saw.connect(sawGain); sawGain.connect(out);
+    saw.start(now); saw.stop(now + 0.42);
+
+    // 3. Noise burst — a short filtered hit layered over the tonal sting.
+    const len = Math.floor(ctx.sampleRate * 0.35);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      // Decaying white noise: full volume at the first sample, silent by the end.
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800;
+    bp.Q.value = 0.7;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.5;
+    noise.connect(bp); bp.connect(noiseGain); noiseGain.connect(out);
+    noise.start(now);
+  }
+
   // Bow arrow release
   playBow() {
     if (!this.enabled || !this.ctx) return;

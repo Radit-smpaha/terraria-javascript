@@ -98,6 +98,7 @@ const ITEM_TUNING = {
   ember_bow: { useTime: 0.34, critBonus: 0.05 },
   moon_staff: { useTime: 0.46, critBonus: 0.06 },
   diamond_blade: { useTime: 0.22, critBonus: 0.08 },
+  aurora_blade: { useTime: 0.26, critBonus: 0.1 },
   bomb: { useTime: 0.9 }
 };
 
@@ -333,6 +334,18 @@ const NEW_ITEMS = {
     id: 'aurora_blade', name: 'Aurora Blade', type: 'weapon', weaponType: 'melee',
     damage: 125, range: 128, useTime: 0.28, critBonus: 0.12, lifesteal: 0.06,
     icon: '🌠', stackMax: 1
+  },
+  // ---- THE BAN HAMMER -------------------------------------------------------
+  // A creative-menu weapon and nothing else. `hitsAll` makes one swing connect
+  // with EVERY target within `banRadius` instead of only those inside the swing
+  // cone, so a single swing clears a room. It has no recipe, no drop table and
+  // no shop: `creativeOnly` is enforced inside Game.addItem, so every normal
+  // route to an item — crafting, mining, boss bags, loot rolls, save editing —
+  // is refused, and only the creative menu can grant it.
+  ban_hammer: {
+    id: 'ban_hammer', name: 'The Ban Hammer', type: 'weapon', weaponType: 'melee',
+    damage: 240, range: 130, useTime: 0.85, critBonus: 0.05, banRadius: 260,
+    hitsAll: true, creativeOnly: true, icon: '🔨', stackMax: 1
   },
   rainbow_armor: {
     id: 'rainbow_armor', name: 'Prismatic Armor', type: 'armor', defense: 22, reduction: 0.32,
@@ -2251,7 +2264,15 @@ class Game {
       const restored = [];
       for (let i = 0; i < wanted; i++) {
         const slot = save.inventory[i];
-        restored.push(slot && ITEMS[slot.id] && Number.isFinite(slot.count)
+        // A `creativeOnly` item (The Ban Hammer) has no legitimate presence in
+        // a save: it can only ever have been granted by the creative menu, and
+        // even then it does not survive a reload. Dropping it here means a
+        // hand-edited or version-skewed save cannot smuggle one back in, which
+        // is the whole point of the restriction. This restore path writes
+        // straight into the array and so bypasses the addItem guard entirely —
+        // the filter has to be explicit.
+        const banned = slot && ITEMS[slot.id] && ITEMS[slot.id].creativeOnly;
+        restored.push(slot && ITEMS[slot.id] && Number.isFinite(slot.count) && !banned
           ? { id: slot.id, count: Math.max(0, slot.count) }
           : { id: 'empty', count: 0 });
       }
@@ -2560,7 +2581,7 @@ class Game {
       return false;
     }
     const added = Math.min(wanted, room);
-    this.addItem(id, added);
+    this.addItem(id, added, true);
     this.renderInventoryGrid();
     this.sound.playPickup();
     // Same lookup the hotbar uses, so the twice-given item counts too.
@@ -2832,9 +2853,18 @@ class Game {
     this.renderHotbarUI();
   }
 
-  addItem(id, count = 1) {
+  addItem(id, count = 1, creative = false) {
     const item = ITEMS[id];
     const stackMax = item ? item.stackMax : 999;
+
+    // `creativeOnly` items (The Ban Hammer) exist to be had from the creative
+    // menu and nowhere else. Enforcing it HERE rather than by simply not
+    // wiring a recipe or drop table means every route into the bag is covered
+    // at once: crafting, mining, fishing, chest and boss loot, hotkeyed item
+    // pickup, and a hand-edited or version-skewed save that tries to restore
+    // one. Only the creative menu passes `creative = true`.
+    if (item && item.creativeOnly && !creative) return false;
+
     let remaining = count;
 
     // A backpack enlarges the bag, so the room it needs has to exist before we
@@ -2873,6 +2903,12 @@ class Game {
 
   canAddItem(id, count = 1) {
     const item = ITEMS[id];
+    // A creativeOnly item can never legitimately arrive through this path, so
+    // reporting "yes, there is room" would invite every caller (crafting, the
+    // saved-inventory restore, stack consolidation, quest rewards) to hand one
+    // out and rely on addItem to refuse it late. Answer no here as well, so the
+    // refusal happens before anything is spent or consumed.
+    if (item && item.creativeOnly) return false;
     const stackMax = item ? item.stackMax : 999;
     let capacity = 0;
     for (const slot of this.inventory) {
@@ -3509,6 +3545,32 @@ class Game {
     setTimeout(() => toast.remove(), 2500);
   }
 
+  /**
+   * THE BAN HAMMER: slam the "!!BANNED!!" overlay up over the screen.
+   *
+   * The class-add is the whole trick. Setting `.style.animation = 'none'`
+   * and then reading `offsetHeight` forces a reflow, so the browser treats
+   * the re-added `.ban-flash` as a brand-new animation even when the previous
+   * one is still running — a second hammer swing mid-glitch restarts the
+   * effect cleanly instead of being swallowed.
+   */
+  showBanOverlay(damage = 0) {
+    const overlay = document.getElementById('ban-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('ban-flash');
+    overlay.style.animation = 'none';
+    overlay.offsetHeight; // force reflow so the re-trigger takes
+    overlay.style.animation = null;
+    overlay.classList.add('ban-flash');
+
+    const readout = overlay.querySelector('.ban-readout');
+    if (readout) {
+      readout.textContent = damage > 0
+        ? `ACCESS REVOKED — ${damage.toLocaleString()} DENIED`
+        : 'ACCESS REVOKED — PERMISSION DENIED';
+    }
+  }
+
   showAnnouncement(text) {
     const banner = document.getElementById('announcement-banner');
     const bannerText = document.getElementById('announcement-text');
@@ -3691,7 +3753,10 @@ class Game {
 
     // 1. Melee Weapon Swing — a real swing ARC instead of a 360° damage aura.
     if (itemData && itemData.type === 'weapon' && itemData.weaponType === 'melee') {
-      this.sound.playSwing();
+      // A `hitsAll` weapon has its own impact sound that fires on contact, so
+      // it skips the generic swing whoosh — otherwise every landed hammer hit
+      // plays a whiff-swoosh layered under the ban sting.
+      if (!itemData.hitsAll) this.sound.playSwing();
       const pMidX = this.player.x + this.player.width / 2;
       const pMidY = this.player.y + this.player.height / 2;
       const angle = Math.atan2(mouseWorldY - pMidY, mouseWorldX - pMidX);
@@ -3718,7 +3783,19 @@ class Game {
 
       // Half-width of the swing cone (radians). Longer weapons sweep wider.
       const arcHalf = Math.max(0.55, Math.min(1.15, itemData.range / 80));
+      // THE BAN HAMMER: `hitsAll` replaces the cone with an instant ban-radius
+      // around the player, so one swing connects with every monster, the boss
+      // and every critter standing in it no matter which way the mouse points.
+      // The arc still draws — the swing is real feedback, it just no longer
+      // decides who gets hit.
+      const banReach = itemData.hitsAll ? (itemData.banRadius || itemData.range) : 0;
+      // Every downstream gate below tests distance with `itemData.range` BEFORE
+      // consulting inArc, so widening the arc alone would still leave the ban
+      // radius clipped to the short `range`. `reach` is the real reach of this
+      // swing and every distance check uses it instead.
+      const reach = Math.max(itemData.range, banReach);
       const inArc = (tMidX, tMidY) => {
+        if (banReach && Math.hypot(tMidX - pMidX, tMidY - pMidY) <= banReach) return true;
         const diff = Math.atan2(tMidY - pMidY, tMidX - pMidX) - angle;
         const wrapped = Math.atan2(Math.sin(diff), Math.cos(diff));
         return Math.abs(wrapped) <= arcHalf;
@@ -3732,7 +3809,7 @@ class Game {
       for (const m of this.monsters) {
         const mMidX = m.x + m.width / 2;
         const mMidY = m.y + m.height / 2;
-        if (Math.hypot(mMidX - pMidX, mMidY - pMidY) > itemData.range + m.width / 2) continue;
+        if (Math.hypot(mMidX - pMidX, mMidY - pMidY) > reach + m.width / 2) continue;
         if (!inArc(mMidX, mMidY)) continue;
         const roll = this.rollDamage(itemData.damage, itemData);
         const dealt = m.takeDamage(roll.damage, this.sound, this.particles, roll.crit, {
@@ -3764,9 +3841,9 @@ class Game {
         // centre test untouched.
         let struck = null;
         if (typeof this.boss.nearestHitTarget === 'function') {
-          const target = this.boss.nearestHitTarget(pMidX, pMidY, itemData.range);
+          const target = this.boss.nearestHitTarget(pMidX, pMidY, reach);
           if (target && inArc(target.x, target.y)) struck = target;
-        } else if (Math.hypot(bMidX - pMidX, bMidY - pMidY) <= itemData.range + this.boss.width / 2 &&
+        } else if (Math.hypot(bMidX - pMidX, bMidY - pMidY) <= reach + this.boss.width / 2 &&
                    inArc(bMidX, bMidY)) {
           struck = { x: bMidX, y: bMidY, head: true };
         }
@@ -3796,7 +3873,7 @@ class Game {
       for (const critter of this.critters) {
         const cMidX = critter.x + critter.width / 2;
         const cMidY = critter.y + critter.height / 2;
-        if (Math.hypot(cMidX - pMidX, cMidY - pMidY) > itemData.range + critter.width / 2) continue;
+        if (Math.hypot(cMidX - pMidX, cMidY - pMidY) > reach + critter.width / 2) continue;
         if (!inArc(cMidX, cMidY)) continue;
         critter.takeDamage(itemData.damage, this.sound, this.particles);
         hitAnything = true;
@@ -3809,6 +3886,29 @@ class Game {
         this.stats.damageDealt += totalDealt;
         this.feel.stop(anyCrit ? 0.105 : 0.05, 0.07);
         this.feel.shake(anyCrit ? 0.42 : 0.16);
+
+        // ── THE BAN HAMMER ──────────────────────────────────────────────
+        // A landed swing gets the full treatment: the "!!BANNED!!" overlay, its
+        // own layered SFX instead of the plain swing whoosh, a heavier freeze
+        // and kick than any other weapon gets, and a red particle blast off the
+        // player. `hitsAll` means this fires on any connection at all, so a
+        // room-clearing swing bans once per swing, not once per victim.
+        if (itemData.hitsAll) {
+          this.showBanOverlay(totalDealt);
+          this.sound.playBanHammer();
+          this.feel.stop(0.13, 0.04);
+          this.feel.shake(0.62);
+          for (let i = 0; i < 26; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 2 + Math.random() * 7;
+            this.particles.addParticle(
+              pMidX, pMidY,
+              Math.cos(a) * sp, Math.sin(a) * sp,
+              i % 3 === 0 ? '#ff1a1a' : '#7f1d1d', 3 + Math.random() * 4,
+              0.3 + Math.random() * 0.35, 0, true
+            );
+          }
+        }
         // Weapon-flavoured spark burst at the point of contact, so a silver
         // saber and a diamond blade do not read identically.
         this.spawnWeaponImpact(pMidX + Math.cos(angle) * (itemData.range * 0.62),

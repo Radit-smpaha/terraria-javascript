@@ -65,7 +65,7 @@ const MARKERS = [
   // Every one of these is a marker for a bug that was fixed, so a GitHub Pages
   // / Streamlit cache that serves an older space.js or entities.js gets caught
   // rather than looking like "it still gets stuck in rocks".
-  ['space.js', 'maxHp = 88000', 'the nerfed 88,000 HP Sovereign'],
+  ['space.js', 'maxHp = 100000', 'the 100,000 HP Sovereign'],
   ['space.js', 'nearestHitTarget', 'body hits, and the 8% tax they pay'],
   ['space.js', 'bodyDamageScale', 'the skull still hurts more than the spine'],
   ['space.js', 'blocksDragon', 'the dragon no longer wedges in arena rock'],

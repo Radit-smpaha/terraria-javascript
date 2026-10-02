@@ -202,6 +202,16 @@
       <!-- Quick Action notification toasts -->
       <div id="toast-container" class="toast-container"></div>
 
+      <!-- The Ban Hammer's "!!BANNED!!" impact overlay. Purely presentational;
+           Game.showBanOverlay() adds .ban-flash to retrigger the animation. -->
+      <div id="ban-overlay">
+        <div class="ban-scanlines"></div>
+        <div class="ban-vignette"></div>
+        <div class="ban-glitch"></div>
+        <div class="ban-word">!!BANNED!!</div>
+        <div class="ban-readout">ACCESS REVOKED &mdash; PERMISSION DENIED</div>
+      </div>
+
       <!-- Center Notifications (Night Arrived, Boss Spawned, etc.) -->
       <div id="announcement-banner" class="announcement-banner hidden">
         <div id="announcement-text">THE BLOOD MOON IS RISING...</div>

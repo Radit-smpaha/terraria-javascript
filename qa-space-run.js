@@ -237,9 +237,9 @@ check('dodge platforms exist', (() => {
   }
   return platforms > 150;
 })());
-check('the dragon has 88,000 health', !!g.boss && g.boss.maxHp === 88000,
+check('the dragon has 100,000 health', !!g.boss && g.boss.maxHp === 100000,
   g.boss && g.boss.maxHp);
-check('the nerf landed', !!g.boss && g.boss.maxHp < 100000, g.boss && g.boss.maxHp);
+check('it is a six-figure wall', !!g.boss && g.boss.maxHp >= 100000, g.boss && g.boss.maxHp);
 // THE anti-stuck guarantee: the generator promises a flight box with nothing
 // solid inside it except one-way platforms and loose bone. Anything else in
 // there is a rock the Sovereign can wedge into, which is the old bug.
@@ -769,7 +769,7 @@ check('the rite answers in the Ossuary', g.performBoneRite() === true);
 check('a Sovereign stands where the last one fell',
   !!g.boss && g.boss.kind === 'dragon', g.boss && g.boss.kind);
 check('the new dragon is whole',
-  !!g.boss && g.boss.hp === g.boss.maxHp && g.boss.maxHp === 88000,
+  !!g.boss && g.boss.hp === g.boss.maxHp && g.boss.maxHp === 100000,
   g.boss && (g.boss.hp + '/' + g.boss.maxHp));
 check('the bones are burned', g.countItem('rite_of_bones') === 0,
   'left=' + g.countItem('rite_of_bones'));
