@@ -97,30 +97,61 @@ const MARKERS = [
 
 const fails = [];
 const files = new Map();
+const weakReads = new Set();
 
 (async () => {
+  // Two different failure modes must never be confused. "I could not read the
+  // file" (rate limit, network, CDN hiccup) says NOTHING about whether the deploy
+  // is current — a tool that reports that as STALE cries wolf, and you stop
+  // trusting it. Only a file we actually READ and found wanting is evidence.
+  const unreadable = [];
   for (const name of REQUIRED) {
+    let body = null;
     try {
-      // The CONTENTS API, not raw.githubusercontent. This tool's whole job is to
-      // tell the truth about what GitHub is serving, and raw is CDN-cached: it
-      // kept handing back a build from BEFORE the push being verified, which
-      // reported a healthy deploy as STALE (and would hide a genuinely broken
-      // one behind a lucky cache hit). The contents API reads the repository,
-      // so its answer is the commit itself.
+      // The CONTENTS API, not raw.githubusercontent: raw is CDN-cached and kept
+      // handing back a build from BEFORE the push being verified, which reported
+      // a healthy deploy as STALE. The contents API reads the repository itself.
       const res = await fetch(raw(name), {
         cache: 'no-store',
         headers: { 'User-Agent': 'terracraft-qa', Accept: 'application/vnd.github+json' }
       });
-      if (!res.ok) {
-        fails.push(`${name}: HTTP ${res.status} — the file is not on ${branch}`);
-        continue;
+      if (res.status === 403 || res.status === 429) {
+        // Unauthenticated GitHub allows 60 API reads an hour. Fall back to raw
+        // (cache-busted) rather than giving up, and remember that this file's
+        // answer is weaker.
+        const alt = await fetch(
+          `https://raw.githubusercontent.com/${REPO}/${branch}/${encodeURIComponent(name)}?cb=${Date.now()}`,
+          { cache: 'no-store' }
+        );
+        if (alt.ok) {
+          weakReads.add(name);
+          body = await alt.text();
+        } else {
+          unreadable.push(`${name}: HTTP ${res.status} (API) / ${alt.status} (raw)`);
+        }
+      } else if (!res.ok) {
+        unreadable.push(`${name}: HTTP ${res.status} — the file is not on ${branch}`);
+      } else {
+        const json = await res.json();
+        body = Buffer.from(json.content, 'base64').toString('utf8');
       }
-      const json = await res.json();
-      files.set(name, Buffer.from(json.content, 'base64').toString('utf8'));
     } catch (error) {
-      fails.push(`${name}: fetch failed (${error.message})`);
+      unreadable.push(`${name}: fetch failed (${error.message})`);
     }
+    if (body !== null) files.set(name, body);
   }
+
+  if (unreadable.length) {
+    console.log(`\n⚠ COULD NOT READ ${unreadable.length}/${REQUIRED.length} FILES — this run is INCONCLUSIVE:`);
+    for (const u of unreadable) console.log('  - ' + u);
+    console.log('  (GitHub rate-limits unauthenticated API reads. Nothing below proves the');
+    console.log('   deploy is stale, and nothing below proves it is fresh.)');
+  }
+  if (weakReads.size) {
+    console.log(`\n⚠ ${weakReads.size} file(s) came from the CDN-cached raw endpoint rather than the API;`);
+    console.log('  their content may lag a push by a few seconds.');
+  }
+  if (!files.size) process.exit(2);
 
   for (const [name, needle, what] of MARKERS) {
     const body = files.get(name);
@@ -144,6 +175,13 @@ const files = new Map();
   }
 
   if (!fails.length) {
+    if (unreadable.length) {
+      // Everything we COULD read was current, but we could not read everything.
+      // Saying "FRESH" outright would overclaim; so would saying "STALE".
+      console.log(`\nDEPLOY LOOKS FRESH for all ${present.length} file(s) that could be read,`);
+      console.log(`but ${unreadable.length} were unreadable — treat this run as INCONCLUSIVE.`);
+      process.exit(2);
+    }
     console.log('\nDEPLOY IS FRESH — Streamlit is serving the current build.');
     console.log('If the page still looks old: Streamlit menu (top right) -> Reboot app,');
     console.log('then hard-refresh the tab (Ctrl+Shift+R).');
