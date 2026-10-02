@@ -578,9 +578,15 @@
       <div class="title-vignette" aria-hidden="true"></div>
 
       <header class="title-brand">
-        <h1>Terracraft</h1>
+        <!-- .title-logo wraps ONLY the h1. The splash is absolutely positioned,
+             so it anchors to .title-logo's right edge = the logo's own right
+             edge. Anchoring it to .title-brand instead would measure against
+             the wider tagline and push the splash off past the letters. -->
+        <div class="title-logo">
+          <h1>Terracraft</h1>
+          <span id="title-splash" class="title-splash" aria-live="polite"></span>
+        </div>
         <span class="title-tagline">Forest Survivor &amp; Boss Slayer</span>
-        <span id="title-splash" class="title-splash" aria-live="polite"></span>
       </header>
 
       <main id="title-menu" class="title-menu">

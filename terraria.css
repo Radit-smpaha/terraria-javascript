@@ -2007,6 +2007,8 @@ body {
   white-space: nowrap;
   animation: title-arrive 700ms cubic-bezier(.2, .8, .2, 1) both;
 }
+/* Shrink-wraps to the h1 alone, so the splash has a correct corner to sit on. */
+.title-logo { position: relative; display: inline-block; }
 .title-brand h1 {
   margin: 0;
   color: #69ef66;
@@ -2018,18 +2020,18 @@ body {
   display: block;
   margin-top: 4px;
   color: rgba(240, 255, 238, .9);
-  /* Kept narrower than the h1 above it: .title-brand shrink-wraps to its
-     widest child, and a wider tagline would push the splash off the logo. */
   font: 24px/1 'VT323', monospace;
   letter-spacing: 3px;
   text-shadow: 2px 2px 0 rgba(0, 0, 0, .8);
 }
 
-/* The Minecraft/Terraria blurb that hangs off the top-right of the logo. */
+/* The Minecraft/Terraria blurb that hangs off the top-right of the logo.
+   100% here is .title-logo — the h1's own box — so this lands exactly on the
+   Terracraft lettering's right edge rather than somewhere past it. */
 .title-splash {
   position: absolute;
-  top: -4px;
-  left: calc(100% + 8px);
+  top: -2px;
+  left: calc(100% + 10px);
   width: 214px;
   color: #fff16c;
   font: 26px/1.05 'VT323', monospace;
@@ -2120,11 +2122,12 @@ body {
 .coming-soon {
   position: absolute;
   top: 50%;
-  right: calc(100% + 16px);
-  width: 160px;
+  /* No fixed width: the note shrink-wraps to its own text, so this offset is
+     the real gap between the two. A set width would right-align short text
+     inside a wide box and leave the words looking miles from the button. */
+  right: calc(100% + 10px);
   color: #ffd76e;
   font: 24px/1.05 'VT323', monospace;
-  text-align: right;
   white-space: nowrap;
   text-shadow: 2px 2px 0 #3c321d, 0 2px 8px rgba(0, 0, 0, .75);
   transform: translateY(-50%);
