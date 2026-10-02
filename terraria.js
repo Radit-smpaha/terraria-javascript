@@ -805,21 +805,55 @@ function itemIconURL(id, size = 40) {
   return url;
 }
 
-/** Put an item's real art into a UI slot element, falling back to its emoji. */
+/**
+ * Put an item's real art into a UI slot.
+ *
+ * The art is inserted as a real, explicitly-sized <canvas> child rather than
+ * painted onto the slot as a background image. That is not a stylistic choice:
+ * .slot-icon, .recipe-icon and .creative-cell-icon are all sized purely by their
+ * text (`font-size` and nothing else), so the moment the emoji was replaced with
+ * an empty string the element collapsed to 0x0 and the background had nothing to
+ * paint into — every item in the hotbar, bag, creative grid and forge rendered
+ * as a blank tile. A canvas carries its own dimensions, so it cannot collapse.
+ *
+ * The emoji remains a fallback for any environment that cannot rasterise.
+ */
 function applyItemIcon(el, id, size = 40) {
   if (!el) return false;
-  const url = itemIconURL(id, size);
-  if (url && el.style) {
-    el.textContent = '';
-    el.style.backgroundImage = 'url(' + url + ')';
-    el.style.backgroundSize = 'contain';
-    el.style.backgroundRepeat = 'no-repeat';
-    el.style.backgroundPosition = 'center';
-    return true;
+  // Never stack icons: a re-render must replace, not accumulate.
+  const stale = el.querySelector && el.querySelector('canvas.item-icon-canvas');
+  if (stale && stale.remove) stale.remove();
+  if (el.style) el.style.backgroundImage = '';
+
+  let painted = false;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    canvas.className = 'item-icon-canvas';
+    if (canvas.style) {
+      canvas.style.width = size + 'px';
+      canvas.style.height = size + 'px';
+      canvas.style.display = 'block';
+      canvas.style.imageRendering = 'pixelated';
+      canvas.style.pointerEvents = 'none';
+    }
+    const c = canvas.getContext && canvas.getContext('2d');
+    if (c && paintItemIcon(c, id, size)) {
+      el.appendChild(canvas);
+      painted = true;
+    }
+  } catch (err) {
+    painted = false;
   }
-  const item = ITEMS[id];
-  el.textContent = item && item.icon ? item.icon : '📦';
-  return false;
+
+  if (painted) {
+    el.textContent = '';
+  } else {
+    const item = ITEMS[id];
+    el.textContent = item && item.icon ? item.icon : '📦';
+  }
+  return painted;
 }
 
 if (typeof window !== 'undefined') {
@@ -2278,7 +2312,7 @@ class Game {
         ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take, Shift+click for one`
         : 'Empty chest slot';
       if (filled) {
-        applyItemIcon(div, slot.id);
+        applyItemIcon(div, slot.id, 34);
         if (slot.count > 1) {
           const c = document.createElement('span');
           c.className = 'slot-count';
@@ -2305,7 +2339,7 @@ class Game {
         ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to store, Shift+click for one`
         : 'Empty bag slot';
       if (filled) {
-        applyItemIcon(div, slot.id);
+        applyItemIcon(div, slot.id, 34);
         if (slot.count > 1) {
           const c = document.createElement('span');
           c.className = 'slot-count';
@@ -2837,7 +2871,7 @@ class Game {
       if (slot && slot.id !== 'empty') {
         const iconDiv = document.createElement('div');
         iconDiv.className = 'slot-icon';
-        applyItemIcon(iconDiv, slot.id);
+        applyItemIcon(iconDiv, slot.id, 36);
         slotDiv.appendChild(iconDiv);
 
         if (slot.count > 1) {
@@ -2999,7 +3033,7 @@ class Game {
 
       const icon = document.createElement('span');
       icon.className = 'creative-cell-icon';
-      applyItemIcon(icon, item.id);
+      applyItemIcon(icon, item.id, 30);
       cell.appendChild(icon);
 
       const badge = document.createElement('span');
@@ -3065,7 +3099,7 @@ class Game {
 
       const icon = document.createElement('div');
       icon.className = 'recipe-icon';
-      if (resItem) applyItemIcon(icon, resItem.id);
+      if (resItem) applyItemIcon(icon, resItem.id, 30);
       else icon.textContent = '🛠️';
 
       const details = document.createElement('div');
@@ -3114,7 +3148,7 @@ class Game {
           ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take one back`
           : 'Empty shared slot';
         if (filled) {
-          applyItemIcon(div, slot.id);
+          applyItemIcon(div, slot.id, 30);
           if (slot.count > 1) {
             const c = document.createElement('span');
             c.className = 'slot-count';
@@ -3186,7 +3220,7 @@ class Game {
       if (slot && slot.id !== 'empty') {
         const item = ITEMS[slot.id];
         div.textContent = item ? item.icon : '📦';
-        if (item) applyItemIcon(div, slot.id);
+        if (item) applyItemIcon(div, slot.id, 34);
         if (slot.count > 1) {
           const count = document.createElement('span');
           count.className = 'slot-count';

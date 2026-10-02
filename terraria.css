@@ -551,6 +551,10 @@ canvas#glowCanvas {
 
 .slot-icon {
   font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .controls-hint {
@@ -796,6 +800,10 @@ kbd {
 
 .recipe-icon {
   font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .recipe-details h5 {
@@ -1633,6 +1641,25 @@ kbd {
   font-size: 22px;
   line-height: 1;
   filter: grayscale(100%) contrast(120%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+}
+
+/* ============================================================
+   PAINTED ITEM ICONS
+   ============================================================
+   The drawn item art is a real <canvas> child, so it brings its own
+   dimensions and cannot collapse the way a font-sized text node did. Two
+   supporting rules: the icon wrappers get explicit boxes so they are still
+   laid out correctly before/without a canvas, and the creative grid's
+   "unowned" greyscale is cancelled on the art itself — greying out the very
+   thing the player is trying to recognise defeats the point of drawing it. */
+.item-icon-canvas {
+  filter: none !important;
+  flex: 0 0 auto;
 }
 
 .creative-empty {
