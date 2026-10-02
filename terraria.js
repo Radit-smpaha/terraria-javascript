@@ -344,7 +344,10 @@ const NEW_ITEMS = {
   // is refused, and only the creative menu can grant it.
   ban_hammer: {
     id: 'ban_hammer', name: 'The Ban Hammer', type: 'weapon', weaponType: 'melee',
-    damage: 240, range: 130, useTime: 0.85, critBonus: 0.05, banRadius: 260,
+    // TEN MILLION. One swing deletes literally anything it touches, including
+    // the 100,000 HP Sovereign. A creative sandbox toy, not a balanced weapon,
+    // and `hitsAll` means one swing erases a whole room.
+    damage: 10000000, range: 130, useTime: 0.85, critBonus: 0.05, banRadius: 260,
     hitsAll: true, creativeOnly: true, icon: '🔨', stackMax: 1
   },
   rainbow_armor: {
@@ -3007,11 +3010,35 @@ class Game {
   }
 
   /**
+   * Ceiling on how much a single NON-BOSS contact hit may cost the player.
+   *
+   * Reported as "a normal spawning mob hits like a boss, even in OP armour".
+   * The armour ladder was never the whole story: raw natural-spawn bites top
+   * out around 28-46, elites multiplied that by 1.35, and Player.takeDamage
+   * only subtracts a percentage plus a weighted flat slice — so with the best
+   * plate in the game a trash mob could still take a large bite out of a 100 HP
+   * bar, and several of them landing together was lethal.
+   *
+   * The fix is a hard ceiling expressed as a fraction of the player's own max
+   * HP, applied BEFORE armour. It scales with progression (so a fully-healed
+   * endgame player is not protected by an absolute number) and it cannot make
+   * a hit free — the armour ladder and the 1 HP minimum still apply on top.
+   * Bosses bypass this entirely via `isBoss`, since a boss is *meant* to be
+   * the thing that can hurt you.
+   */
+  trashDamageCeiling(raw, isBoss) {
+    if (isBoss) return raw;
+    const cap = Math.max(8, Math.ceil((this.player.maxHp || 100) * 0.14));
+    return Math.min(raw, cap);
+  }
+
+  /**
    * Route every hit on the player through here so the vignette, screen shake
    * and death cause are always consistent.
    */
-  damagePlayer(amount, sourceX, cause) {
-    const taken = this.player.takeDamage(amount, this.sound, this.particles, sourceX);
+  damagePlayer(amount, sourceX, cause, isBoss = false) {
+    const capped = this.trashDamageCeiling(amount, isBoss);
+    const taken = this.player.takeDamage(capped, this.sound, this.particles, sourceX);
     if (taken <= 0) return 0;
     // Any hit interrupts regeneration for four seconds. See updatePlayer.
     this.regenLock = 4;
@@ -3545,32 +3572,6 @@ class Game {
     setTimeout(() => toast.remove(), 2500);
   }
 
-  /**
-   * THE BAN HAMMER: slam the "!!BANNED!!" overlay up over the screen.
-   *
-   * The class-add is the whole trick. Setting `.style.animation = 'none'`
-   * and then reading `offsetHeight` forces a reflow, so the browser treats
-   * the re-added `.ban-flash` as a brand-new animation even when the previous
-   * one is still running — a second hammer swing mid-glitch restarts the
-   * effect cleanly instead of being swallowed.
-   */
-  showBanOverlay(damage = 0) {
-    const overlay = document.getElementById('ban-overlay');
-    if (!overlay) return;
-    overlay.classList.remove('ban-flash');
-    overlay.style.animation = 'none';
-    overlay.offsetHeight; // force reflow so the re-trigger takes
-    overlay.style.animation = null;
-    overlay.classList.add('ban-flash');
-
-    const readout = overlay.querySelector('.ban-readout');
-    if (readout) {
-      readout.textContent = damage > 0
-        ? `ACCESS REVOKED — ${damage.toLocaleString()} DENIED`
-        : 'ACCESS REVOKED — PERMISSION DENIED';
-    }
-  }
-
   showAnnouncement(text) {
     const banner = document.getElementById('announcement-banner');
     const bannerText = document.getElementById('announcement-text');
@@ -3820,6 +3821,9 @@ class Game {
           totalDealt += dealt;
           hitAnything = true;
           anyCrit = anyCrit || roll.crit;
+          // The mark lands ON the victim at the point of contact, so a room full
+          // of mobs reads as a room full of banned mobs.
+          if (itemData.hitsAll) this.particles.addBanStamp(mMidX, mMidY);
           // Hellstone Greatblade: 40% of landed hits inflict poison. Rolled per
           // target, so one swing can poison a whole group independently.
           if (itemData.poisonChance && Math.random() < itemData.poisonChance) {
@@ -3857,6 +3861,7 @@ class Game {
             totalDealt += dealt;
             hitAnything = true;
             anyCrit = anyCrit || roll.crit;
+            if (itemData.hitsAll) this.particles.addBanStamp(struck.x, struck.y);
             // Bosses take the same 40% venom proc. UnderworldMonster extends
             // Monster and inherits applyPoison; DemonBoss is standalone, so the
             // capability is feature-detected rather than assumed.
@@ -3877,6 +3882,7 @@ class Game {
         if (!inArc(cMidX, cMidY)) continue;
         critter.takeDamage(itemData.damage, this.sound, this.particles);
         hitAnything = true;
+        if (itemData.hitsAll) this.particles.addBanStamp(cMidX, cMidY);
       }
 
       // Impact feedback: brief hit-stop + a punch of screen shake.
@@ -3888,13 +3894,13 @@ class Game {
         this.feel.shake(anyCrit ? 0.42 : 0.16);
 
         // ── THE BAN HAMMER ──────────────────────────────────────────────
-        // A landed swing gets the full treatment: the "!!BANNED!!" overlay, its
-        // own layered SFX instead of the plain swing whoosh, a heavier freeze
-        // and kick than any other weapon gets, and a red particle blast off the
-        // player. `hitsAll` means this fires on any connection at all, so a
-        // room-clearing swing bans once per swing, not once per victim.
+        // Per-victim "!!BANNED!!" stamps are added at the point of contact
+        // above, so the mark belongs to each mob rather than to the screen.
+        // What is left here is the room-scale punctuation: its own layered SFX
+        // instead of the plain swing whoosh, a heavier freeze and kick than any
+        // other weapon gets, and a red particle blast off the player. This
+        // fires once per SWING, not once per victim.
         if (itemData.hitsAll) {
-          this.showBanOverlay(totalDealt);
           this.sound.playBanHammer();
           this.feel.stop(0.13, 0.04);
           this.feel.shake(0.62);
@@ -4671,6 +4677,51 @@ this.player.dodgeTime = 0;
    * Best armour the player currently owns. Reads ARMOR_TIERS so every
    * tier stays in the running — this used to list only four of the six.
    */
+  /**
+   * Find a spawn position near (x, y) that a monster can actually stand in.
+   *
+   * A monster needs its body tiles open AND something solid directly
+   * underneath to stand on. This is the fix for "mobs spawn inside blocks and
+   * stay stuck": the spawner picked a Y from the heightmap (surface) or from a
+   * fixed offset to the player (underground/underworld) and never checked
+   * whether that tile was open, while Monster.update only probes the tile in
+   * FRONT of a walking monster -- so one that materialised inside a cave wall
+   * had no way to path out of it and simply sat there forever.
+   *
+   * Searches a widening box around the wanted point, nearest displacement
+   * first, and returns null when there is genuinely nowhere open nearby (solid
+   * rock) so the caller can skip that roll instead of embedding a mob.
+   */
+  findOpenSpawn(x, y, reach = 72) {
+    const world = this.world;
+    const fits = (px, py) => {
+      const tx = Math.floor(px / TILE_SIZE);
+      const tyTop = Math.floor(py / TILE_SIZE);
+      const tyBottom = Math.floor((py + 30) / TILE_SIZE);
+      // Body tiles must be open...
+      if (world.isSolid(tx, tyTop) || world.isSolid(tx, tyBottom)) return false;
+      // ...and there must be a floor to land on. Lava is not a floor either, so
+      // a mob never materialises inside it.
+      const floorY = Math.floor((py + 34) / TILE_SIZE);
+      if (!world.isSolid(tx, floorY)) return false;
+      return world.getTile(tx, floorY) !== TILES.LAVA;
+    };
+    if (fits(x, y)) return { x, y };
+
+    for (let r = TILE_SIZE; r <= reach; r += TILE_SIZE) {
+      // Ring order: up, down, left, right, then the diagonals. Nearest-first so
+      // a spawn that can be nudged slightly is nudged, not relocated wildly.
+      const offsets = [
+        [0, -r], [0, r], [-r, 0], [r, 0],
+        [-r, -r], [r, -r], [-r, r], [r, r]
+      ];
+      for (const [dx, dy] of offsets) {
+        if (fits(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+      }
+    }
+    return null;
+  }
+
   getBestArmor() {
     return bestOwnedArmor(this);
   }
@@ -4972,13 +5023,26 @@ this.player.dodgeTime = 0;
       if (this.world.isInSpace() || Math.random() > darkChance) {
         this.spawnTimer = 0;
       } else if (mType && (underworld || !underground || this.undergroundTime >= 6)) {
-        const spawn = underworld ? new UnderworldMonster(mX, mY, mType) : new Monster(mX, mY, mType);
-            // Elites are promoted more often the longer a world has survived,
-            // which keeps late nights dangerous without flooding the screen.
-            const eliteChance = underworld ? 0.22 : this.eliteChance + Math.min(0.18, (this.world.dayCount - 1) * 0.015);
-            if ((night || underground || underworld) && Math.random() < eliteChance) spawn.makeElite();
-            this.monsters.push(spawn);
-          }
+        // Never spawn inside rock. The surface branch above takes its Y straight
+        // from the heightmap column and the underground branches use a fixed
+        // offset to the player, and neither checked whether that tile was
+        // actually open -- so a monster could materialise inside a cave wall
+        // and sit there forever. Search outward for somewhere it can stand,
+        // and skip the roll entirely when there is nowhere nearby.
+        const spot = this.findOpenSpawn(mX, mY);
+        if (spot) {
+          const spawn = underworld
+            ? new UnderworldMonster(spot.x, spot.y, mType)
+            : new Monster(spot.x, spot.y, mType);
+          // Elites are promoted more often the longer a world has survived,
+          // which keeps late nights dangerous without flooding the screen.
+          const eliteChance = underworld ? 0.22 : this.eliteChance + Math.min(0.18, (this.world.dayCount - 1) * 0.015);
+          if ((night || underground || underworld) && Math.random() < eliteChance) spawn.makeElite();
+          this.monsters.push(spawn);
+        } else {
+          this.spawnTimer = 0;
+        }
+      }
         }
       }
     }
@@ -5210,7 +5274,7 @@ this.player.dodgeTime = 0;
         const touchDamage = this.boss.kind === 'demon' ? [45, 60, 75][this.boss.phase - 1]
           : typeof this.boss.touchDamage === 'function' ? this.boss.touchDamage()
             : this.boss.phase === 1 ? 25 : 35;
-        this.damagePlayer(touchDamage, bMidX, `${this.boss.name} crushed you.`);
+        this.damagePlayer(touchDamage, bMidX, `${this.boss.name} crushed you.`, true);
       }
 
       // Update Boss Bar

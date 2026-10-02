@@ -13,6 +13,30 @@ class ParticleSystem {
     this.density = Math.max(0.1, Math.min(1, Number(density) || 1));
   }
 
+  /**
+   * THE BAN HAMMER's mark, stamped ON the victim rather than over the screen.
+   *
+   * It is a damageText so it rides the same update/render/cull path (world
+   * coordinates, floats up, fades) and needs no new draw loop — but `isBan`
+   * switches the renderer to the big stamped hacker treatment: red glow,
+   * chromatic ghosting and a slight pop.
+   */
+  addBanStamp(x, y) {
+    this.damageTexts.push({
+      x: x + (Math.random() - 0.5) * 8,
+      y: y - 6,
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: -1.5,
+      text: '!!BANNED!!',
+      color: '#ff1a1a',
+      scale: 1.0,
+      alpha: 1.0,
+      life: 1.35,
+      isCrit: false,
+      isBan: true
+    });
+  }
+
   // Floating combat text (like Terraria damage numbers)
   addDamageText(x, y, text, color = '#ffeb3b', isCrit = false) {
     this.damageTexts.push({
@@ -353,6 +377,32 @@ class ParticleSystem {
 
       ctx.save();
       ctx.globalAlpha = t.alpha;
+
+      if (t.isBan) {
+        // THE BAN HAMMER's on-mob stamp. Bigger than a damage number, with the
+        // red bloom and two offset ghost copies faked as chromatic
+        // aberration — the same "glitched terminal" read as the screen overlay,
+        // but attached to the thing that just got banned.
+        const pop = 1 + 0.35 * Math.max(0, Math.min(1, t.life / 1.35));
+        ctx.font = `bold ${Math.round(20 * pop)}px 'Press Start 2P', monospace`;
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 18;
+        // Ghost copies first, so the real glyph lands on top of them.
+        ctx.fillStyle = 'rgba(255,60,60,0.55)';
+        ctx.fillText(t.text, sx - 2.5, sy - 1.5);
+        ctx.fillStyle = 'rgba(120,0,0,0.75)';
+        ctx.fillText(t.text, sx + 2.5, sy + 1.5);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#1a0000';
+        ctx.lineWidth = 4;
+        ctx.strokeText(t.text, sx, sy);
+        ctx.fillStyle = t.color;
+        ctx.fillText(t.text, sx, sy);
+        ctx.restore();
+        continue;
+      }
+
       ctx.font = t.isCrit ? `bold 22px 'Press Start 2P', monospace` : `bold 16px 'Press Start 2P', monospace`;
       ctx.textAlign = 'center';
 

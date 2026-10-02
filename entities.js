@@ -1429,14 +1429,24 @@ class Monster {
     this.wanderTimer = Math.random() * 2;
   }
 
-  /** Night-time promotion: tougher, faster, pink-named, better loot. */
+  /**
+   * Night-time promotion: tougher, faster, pink-named, better loot.
+   *
+   * NOTE on damage: an elite used to hit for 1.35x its base bite, which
+   * multiplied an ALREADY-hard natural spawn into a genuine one-shotter
+   * against a fully-armoured player (reported as "a normal mob does boss
+   * damage"). An elite's identity is its health pool, speed and knockback
+   * resistance — it should take longer to kill, not delete you faster. So it
+   * gets a much smaller damage bump (1.10x), and Game.damagePlayer applies a
+   * separate hard ceiling on non-boss contact damage.
+   */
   makeElite() {
     if (this.isElite || !this.canBeElite) return this;
     this.isElite = true;
     this.eliteScale = 1.22;
     this.maxHp = Math.round(this.maxHp * 2.2);
     this.hp = this.maxHp;
-    this.damage = Math.round(this.damage * 1.35);
+    this.damage = Math.round(this.damage * 1.10);
     this.speed *= 1.1;
     this.exp = Math.round(this.exp * 2.4);
     this.knockbackResist = Math.min(0.9, this.knockbackResist + 0.25);
@@ -2985,7 +2995,7 @@ class CursedKnightBoss {
       const dist = Math.hypot(p.x + p.width / 2 - cx, p.y + p.height - groundY);
       if (dist < 130) {
         this.game.damagePlayer(this.phase === 2 ? 38 : 30, cx,
-          'The Cursed Knight shattered the ground beneath you.');
+          'The Cursed Knight shattered the ground beneath you.', true);
       }
     }
     // Phase 2: the impact also throws a ring of phantom blades.

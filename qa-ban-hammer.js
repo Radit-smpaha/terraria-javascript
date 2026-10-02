@@ -215,17 +215,18 @@ g.handleLeftClick();
 check('every monster in the ban radius was hit',
   hurtCount(hammerRing) === hammerRing.length,
   hurtCount(hammerRing) + '/' + hammerRing.length + ' hurt');
-check('the !!BANNED!! overlay was shown', !!overlayEl.classList.contains('ban-flash'));
 check('the ban SFX played once for the swing', sfxFired === 1, sfxFired + ' times');
 
-// The overlay must NOT fire on a swing that connects with nothing, or it
-// would sit on screen every time the player waves at empty air.
-overlayEl.classList.remove('ban-flash');
+// The effect must NOT fire on a swing that connects with nothing, or every
+// wave at empty air would spam red text and the ban sting.
+const sfxBeforeWhiff = sfxFired;
 g.monsters.length = 0;
+g.particles.damageTexts.length = 0;
 g.attackCooldown = 0;
 g.handleLeftClick();
-check('a swing at nothing shows no banner',
-  !overlayEl.classList.contains('ban-flash'));
+check('a swing at nothing is silent', sfxFired === sfxBeforeWhiff, sfxFired + ' times');
+check('a swing at nothing leaves no stamp',
+  g.particles.damageTexts.filter(t => t.isBan).length === 0);
 
 // Negative control: the SAME ring, the SAME aim, with a plain sword must not
 // hit everything. Without this the test could still pass if hitsAll were
@@ -242,28 +243,114 @@ g.monsters.length = 0;
 g.sound.playBanHammer = realSfx;
 
 // ══════════════════════════════════════════════════════════════════════════
-step('5. The overlay and SFX are actually wired up');
-check('showBanOverlay exists', typeof g.showBanOverlay === 'function');
+step('5. The ban stamp and SFX are actually wired up');
+check('addBanStamp exists', typeof g.particles.addBanStamp === 'function');
 check('playBanHammer exists', typeof g.sound.playBanHammer === 'function');
-
+check('the screen overlay is gone', typeof g.showBanOverlay === 'undefined');
 const html = fs.readFileSync('terraria.html', 'utf8');
-check('terraria.html carries the overlay markup', html.includes('id="ban-overlay"'));
-check('...with the !!BANNED!! wordmark', html.includes('!!BANNED!!'));
-const css = fs.readFileSync('terraria.css', 'utf8');
-check('terraria.css animates it', css.includes('ban-hit') && css.includes('ban-glitch-sweep'));
-check('...in a red hacker palette', /#ff1a1a|#ff0000/.test(css));
+check('terraria.html no longer carries the screen overlay', !html.includes('ban-overlay'));
+check('particles.js draws the on-mob stamp', /isBan/.test(fs.readFileSync('particles.js', 'utf8')));
+
+// The stamp must be attached to each VICTIM, not drawn once over the screen, so
+// one swing through a group produces one stamp per mob hit.
+g.monsters.length = 0;
+g.particles.damageTexts.length = 0;
+g.inventory[0] = { id: 'ban_hammer', count: 1 };
+const stampRing = plantRing();
+g.attackCooldown = 0;
+g.handleLeftClick();
+const stamps = g.particles.damageTexts.filter(t => t.isBan);
+check('one swing stamps every mob it hit',
+  stamps.length === stampRing.length,
+  stamps.length + ' stamps for ' + stampRing.length + ' mobs');
+check('the stamp text is !!BANNED!!', stamps.length > 0 && stamps[0].text === '!!BANNED!!',
+  stamps.length && stamps[0].text);
+check('the stamp is red', stamps.length > 0 && stamps[0].color === '#ff1a1a',
+  stamps.length && stamps[0].color);
+g.monsters.length = 0;
+g.sound.playBanHammer = realSfx;
 
 // ══════════════════════════════════════════════════════════════════════════
-step('6. The Sovereign is a six-figure wall again');
-// Raised directly rather than fought to: the point is the value the constructor
-// bakes in, not the encounter. A live boss cannot exist here anyway — the save
-// round-trip above deliberately ends any encounter.
-const dragon = new global.SkeletonDragonBoss(g);
-check('the dragon is constructed at 100,000 max HP',
-  dragon.maxHp === 100000, dragon.maxHp);
-check('it starts whole (hp === maxHp)', dragon.hp === dragon.maxHp,
-  dragon.hp + '/' + dragon.maxHp);
-check('it is a six-figure pool', dragon.maxHp >= 100000, dragon.maxHp);
+step('6. The hammer one-shots anything, including the Sovereign');
+check('the hammer deals ten million', hammer.damage === 10000000, hammer.damage);
+{
+  const victim = new global.Monster(g.player.x + 60, g.player.y, 'zombie');
+  g.monsters.push(victim);
+  g.attackCooldown = 0;
+  g.handleLeftClick();
+  check('a trash mob dies outright', victim.dead, 'hp=' + victim.hp);
+  g.monsters.length = 0;
+}
+{
+  const dragon = new global.SkeletonDragonBoss(g);
+  g.boss = dragon;
+  dragon.x = g.player.x + 80; dragon.y = g.player.y;
+  g.attackCooldown = 0;
+  g.handleLeftClick();
+  check('the 100,000 HP Sovereign dies to one swing', dragon.dead, 'hp=' + Math.round(dragon.hp));
+  g.boss = null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+step('7. Trash mobs cannot chunk a heavily-armoured player');
+// The report was "some mobs do so much damage even though it's just a natural
+// spawn and not a boss, even in OP armour". Asserted against the REAL runtime
+// path (Game.damagePlayer -> the ceiling -> Player.takeDamage) rather than a
+// re-derivation of the armour maths, so it cannot drift from the shipping code.
+const worstRaw = 46; // bone_serpent, the hardest natural underworld spawn
+const cap = g.trashDamageCeiling(worstRaw, false);
+check('a trash hit is capped', cap < worstRaw, worstRaw + ' -> ' + cap);
+check('the cap is a sane slice of max HP (' + cap + ' of ' + g.player.maxHp + ')',
+  cap <= Math.max(8, Math.ceil(g.player.maxHp * 0.14)));
+check('a boss is never capped', g.trashDamageCeiling(worstRaw, true) === worstRaw);
+
+// And the end-to-end version: with the best plate worn, one trash hit must not
+// exceed the ceiling even after the raw 46-damage bite.
+g.player.hp = g.player.maxHp;
+g.player.invulnerableTime = 0;
+g.equipArmor('ossuary_armor');
+const before = g.player.hp;
+g.damagePlayer(worstRaw, g.player.x + 10, 'test');
+const realLoss = before - g.player.hp;
+check('wearing the best plate, a trash hit costs <= ' + cap + ' HP (' + realLoss + ')',
+  realLoss <= cap, realLoss + ' HP');
+
+// An elite must no longer be a damage multiplier that rivals a boss.
+{
+  const e = new global.Monster(0, 0, 'zombie');
+  const base = e.damage;
+  e.makeElite();
+  check('an elite bumps damage only slightly (' + base + ' -> ' + e.damage + ')',
+    e.damage <= Math.round(base * 1.15), e.damage);
+  check('an elite is still much tankier', e.maxHp > base * 1.5, e.maxHp);
+}
+
+// And spawning must never embed a mob in rock.
+check('findOpenSpawn exists', typeof g.findOpenSpawn === 'function');
+{
+  // Find a genuinely solid tile and prove the helper refuses to place a mob there.
+  let solidSpot = null;
+  const wx = Math.floor(g.player.x / 24) + 6;
+  for (let ty = 4; ty < 200; ty++) {
+    if (g.world.isSolid(wx, ty) && g.world.isSolid(wx, ty + 1) && g.world.isSolid(wx, ty + 2)) {
+      solidSpot = { x: wx * 24, y: ty * 24 }; break;
+    }
+  }
+  if (solidSpot) {
+    const deep = { x: solidSpot.x, y: solidSpot.y - 60 };
+    const s = g.findOpenSpawn(deep.x, deep.y);
+    if (s) {
+      check('a relocated spawn is not inside solid rock',
+        !g.world.isSolid(Math.floor(s.x / 24), Math.floor(s.y / 24)));
+      check('...and has a floor under it',
+        g.world.isSolid(Math.floor(s.x / 24), Math.floor((s.y + 34) / 24)));
+    } else {
+      check('deep rock refuses to spawn anything', true);
+    }
+  } else {
+    check('could not locate solid rock to test against', false);
+  }
+}
 
 console.log('\n' + (failures === 0
   ? 'BAN HAMMER QA: all checks passed'

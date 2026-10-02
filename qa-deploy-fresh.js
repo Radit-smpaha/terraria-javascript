@@ -66,6 +66,19 @@ const MARKERS = [
   // / Streamlit cache that serves an older space.js or entities.js gets caught
   // rather than looking like "it still gets stuck in rocks".
   ['space.js', 'maxHp = 100000', 'the 100,000 HP Sovereign'],
+  // ---- The Ban Hammer + spawn/damage fixes ---------------------------------
+  // The hammer is creative-menu-only and does 10M damage; the BANNED stamp is
+  // drawn on the victim via particles.js, NOT as a screen overlay. If a cached
+  // deploy still carries the old overlay these catch it.
+  ['terraria.js', 'ban_hammer', 'The Ban Hammer exists'],
+  ['terraria.js', 'damage: 10000000', 'the ten-million-damage one-shot hammer'],
+  ['terraria.js', 'creativeOnly', 'the creative-only enforcement flag'],
+  ['terraria.js', 'addBanStamp', 'the BANNED stamp lands on each mob hit'],
+  ['terraria.js', 'findOpenSpawn', 'spawns are validated against solid tiles'],
+  ['terraria.js', 'trashDamageCeiling', 'the non-boss contact damage ceiling'],
+  ['particles.js', 'addBanStamp', 'the on-mob ban stamp'],
+  ['particles.js', 'isBan', 'the ban stamp render branch'],
+  ['audio.js', 'playBanHammer', 'the ban hammer impact SFX'],
   ['space.js', 'nearestHitTarget', 'body hits, and the 8% tax they pay'],
   ['space.js', 'bodyDamageScale', 'the skull still hurts more than the spine'],
   ['space.js', 'blocksDragon', 'the dragon no longer wedges in arena rock'],
