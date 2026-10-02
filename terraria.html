@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=25">
+  <link rel="stylesheet" href="terraria.css?v=26">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -92,6 +92,11 @@
 
     <!-- UI Overlay -->
     <div id="ui-layer">
+      <!-- Hover tooltip for items in the inventory, chests and creative menu.
+           Deliberately NOT wired to the hotbar: hotbar slots announce
+           themselves through #item-name-popup instead. -->
+      <div id="item-tooltip" class="item-tooltip" role="tooltip" hidden></div>
+
       <!-- Top Left: Time of Day, World Info, Health & Mana -->
       <div class="top-left-panel">
         <div class="clock-display">
@@ -210,6 +215,10 @@
       <!-- Bottom Center: Hotbar & Quick Crafting -->
       <div class="bottom-panel">
         <div class="hotbar-wrapper">
+          <!-- Minecraft-style: the newly selected item's name floats up above the
+               hotbar and fades away. Lives inside .hotbar-wrapper (which is the
+               positioning context) so it tracks the hotbar at any size. -->
+          <div id="item-name-popup" class="item-name-popup" aria-live="polite"></div>
           <div id="hotbar" class="hotbar-slots">
             <!-- 9 slots dynamically populated -->
           </div>
@@ -638,7 +647,7 @@
   <script src="juice.js?v=13" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=34" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=35" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>

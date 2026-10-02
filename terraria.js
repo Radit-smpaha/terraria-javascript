@@ -1989,7 +1989,118 @@ class Game {
     window.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
+  /**
+   * Tag an element with the item tooltip it should raise on hover.
+   *
+   * This replaces the old `el.title = ...`. A native tooltip only appears
+   * after a long delay, cannot be styled, and looks nothing like the rest of
+   * the game. Reading data-tip lets ONE delegated listener drive a properly
+   * styled tooltip across every item surface at once, and makes "no tooltip
+   * here" (the hotbar) a plain absence instead of a special case.
+   */
+  tip(el, text) {
+    el.dataset.tip = text;
+    // title is gone, so keep the text announced to assistive tech.
+    el.setAttribute('aria-label', text);
+  }
+
+  /**
+   * One delegated hover handler covering every item tooltip in the game.
+   *
+   * The hotbar is excluded on purpose: its slots announce themselves through
+   * #item-name-popup when the selection changes, and raising both at once is
+   * exactly the double-tooltip noise this replaced.
+   */
+  setupItemTooltips() {
+    const tooltip = document.getElementById('item-tooltip');
+    const layer = document.getElementById('ui-layer');
+    const hotbar = document.getElementById('hotbar');
+    if (!tooltip || !layer) return;
+    this._itemTooltip = tooltip;
+
+    const tipTarget = (node) => {
+      if (!node || node.nodeType !== 1 || !node.closest) return null;
+      const el = node.closest('[data-tip]');
+      if (!el) return null;
+      if (hotbar && hotbar.contains(el)) return null;
+      return el;
+    };
+
+    layer.addEventListener('mouseover', (event) => {
+      const el = tipTarget(event.target);
+      if (!el) return;
+      tooltip.textContent = el.dataset.tip;
+      tooltip.hidden = false;
+      this.moveItemTooltip(event.clientX, event.clientY);
+    });
+    layer.addEventListener('mousemove', (event) => {
+      if (tooltip.hidden) return;
+      this.moveItemTooltip(event.clientX, event.clientY);
+    });
+    layer.addEventListener('mouseout', (event) => {
+      const el = tipTarget(event.target);
+      if (!el) return;
+      // Sliding between children of the SAME slot must not flicker the tip.
+      if (event.relatedTarget && el.contains(event.relatedTarget)) return;
+      tooltip.hidden = true;
+    });
+    // A panel can close or re-render with the cursor sitting still on it,
+    // stranding the tooltip over empty space. Any scroll invalidates it.
+    window.addEventListener('scroll', () => { tooltip.hidden = true; }, true);
+  }
+
+  /** Keep the cursor tooltip inside the window, flipping near an edge. */
+  moveItemTooltip(clientX, clientY) {
+    const tooltip = this._itemTooltip;
+    if (!tooltip) return;
+    // Measured after it is un-hidden: a hidden element reports no size.
+    const w = tooltip.offsetWidth || 160;
+    const h = tooltip.offsetHeight || 26;
+    const pad = 10;
+    let x = clientX + 16;
+    let y = clientY + 18;
+    if (x + w + pad > window.innerWidth) x = Math.max(pad, clientX - w - 12);
+    if (y + h + pad > window.innerHeight) y = Math.max(pad, clientY - h - 12);
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+  }
+
+  /**
+   * Minecraft-style: name the slot the player just switched to, floating above
+   * the hotbar.
+   *
+   * This watches selectedSlot rather than hooking each input path, so number
+   * keys, the scroll wheel, clicking a slot and equipping from the bag all
+   * announce themselves without any of them knowing this exists.
+   */
+  watchHotbarSelection() {
+    const slot = this.player.selectedSlot;
+    if (this._lastHotbarSlot === slot) return;
+    // The first reading is boot, not a switch - stay quiet for it.
+    if (this._lastHotbarSlot === undefined) {
+      this._lastHotbarSlot = slot;
+      return;
+    }
+    this._lastHotbarSlot = slot;
+    this.showItemNamePopup(this.inventory[slot]);
+  }
+
+  showItemNamePopup(slot) {
+    const popup = document.getElementById('item-name-popup');
+    if (!popup) return;
+    const data = slot && slot.id && slot.id !== 'empty' ? ITEMS[slot.id] : null;
+    const text = data ? data.name + (slot.count > 1 ? ' x' + slot.count : '') : '';
+    popup.textContent = text;
+    if (!text) { popup.classList.remove('show'); return; }
+    // Re-adding a class does not restart a running animation, so force a
+    // reflow between removing and adding it.
+    popup.classList.remove('show');
+    void popup.offsetWidth;
+    popup.classList.add('show');
+  }
+
   initUI() {
+    this.setupItemTooltips();
     const btnSettings = document.getElementById('btn-settings');
     const settingsClose = document.getElementById('settings-close');
     if (btnSettings) btnSettings.addEventListener('click', () => this.toggleSettings());
@@ -2420,9 +2531,9 @@ class Game {
       const div = document.createElement('div');
       div.className = `inv-slot chest-slot ${filled ? 'filled' : ''}`;
       const data = filled ? ITEMS[slot.id] : null;
-      div.title = data
+      this.tip(div, data
         ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take, Shift+click for one`
-        : 'Empty chest slot';
+        : 'Empty chest slot');
       if (filled) {
         div.textContent = data ? data.icon : '📦';
         if (slot.count > 1) {
@@ -2447,9 +2558,9 @@ class Game {
       const div = document.createElement('div');
       div.className = `inv-slot chest-slot ${filled ? 'filled' : ''}`;
       const data = filled ? ITEMS[slot.id] : null;
-      div.title = data
+      this.tip(div, data
         ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to store, Shift+click for one`
-        : 'Empty bag slot';
+        : 'Empty bag slot');
       if (filled) {
         div.textContent = data ? data.icon : '📦';
         if (slot.count > 1) {
@@ -2979,7 +3090,11 @@ class Game {
       const slotDiv = document.createElement('div');
       slotDiv.className = `hotbar-slot ${i === this.player.selectedSlot ? 'active' : ''}`;
       const itemData = slot && slot.id !== 'empty' ? ITEMS[slot.id] : null;
-      slotDiv.title = itemData ? `${itemData.name}${slot.count > 1 ? ` x${slot.count}` : ''}` : `Hotbar slot ${i + 1}`;
+      // Deliberately aria-label and NOT this.tip(): hovering a hotbar slot must
+      // never raise the cursor tooltip. The hotbar names the selected item
+      // through #item-name-popup on switch instead.
+      slotDiv.setAttribute('aria-label',
+        itemData ? `${itemData.name}${slot.count > 1 ? ` x${slot.count}` : ''}` : `Hotbar slot ${i + 1}`);
       slotDiv.onclick = () => {
         this.player.selectedSlot = i;
         if (itemData?.type === 'armor') this.equipArmor(itemData.id);
@@ -3153,7 +3268,7 @@ class Game {
       cell.className = 'creative-cell';
       cell.dataset.id = item.id;
       const stack = amount || item.stackMax || 99;
-      cell.title = `${item.name} (max ${item.stackMax || 99}) — click to add ${stack}`;
+      this.tip(cell, `${item.name} (max ${item.stackMax || 99}) — click to add ${stack}`);
 
       const icon = document.createElement('span');
       icon.className = 'creative-cell-icon';
@@ -3267,9 +3382,9 @@ class Game {
         const filled = slot.id !== 'empty';
         div.className = `inv-slot shared-slot ${filled ? 'filled' : ''}`;
         const data = filled ? ITEMS[slot.id] : null;
-        div.title = data
+        this.tip(div, data
           ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take one back`
-          : 'Empty shared slot';
+          : 'Empty shared slot');
         if (filled) {
           div.textContent = data ? data.icon : '📦';
           if (slot.count > 1) {
@@ -3297,11 +3412,11 @@ class Game {
       const selected = this.selectedSlotIndex === i;
       div.className = `inv-slot ${filled ? 'filled' : ''}${fav ? ' favorited' : ''}${selected ? ' selected' : ''}`;
       const itemData = filled ? ITEMS[slot.id] : null;
-      div.title = itemData
+      this.tip(div, itemData
         ? `${itemData.name}${slot.count > 1 ? ` x${slot.count}` : ''}` +
           (fav ? ' — ⭐ favourited (cannot be deleted or dropped)' : '') +
           (selected ? '\nShift+click again to deselect' : '\nShift+click to select')
-        : (i < 9 ? `Hotbar slot ${i + 1}` : 'Empty inventory slot');
+        : (i < 9 ? `Hotbar slot ${i + 1}` : 'Empty inventory slot'));
       div.draggable = filled;
       div.addEventListener('click', (event) => {
         // Ctrl+click stashes the item in the cross-world bag instead of the
@@ -5468,6 +5583,10 @@ this.player.dodgeTime = 0;
 
   update(dt) {
     if (this.paused) return;
+
+    // Announce a hotbar switch. This sits after the pause guard so the title
+    // screen never flashes an item name over the menu.
+    this.watchHotbarSelection();
 
     this.stats.playTime += dt;
     if (this.attackCooldown > 0) this.attackCooldown = Math.max(0, this.attackCooldown - dt);
