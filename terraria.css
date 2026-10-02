@@ -2489,6 +2489,13 @@ body {
   background: linear-gradient(180deg, #ffb37a, #b4530c);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
 }
+/* This one needs the id: an `#hunger-bar.hunger-fill` rule further up the file
+   outranks a plain class, so without it the hunger bar kept the old flat orange
+   gradient while every other bar got the Terraria treatment. */
+#hunger-bar.hunger-fill {
+  background: linear-gradient(180deg, #ffb37a, #b4530c);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+}
 
 /* Life hearts and mana stars: the Terraria signature, now bevelled. */
 .heart { font-size: 19px; }
@@ -2567,3 +2574,79 @@ kbd {
 
 /* Warm scrollbars everywhere, so no panel shows a blue bar. */
 * { scrollbar-color: var(--terra-edge) var(--terra-deep); }
+
+/* ============================================================
+   TERRARIA OVERHAUL
+   The parts that make the whole thing read as the game rather
+   than as a web page sitting on top of one.
+   ============================================================ */
+
+/* The menu hangs on a carved stone plaque, like the panels Terraria
+   draws its own menus in - instead of loose text on the sky. */
+.title-menu::before {
+  content: '';
+  position: absolute;
+  inset: -14px -4px;
+  z-index: -1;
+  /* Decorative only: a pseudo-element still takes pointer events, and this
+     plaque overhangs the buttons, so without this it could swallow a click. */
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, .06) 0 6px, transparent 6px 12px),
+    linear-gradient(180deg, rgba(52, 38, 24, .93), rgba(20, 15, 10, .95));
+  border: 3px solid var(--terra-ink);
+  box-shadow: var(--terra-bevel), 0 14px 34px rgba(0, 0, 0, .62);
+}
+
+/* VT323 is a thin face; Terraria's is a chunky pixel one. Stroking the
+   stems is what gives the menu text real weight. */
+.title-button { -webkit-text-stroke: 2px #000; }
+.title-button-disabled { -webkit-text-stroke: 1px #000; }
+
+/* A darker, moodier frame - Terraria's menu is never flat daylight. */
+.title-vignette {
+  background:
+    radial-gradient(110% 70% at 50% 8%, rgba(255, 214, 150, .10), transparent 60%),
+    linear-gradient(180deg, rgba(10, 6, 3, .44), transparent 30%,
+      rgba(8, 5, 3, .34) 58%, rgba(6, 4, 2, .86));
+}
+
+/* Hotbar: Terraria's slots are tan-framed over a dark interior. */
+.hotbar-slot {
+  border-color: #b0a17c;
+  background: linear-gradient(180deg, #332d24, #1b1712);
+  box-shadow: inset 2px 2px 0 rgba(226, 213, 176, .35),
+    inset -2px -2px 0 rgba(0, 0, 0, .65);
+}
+.hotbar-slot:hover {
+  border-color: var(--terra-gold);
+  background: linear-gradient(180deg, #4a4032, #241f18);
+}
+.hotbar-slot.active {
+  border-color: #fff4cf;
+  background: linear-gradient(180deg, #6b5c44, #33291d);
+  box-shadow: inset 0 0 0 2px rgba(255, 244, 207, .75), 0 0 16px rgba(255, 232, 160, .55);
+}
+
+/* Life and mana, big and unmissable, the way Terraria draws them. */
+.heart { font-size: 24px; }
+.heart.full {
+  color: #e02f2f;
+  filter: drop-shadow(0 1px 0 #4a0b0b) drop-shadow(0 0 6px rgba(255, 50, 50, .55));
+}
+.heart.empty { color: #4a3a34; filter: none; }
+.star { font-size: 21px; }
+.star.full {
+  color: #4aa3ff;
+  filter: drop-shadow(0 1px 0 #0b2a4a) drop-shadow(0 0 6px rgba(70, 150, 255, .6));
+}
+
+/* A hint of packed dirt on every panel, like Terraria's stonework. */
+.top-left-panel,
+.hotbar-wrapper,
+.modal-content,
+.title-world-list,
+.title-credits ul {
+  background-image: repeating-linear-gradient(45deg,
+    rgba(0, 0, 0, .05) 0 5px, transparent 5px 10px);
+}
