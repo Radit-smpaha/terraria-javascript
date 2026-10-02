@@ -1251,10 +1251,7 @@ class Game {
       context.imageSmoothingEnabled = false;
 
       // ---- sky ---------------------------------------------------------
-      // Start the cycle at GOLDEN HOUR (offset half a day), then roll into night
-      // and on to dawn. The menu should never open on flat midday light, and the
-      // torches, stars and fireflies all read best once the sky has gone dark.
-      const cycle = ((((time + DAY_MS * 0.5) % DAY_MS) + DAY_MS) % DAY_MS) / DAY_MS;
+      const cycle = (time % DAY_MS) / DAY_MS;   // 0 = sunrise, .5 = sunset
       const sunAngle = cycle * Math.PI * 2;   // 0 = sunrise, .5 = sunset
       const light = Math.sin(sunAngle);          // -1 midnight .. 1 noon
       const day = clamp01((light + 0.28) / 0.56);
