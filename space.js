@@ -1075,7 +1075,15 @@ World.prototype._spacePostLayer = function(kind, camera, target, paint, opts = {
     slot.paintedAt = slot.calls;
   }
 
-  return { canvas: slot.canvas, dx: camera.x - originX, dy: camera.y - originY };
+  // Blit offset. The layer's pixel 0 is world position `originX`, and the
+  // viewport's left edge is world position `camera.x`, so the layer has to be
+  // drawn at (originX - camera.x) — NEGATIVE, because the layer starts a whole
+  // chunk to the left of wherever the camera is inside it.
+  //
+  // Getting this sign backwards (camera.x - originX) displaces every light by
+  // twice the camera's offset within its chunk — up to 384px — which is exactly
+  // how it read on screen: dark ground lit up, lit ground swallowed.
+  return { canvas: slot.canvas, dx: originX - camera.x, dy: originY - camera.y };
 };
 
 // Entering or leaving the dimension swaps the tile buffers wholesale; make sure

@@ -155,32 +155,51 @@ W.renderGlow(reuseStub, camera, g.player, []);
 check('a tile edit forces a repaint', paints > 0, 'paints=' + paints);
 W.glowBlob = counted;
 
-// ---- 5. The layer must ALWAYS cover the viewport, wherever the camera sits.
-// This is the geometry that makes the cache safe: a viewport-sized layer could
-// only ever be reused while the camera stood still, and panning onto unpainted
-// edge would show a seam of missing light. Pan the whole chunk and check.
-// (This runs BEFORE the exit test below, because outside the dimension the
-// layer correctly declines to bake at all.)
+// ---- 5. The layer must land the light EXACTLY where the uncached code would.
+// This is the invariant that was broken: the blit offset had its sign flipped, so
+// every light was displaced by twice the camera's offset inside its chunk (up to
+// 384px) — lit ground went dark and dark ground lit up. Assert the mapping
+// itself, not a proxy for it.
 W._spacePostLayers = null;
 const step = 8 * global.TILE_SIZE;   // must match SPACE_POST_CHUNK
-let worst = { dx: 0, dy: 0, ok: true, bailed: 0 };
+let geom = { ok: true, detail: '' };
 for (let ox = 0; ox < step; ox += 37) {
   for (let oy = 0; oy < step; oy += 37) {
-    const pan = { x: camera.x + ox, y: camera.y + oy, viewportWidth: 1280, viewportHeight: 720 };
+    const camX = camera.x + ox;
+    const camY = camera.y + oy;
+    const pan = { x: camX, y: camY, viewportWidth: 1280, viewportHeight: 720 };
     const l = W._spacePostLayer('light', pan, reuseStub, () => {}, {});
-    if (!l) { worst.bailed++; continue; }
-    // The blit offset must sit inside the layer, and the far edge of the
-    // viewport must still land inside it.
-    const covers = l.dx >= 0 && l.dy >= 0 &&
-      l.dx + 1280 <= l.canvas.width && l.dy + 720 <= l.canvas.height;
-    if (!covers) worst.ok = false;
-    worst.dx = Math.max(worst.dx, l.dx);
-    worst.dy = Math.max(worst.dy, l.dy);
+    if (!l) { geom.ok = false; geom.detail = 'layer declined to bake'; continue; }
+    // Derive the chunk origin the same way the code does, rather than reading it
+    // out of the paint callback: the callback only fires when the layer actually
+    // re-bakes, so on a cache hit it would hand back a stale position.
+    const originX = Math.floor(camX / step) * step;
+    const originY = Math.floor(camY / step) * step;
+    // Where a known world point is painted inside the layer, and where the blit
+    // then puts it on screen. These MUST agree with the uncached mapping.
+    // Each axis has its own origin, so each needs its own painted position.
+    const paintedX = 5000 - originX;
+    const paintedY = 5000 - originY;
+    if (paintedX + l.dx !== 5000 - camX) {
+      geom.ok = false;
+      geom.detail = 'x landed ' + (paintedX + l.dx) + ' wanted ' + (5000 - camX);
+    }
+    if (paintedY + l.dy !== 5000 - camY) {
+      geom.ok = false;
+      geom.detail = 'y landed ' + (paintedY + l.dy) + ' wanted ' + (5000 - camY);
+    }
+    // The viewport must also sit entirely inside the layer, or panning would
+    // show a seam of unpainted edge.
+    const kx = camX - originX;
+    const ky = camY - originY;
+    if (kx < 0 || ky < 0 || kx + 1280 > l.canvas.width || ky + 720 > l.canvas.height) {
+      geom.ok = false;
+      geom.detail = 'view outside layer at k=' + kx + ',' + ky;
+    }
   }
 }
-check('the baked layer covers the view at every camera offset',
-  worst.ok && worst.bailed === 0,
-  'max dx=' + worst.dx + ' dy=' + worst.dy + ' skipped=' + worst.bailed);
+check('a world light lands exactly where the uncached code drew it', geom.ok,
+  geom.detail);
 
 // ---- 6. Leaving the dimension must drop the baked layers.
 W.renderGlow(reuseStub, camera, g.player, []);
