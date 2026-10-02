@@ -62,6 +62,15 @@ const TILES = {
   ICE_BLOCK: 65,
   BOOKSHELF: 66,
   LANTERN: 67,
+  // ---- Building set, second wave ------------------------------------------
+  // Five more blocks for the same reason as the first ten: a house should not
+  // run out of materials. Ids 41-57 belong to underworld.js and space.js, which
+  // load after this file, so the building set has to stay consecutive.
+  SLATE_BRICK: 68,
+  THATCH: 69,
+  MARBLE: 70,
+  BAMBOO: 71,
+  COPPER_BLOCK: 72,
 };
 
 const TILE_PROPERTIES = {
@@ -117,6 +126,11 @@ const TILE_PROPERTIES = {
   , [TILES.ICE_BLOCK]: { solid: true, light: 1, color: '#a5e8f5', name: 'Ice Block', drops: { id: 'ice_block', count: 1 } }
   , [TILES.BOOKSHELF]: { solid: true, light: 0, color: '#7c4a1e', name: 'Bookshelf', drops: { id: 'bookshelf', count: 1 } }
   , [TILES.LANTERN]: { solid: false, light: 13, color: '#fbbf24', name: 'Lantern', drops: { id: 'lantern', count: 1 } }
+  , [TILES.SLATE_BRICK]: { solid: true, light: 0, color: '#475569', name: 'Slate Brick', drops: { id: 'slate_brick', count: 1 } }
+  , [TILES.THATCH]: { solid: true, light: 0, color: '#ca8a04', name: 'Thatch', drops: { id: 'thatch', count: 1 } }
+  , [TILES.MARBLE]: { solid: true, light: 0, color: '#e7e5e4', name: 'Marble', drops: { id: 'marble', count: 1 } }
+  , [TILES.BAMBOO]: { solid: true, light: 0, color: '#84cc16', name: 'Bamboo', drops: { id: 'bamboo', count: 1 } }
+  , [TILES.COPPER_BLOCK]: { solid: true, light: 0, color: '#b87333', name: 'Copper Block', drops: { id: 'copper_block', count: 1 } }
 };
 
 // The world is laid out as equal west→east bands, one per entry, in this order.
@@ -2801,6 +2815,92 @@ class World {
         ctx.stroke();
         ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
         ctx.fillRect(sx + 12, sy + 4, 8, 4);
+        break;
+      }
+      case TILES.SLATE_BRICK: {
+        // Dark, tight-running bond. Cool grey-blue so a slate wall reads as a
+        // different material from polished stone at a glance.
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(sx, sy + 11, TILE_SIZE, 2);
+        ctx.fillRect(sx + 11, sy, 2, 11);
+        ctx.fillRect(sx + 5, sy + 13, 2, 11);
+        ctx.fillRect(sx + 17, sy + 13, 2, 11);
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+        ctx.fillRect(sx + 2, sy + 2, 7, 1);
+        ctx.fillRect(sx + 14, sy + 15, 7, 1);
+        break;
+      }
+      case TILES.THATCH: {
+        // Bundled reeds, deliberately rougher and darker than the hay bale so
+        // the two never get confused on a wall.
+        ctx.fillStyle = '#ca8a04';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#854d0e';
+        for (let s = 0; s < 9; s++) {
+          const hx = (s * 6 + tx * 5 + ty * 2) % TILE_SIZE;
+          ctx.fillRect(sx + hx, sy, 1, TILE_SIZE);
+        }
+        // Horizontal binding cord, offset per tile so courses vary.
+        ctx.fillStyle = '#713f12';
+        ctx.fillRect(sx, sy + 7 + ((tx + ty) % 3) * 3, TILE_SIZE, 2);
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(sx, sy, TILE_SIZE, 2);
+        break;
+      }
+      case TILES.MARBLE: {
+        // Pale stone with a veined streak. The highlight is what sells it as
+        // polished rather than just another white block.
+        ctx.fillStyle = '#e7e5e4';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#fafaf9';
+        ctx.fillRect(sx + 2, sy + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+        ctx.strokeStyle = 'rgba(120, 113, 108, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const vein = (tx * 5 + ty * 13) % 3;
+        if (vein === 0) { ctx.moveTo(sx + 1, sy + 6); ctx.lineTo(sx + 11, sy + 14); ctx.lineTo(sx + 22, sy + 10); }
+        else if (vein === 1) { ctx.moveTo(sx + 4, sy + 21); ctx.lineTo(sx + 13, sy + 12); ctx.lineTo(sx + 20, sy + 4); }
+        else { ctx.moveTo(sx + 2, sy + 16); ctx.lineTo(sx + 12, sy + 8); ctx.lineTo(sx + 21, sy + 19); }
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillRect(sx + 2, sy + 2, TILE_SIZE - 4, 2);
+        break;
+      }
+      case TILES.BAMBOO: {
+        // Vertical culms with visible nodes — the only block in the set that is
+        // striped along its length rather than coursed.
+        ctx.fillStyle = '#84cc16';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        for (let c = 0; c < 3; c++) {
+          const cx = sx + c * 8 + ((tx * 3) % 2);
+          ctx.fillStyle = c % 2 === 0 ? '#a3e635' : '#65a30d';
+          ctx.fillRect(cx, sy, 6, TILE_SIZE);
+          ctx.fillStyle = '#3f6212';
+          ctx.fillRect(cx, sy + 7, 6, 1);
+          ctx.fillRect(cx, sy + 18, 6, 1);
+        }
+        ctx.fillStyle = 'rgba(247, 254, 231, 0.35)';
+        ctx.fillRect(sx, sy, TILE_SIZE, 2);
+        break;
+      }
+      case TILES.COPPER_BLOCK: {
+        // Warm metal with a green-tinged patina in the seams, so it is not just
+        // "a brown block" next to dirt and wood.
+        ctx.fillStyle = '#b87333';
+        ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#d99659';
+        ctx.fillRect(sx + 2, sy + 2, TILE_SIZE - 4, TILE_SIZE - 5);
+        ctx.fillStyle = '#8a5424';
+        ctx.fillRect(sx + 2, sy + 13, TILE_SIZE - 4, 2);
+        ctx.fillRect(sx + 13, sy + 2, 2, 11);
+        // Patina blooms, hashed so a copper wall is not one repeated tile.
+        ctx.fillStyle = 'rgba(52, 211, 153, 0.55)';
+        const patina = (tx * 3 + ty * 7) % 3;
+        if (patina === 0) ctx.fillRect(sx + 4, sy + 16, 5, 4);
+        else if (patina === 1) ctx.fillRect(sx + 15, sy + 4, 6, 5);
+        else ctx.fillRect(sx + 6, sy + 5, 4, 4);
         break;
       }
       case TILES.BOOKSHELF: {

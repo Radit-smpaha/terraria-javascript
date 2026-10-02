@@ -902,24 +902,49 @@ World.prototype.renderLighting = function(lightCtx, camera, player, entities) {
   lightCtx.fillStyle = 'rgba(3, 1, 14, 0.30)';
   lightCtx.fillRect(0, 0, camera.viewportWidth, camera.viewportHeight);
   lightCtx.globalCompositeOperation = 'destination-out';
-  this.carveLightCircle(lightCtx, player.x + player.width / 2 - camera.x,
-    player.y + player.height / 2 - camera.y, 165, 0.85);
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      const tile = this.getTile(x, y);
-      const radius = tile === TILES.METEOR_ORE ? 120
-        : tile === TILES.NEBULA_CRYSTAL ? 150
-          : tile === TILES.SPACE_RUNE ? 135
-            : tile === TILES.RIFT_PORTAL ? 210
-              : tile === TILES.STARSTONE ? 55
-                : tile === TILES.TORCH ? 150
-                  : tile === TILES.CAMPFIRE ? 165 : 0;
-      if (radius) {
-        this.carveLightCircle(lightCtx, x * TILE_SIZE + 12 - camera.x, y * TILE_SIZE + 12 - camera.y,
-          radius, tile === TILES.RIFT_PORTAL ? 0.98 : 0.72);
+
+  // ---- TILE LIGHTS: baked, because they are completely static ------------
+  // The tile lights below have a FIXED radius and alpha per tile type and
+  // nothing about them depends on time — standing still produced the exact
+  // same ~250 large destination-out sprites every single frame. Baking them
+  // into a layer that is rebuilt only when the camera leaves its chunk (or a
+  // tile changes) is pixel-identical and costs one blit.
+  const layer = this._spacePostLayer('light', camera, lightCtx, (c, originX, originY, layerW, layerH) => {
+    // The layer is bigger than the view, so it must cover the LAYER's tile span
+    // or the edges the camera can pan onto would never get painted.
+    const lMinX = Math.max(0, Math.floor(originX / TILE_SIZE) - SPACE_POST_PAD);
+    const lMaxX = Math.min(this.width - 1, Math.ceil((originX + layerW) / TILE_SIZE) + SPACE_POST_PAD);
+    const lMinY = Math.max(0, Math.floor(originY / TILE_SIZE) - SPACE_POST_PAD);
+    const lMaxY = Math.min(this.height - 1, Math.ceil((originY + layerH) / TILE_SIZE) + SPACE_POST_PAD);
+    for (let y = lMinY; y <= lMaxY; y++) {
+      for (let x = lMinX; x <= lMaxX; x++) {
+        const tile = this.getTile(x, y);
+        const radius = tile === TILES.METEOR_ORE ? 120
+          : tile === TILES.NEBULA_CRYSTAL ? 150
+            : tile === TILES.SPACE_RUNE ? 135
+              : tile === TILES.RIFT_PORTAL ? 210
+                : tile === TILES.STARSTONE ? 55
+                  : tile === TILES.TORCH ? 150
+                    : tile === TILES.CAMPFIRE ? 165 : 0;
+        if (radius) {
+          this.carveLightCircle(c, x * TILE_SIZE + 12 - originX, y * TILE_SIZE + 12 - originY,
+            radius, tile === TILES.RIFT_PORTAL ? 0.98 : 0.72);
+        }
       }
     }
-  }
+    // NOTE: painted with the default source-over, deliberately. The layer is a
+    // MASK, not a finished light pass: drawing the light sprites with
+    // destination-out here would erase alpha from an already-transparent canvas
+    // and produce an empty layer, silently deleting every tile light in the
+    // Ossuary. The mask is applied for real by the destination-out blit below,
+    // which reproduces the original per-pixel carve exactly.
+  });
+  if (layer) lightCtx.drawImage(layer.canvas, layer.dx, layer.dy);
+
+  // ---- LIVE LIGHTS: the player and everything carrying one ---------------
+  // These move, so they stay per-frame. Cheap: a handful, not a tile scan.
+  this.carveLightCircle(lightCtx, player.x + player.width / 2 - camera.x,
+    player.y + player.height / 2 - camera.y, 165, 0.85);
   for (const ent of entities || []) {
     if (ent.lightRadius) {
 
@@ -941,23 +966,140 @@ World.prototype.renderGlow = function(glowCtx, camera, player, entities = []) {
   const minY = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 2);
   const maxY = Math.min(this.height - 1, Math.ceil((camera.y + camera.viewportHeight) / TILE_SIZE) + 2);
 
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      const tile = this.tiles[y * this.width + x];
-      if (tile !== TILES.METEOR_ORE && tile !== TILES.NEBULA_CRYSTAL &&
-          tile !== TILES.SPACE_RUNE && tile !== TILES.RIFT_PORTAL &&
-          tile !== TILES.STARSTONE && tile !== TILES.SOUL_GLASS) continue;
-      const pulse = 0.78 + Math.sin(t * 2.6 + x * 0.6 + y * 0.9) * 0.2;
-      const sx = x * TILE_SIZE + 12 - camera.x;
-      const sy = y * TILE_SIZE + 12 - camera.y;
-      if (tile === TILES.METEOR_ORE) this.glowBlob(glowCtx, sx, sy, 62 * pulse, 255, 120, 40, 0.42);
-      else if (tile === TILES.NEBULA_CRYSTAL) this.glowBlob(glowCtx, sx, sy, 74 * pulse, 217, 70, 239, 0.42);
-      else if (tile === TILES.SPACE_RUNE) this.glowBlob(glowCtx, sx, sy, 52 * pulse, 139, 92, 246, 0.32);
-      else if (tile === TILES.RIFT_PORTAL) this.glowBlob(glowCtx, sx, sy, 120 * pulse, 34, 211, 238, 0.55);
-      else if (tile === TILES.SOUL_GLASS) this.glowBlob(glowCtx, sx, sy, 34 * pulse, 94, 234, 212, 0.2);
-      else this.glowBlob(glowCtx, sx, sy, 34 * pulse, 96, 165, 250, 0.14);
+  // Tile bloom, baked per chunk. These blobs DO breathe, but on a 2.4s sine -
+  // far too slow to notice being refreshed a few times a second instead of 60,
+  // so the pulse is kept and the per-tile cost is paid once per chunk.
+  const layer = this._spacePostLayer('glow', camera, glowCtx, (c, originX, originY, layerW, layerH) => {
+    const lMinX = Math.max(0, Math.floor(originX / TILE_SIZE) - SPACE_POST_PAD);
+    const lMaxX = Math.min(this.width - 1, Math.ceil((originX + layerW) / TILE_SIZE) + SPACE_POST_PAD);
+    const lMinY = Math.max(0, Math.floor(originY / TILE_SIZE) - SPACE_POST_PAD);
+    const lMaxY = Math.min(this.height - 1, Math.ceil((originY + layerH) / TILE_SIZE) + SPACE_POST_PAD);
+    for (let y = lMinY; y <= lMaxY; y++) {
+      for (let x = lMinX; x <= lMaxX; x++) {
+        const tile = this.tiles[y * this.width + x];
+        if (tile !== TILES.METEOR_ORE && tile !== TILES.NEBULA_CRYSTAL &&
+            tile !== TILES.SPACE_RUNE && tile !== TILES.RIFT_PORTAL &&
+            tile !== TILES.STARSTONE && tile !== TILES.SOUL_GLASS) continue;
+        const pulse = 0.78 + Math.sin(t * 2.6 + x * 0.6 + y * 0.9) * 0.2;
+        const sx = x * TILE_SIZE + 12 - originX;
+        const sy = y * TILE_SIZE + 12 - originY;
+        if (tile === TILES.METEOR_ORE) this.glowBlob(c, sx, sy, 62 * pulse, 255, 120, 40, 0.42);
+        else if (tile === TILES.NEBULA_CRYSTAL) this.glowBlob(c, sx, sy, 74 * pulse, 217, 70, 239, 0.42);
+        else if (tile === TILES.SPACE_RUNE) this.glowBlob(c, sx, sy, 52 * pulse, 139, 92, 246, 0.32);
+        else if (tile === TILES.RIFT_PORTAL) this.glowBlob(c, sx, sy, 120 * pulse, 34, 211, 238, 0.55);
+        else if (tile === TILES.SOUL_GLASS) this.glowBlob(c, sx, sy, 34 * pulse, 94, 234, 212, 0.2);
+        else this.glowBlob(c, sx, sy, 34 * pulse, 96, 165, 250, 0.14);
+      }
     }
+  }, { refreshFrames: 3, composite: 'lighter' });
+  // The blit has to state its own composite. renderGlow's inherited base pass
+  // leaves the target on whatever mode it last used, and a bloom layer added
+  // with the wrong operator either doubles up or vanishes entirely.
+  if (layer) {
+    const prevComposite = glowCtx.globalCompositeOperation;
+    glowCtx.globalCompositeOperation = 'lighter';
+    glowCtx.drawImage(layer.canvas, layer.dx, layer.dy);
+    glowCtx.globalCompositeOperation = prevComposite;
   }
+};
+
+// ============================================================
+// 2b. SPACE POST LAYERS — the cached tile light/bloom buffers
+// ============================================================
+//
+// The two passes above used to re-rasterise every glowing tile in view on every
+// frame: measured at ~260 bloom sprites and ~230 light carves per frame in the
+// arena, and more down in the deep where the new mine is full of ore. All of it
+// was re-derived from data that had not changed.
+//
+// Both are now baked into an offscreen layer keyed to a coarse camera chunk and
+// a tile-change counter, then blitted. The lighting bake is exact. The bloom
+// bake is refreshed every few frames so its slow pulse still breathes. Nothing
+// about the Ossuary looks different; it just stops redoing identical work.
+
+const SPACE_POST_CHUNK = 8;   // tiles per cache edge
+const SPACE_POST_PAD = 2;     // tiles of slack so a chunk never clips a sprite
+
+// Bump on every tile write. setTile is the single choke point every edit goes
+// through, so wrapping it is enough to keep the layers honest.
+const BASE_SET_TILE = World.prototype.setTile;
+World.prototype.setTile = function(x, y, tile) {
+  this._spacePostVersion = (this._spacePostVersion || 0) + 1;
+  return BASE_SET_TILE.call(this, x, y, tile);
+};
+
+/**
+ * Get (or rebuild) a baked post layer for this camera position.
+ *
+ * The layer is deliberately LARGER than the viewport — one full chunk bigger on
+ * each axis. A viewport-sized layer can only ever be valid while the camera
+ * stands still (the view would otherwise read past the edge it painted), which
+ * is exactly the bug that made this a no-op. Oversizing by the chunk stride
+ * means the camera can move freely inside its chunk and still be fully covered.
+ *
+ * Returns { canvas, dx, dy } — where dx/dy is where to blit it — or null if the
+ * offscreen canvas could not be created. Correctness never depends on this
+ * succeeding: a null simply skips the bake.
+ */
+World.prototype._spacePostLayer = function(kind, camera, target, paint, opts = {}) {
+  if (!this.isInSpace()) return null;
+  const w = camera.viewportWidth;
+  const h = camera.viewportHeight;
+  if (w <= 0 || h <= 0) return null;
+
+  const step = SPACE_POST_CHUNK * TILE_SIZE;
+  const originX = Math.floor(camera.x / step) * step;
+  const originY = Math.floor(camera.y / step) * step;
+  const version = this._spacePostVersion || 0;
+  const refreshFrames = opts.refreshFrames || 0;
+  // Oversized so a camera anywhere inside its chunk is still covered.
+  const layerW = w + step;
+  const layerH = h + step;
+  const key = originX + '|' + originY + '|' + version + '|' + layerW + 'x' + layerH;
+
+  const layers = this._spacePostLayers || (this._spacePostLayers = {});
+  let slot = layers[kind];
+  // Stale when the chunk moved, a tile changed, the viewport resized, or (for
+  // the pulsing bloom) its refresh came due. The age is counted PER LAYER in
+  // calls to this function: one global counter is bumped by both passes every
+  // rendered frame, which would halve the refresh interval without anyone
+  // asking it to.
+  slot = slot || (layers[kind] = { canvas: document.createElement('canvas'), calls: 0 });
+  slot.calls += 1;
+  const due = slot.key !== key ||
+    (refreshFrames > 0 && slot.calls - (slot.paintedAt || 0) >= refreshFrames);
+
+  if (due) {
+    if (slot.canvas.width !== layerW || slot.canvas.height !== layerH) {
+      slot.canvas.width = layerW;
+      slot.canvas.height = layerH;
+    }
+    const c = slot.canvas.getContext && slot.canvas.getContext('2d');
+    if (!c) return null;
+    c.clearRect(0, 0, layerW, layerH);
+    if (opts.composite) c.globalCompositeOperation = opts.composite;
+    // Paint in the CHUNK's screen space; the caller blits by the delta below.
+    paint(c, originX, originY, layerW, layerH);
+    slot.key = key;
+    slot.paintedAt = slot.calls;
+  }
+
+  return { canvas: slot.canvas, dx: camera.x - originX, dy: camera.y - originY };
+};
+
+// Entering or leaving the dimension swaps the tile buffers wholesale; make sure
+// neither baked layer survives across it.
+const BASE_ENTER_SPACE = World.prototype.enterSpaceDimension;
+World.prototype.enterSpaceDimension = function() {
+  this._spacePostLayers = null;
+  this._spacePostVersion = (this._spacePostVersion || 0) + 1;
+  return BASE_ENTER_SPACE.call(this);
+};
+const BASE_EXIT_SPACE = World.prototype.exitSpaceDimension;
+World.prototype.exitSpaceDimension = function() {
+  this._spacePostLayers = null;
+  this._spacePostVersion = (this._spacePostVersion || 0) + 1;
+  return BASE_EXIT_SPACE.call(this);
 };
 
 // ============================================================

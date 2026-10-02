@@ -637,6 +637,13 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* A flex child defaults to min-height:auto, which means it REFUSES to shrink
+     below its content height. Combined with the parent's overflow:hidden that
+     silently clips the bottom of a tall panel — which is why the creative menu
+     showed only half its items with no way to scroll to the rest. min-height:0
+     lets this child actually shrink so its own overflow-y:auto takes over. */
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .chest-modal-content {
@@ -1578,12 +1585,18 @@ kbd {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
   gap: 6px;
-  max-height: 330px;
+  /* Scales with the window instead of a fixed 330px, and is allowed to shrink
+     inside the modal. A fixed height on a short screen is what pushed the
+     bottom rows of items out of reach. */
+  max-height: min(330px, 40vh);
+  min-height: 0;
   overflow-y: auto;
   padding: 4px;
   background: #020617;
   border: 2px solid #1e293b;
   border-radius: 6px;
+  /* The scrollbar has to be visible or "scrollable" still reads as "cut off". */
+  scrollbar-color: #3b82f6 #020617;
 }
 
 .creative-cell {

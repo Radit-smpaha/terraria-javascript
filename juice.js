@@ -874,6 +874,9 @@ function describeItem(id, game) {
         : 'Hold JUMP in the air to fly'
     });
   }
+  if (item.bonusSlots) {
+    rows.push({ label: 'Bag slots', value: `+${item.bonusSlots} — ${item.bonusSlots === 5 ? '45' : item.bonusSlots === 10 ? '50' : '55'} slots total while carried` });
+  }
   if (item.heal) rows.push({ label: 'Restores', value: `+${item.heal} life` });
   // The two rift items are consumables that do nothing when drunk, so the tooltip
   // has to say what they actually are — otherwise the Rite of Bones reads like a
