@@ -998,6 +998,10 @@ class Game {
     this.chestStorage = {};
     this.openChest = null;
 
+    // Which bag slot the favourite/delete controls are acting on (Shift+click).
+    // Null means "nothing selected", which is the state the buttons render in.
+    this.selectedSlotIndex = null;
+
     // Input state
     this.input = {
       keys: {},
@@ -1554,6 +1558,14 @@ class Game {
     if (modalClose) modalClose.addEventListener('click', () => this.toggleCraftingModal(false));
     const inventoryClose = document.getElementById('inventory-close');
     if (inventoryClose) inventoryClose.addEventListener('click', () => this.toggleInventoryModal(false));
+
+    // Slot management: favourite / delete the Shift+click-selected bag slot.
+    const slotFav = document.getElementById('slot-fav-btn');
+    if (slotFav) slotFav.addEventListener('click', () => this.toggleSelectedFavorite());
+    const slotDel = document.getElementById('slot-delete-btn');
+    if (slotDel) slotDel.addEventListener('click', () => this.deleteSelectedSlot());
+    const slotClr = document.getElementById('slot-clear-btn');
+    if (slotClr) slotClr.addEventListener('click', () => this.clearSlotSelection());
     document.getElementById('crafting-modal')?.addEventListener('click', (event) => {
       if (event.target === event.currentTarget) this.toggleCraftingModal(false);
     });
@@ -2275,9 +2287,13 @@ class Game {
         // straight into the array and so bypasses the addItem guard entirely —
         // the filter has to be explicit.
         const banned = slot && ITEMS[slot.id] && ITEMS[slot.id].creativeOnly;
-        restored.push(slot && ITEMS[slot.id] && Number.isFinite(slot.count) && !banned
-          ? { id: slot.id, count: Math.max(0, slot.count) }
-          : { id: 'empty', count: 0 });
+        if (slot && ITEMS[slot.id] && Number.isFinite(slot.count) && !banned) {
+          // Carry the favourite flag across, or every protected stack silently
+          // becomes droppable again after a reload.
+          restored.push({ id: slot.id, count: Math.max(0, slot.count), fav: slot.fav === true });
+        } else {
+          restored.push({ id: 'empty', count: 0 });
+        }
       }
       this.inventory = restored;
     }
@@ -2690,14 +2706,24 @@ class Game {
       const slot = this.inventory[i];
       const filled = slot && slot.id !== 'empty';
       const div = document.createElement('div');
-      div.className = `inv-slot ${filled ? 'filled' : ''}`;
+      const fav = this.isFavorited(slot);
+      const selected = this.selectedSlotIndex === i;
+      div.className = `inv-slot ${filled ? 'filled' : ''}${fav ? ' favorited' : ''}${selected ? ' selected' : ''}`;
       const itemData = filled ? ITEMS[slot.id] : null;
-      div.title = itemData ? `${itemData.name}${slot.count > 1 ? ` x${slot.count}` : ''}` : i < 9 ? `Hotbar slot ${i + 1}` : 'Empty inventory slot';
+      div.title = itemData
+        ? `${itemData.name}${slot.count > 1 ? ` x${slot.count}` : ''}` +
+          (fav ? ' — ⭐ favourited (cannot be deleted or dropped)' : '') +
+          (selected ? '\nShift+click again to deselect' : '\nShift+click to select')
+        : (i < 9 ? `Hotbar slot ${i + 1}` : 'Empty inventory slot');
       div.draggable = filled;
       div.addEventListener('click', (event) => {
         // Ctrl+click stashes the item in the cross-world bag instead of the
         // usual equip / select behaviour.
         if (event.ctrlKey) { event.preventDefault(); this.moveToShared(i); return; }
+        // Shift+click selects the slot for the favourite/delete controls. It has
+        // to be checked BEFORE the hotbar behaviour below, or selecting a
+        // hotbar slot would also re-equip it.
+        if (event.shiftKey) { event.preventDefault(); this.selectInventorySlot(i); return; }
         this.handleInventorySlotClick(i);
       });
       div.addEventListener('contextmenu', (event) => {
@@ -2746,14 +2772,129 @@ class Game {
           count.textContent = slot.count;
           div.appendChild(count);
         }
+        if (fav) {
+          const star = document.createElement('span');
+          star.className = 'slot-star';
+          star.textContent = '⭐';
+          div.appendChild(star);
+        }
       }
       grid.appendChild(div);
     }
+    this.renderSlotManager();
+  }
+
+  /**
+   * Is this bag slot favourited?
+   *
+   * A favourite is a promise to the player that the stack cannot be thrown away
+   * by accident. It is stored ON THE SLOT (`fav: true`) rather than as a set of
+   * item ids, because two stacks of the same item are separate objects and the
+   * player may well only want to protect one of them.
+   */
+  isFavorited(slot) {
+    return !!(slot && slot.fav);
+  }
+
+  /** Does any slot in the bag hold a FAVOURITED stack of this item id? */
+  hasFavoritedStack(id) {
+    return this.inventory.some(s => s && s.id === id && this.isFavorited(s));
+  }
+
+  /** Refuse an action that would destroy a favourited stack. Returns false if blocked. */
+  guardFavorite(slot, action) {
+    if (!this.isFavorited(slot)) return true;
+    const data = ITEMS[slot.id];
+    this.showToast(`⭐ ${data ? data.name : slot.id} is favourited — unfavourite it to ${action}.`);
+    if (this.sound && typeof this.sound.playPlayerHurt === 'function') this.sound.playPlayerHurt();
+    return false;
+  }
+
+  /** Select a bag slot for the favourite/delete controls. */
+  selectInventorySlot(index) {
+    const slot = this.inventory[index];
+    if (!slot || slot.id === 'empty') {
+      this.selectedSlotIndex = null;
+    } else {
+      // Clicking the already-selected slot clears the selection.
+      this.selectedSlotIndex = this.selectedSlotIndex === index ? null : index;
+    }
+    this.renderSlotManager();
+    this.renderInventoryGrid();
+  }
+
+  clearSlotSelection() {
+    this.selectedSlotIndex = null;
+    this.renderSlotManager();
+    this.renderInventoryGrid();
+  }
+
+  /** Toggle the favourite flag on the selected slot. */
+  toggleSelectedFavorite() {
+    const i = this.selectedSlotIndex;
+    const slot = i == null ? null : this.inventory[i];
+    if (!slot || slot.id === 'empty') return false;
+    slot.fav = !slot.fav;
+    this.sound.playPickup();
+    this.showToast(slot.fav
+      ? `⭐ ${ITEMS[slot.id].name} favourited — it can't be deleted or dropped.`
+      : `${ITEMS[slot.id].name} unfavourited.`);
+    this.renderSlotManager();
+    this.renderInventoryGrid();
+    return true;
+  }
+
+  /**
+   * Delete the selected stack outright (no world drop, no recovery).
+   * This is the destructive one, so a favourite blocks it too — un-favouriting
+   * first is the deliberate act of saying "yes, really throw this away".
+   */
+  deleteSelectedSlot() {
+    const i = this.selectedSlotIndex;
+    const slot = i == null ? null : this.inventory[i];
+    if (!slot || slot.id === 'empty') return false;
+    if (!this.guardFavorite(slot, 'delete it')) return false;
+    const data = ITEMS[slot.id];
+    this.inventory[i] = { id: 'empty', count: 0 };
+    this.selectedSlotIndex = null;
+    this.particles.bloodBurst(
+      this.player.x + this.player.width / 2,
+      this.player.y + this.player.height / 2, '#7f1d1d', 14);
+    this.showToast(`🗑️ Deleted ${data ? data.name : slot.id}.`);
+    this.renderSlotManager();
+    this.renderInventoryGrid();
+    this.renderHotbarUI();
+    return true;
+  }
+
+  /** Refresh the label + button states for the slot-manager row. */
+  renderSlotManager() {
+    const label = document.getElementById('slot-selected-label');
+    const favBtn = document.getElementById('slot-fav-btn');
+    const delBtn = document.getElementById('slot-delete-btn');
+    const clrBtn = document.getElementById('slot-clear-btn');
+    if (!label || !favBtn || !delBtn || !clrBtn) return;
+    const slot = this.selectedSlotIndex == null ? null : this.inventory[this.selectedSlotIndex];
+    const filled = !!(slot && slot.id !== 'empty');
+    const fav = this.isFavorited(slot);
+    const data = filled ? ITEMS[slot.id] : null;
+    label.textContent = filled
+      ? `${data ? data.icon + ' ' + data.name : slot.id}${slot.count > 1 ? ' x' + slot.count : ''}${fav ? '  ⭐' : ''}`
+      : 'No slot selected';
+    favBtn.disabled = !filled;
+    delBtn.disabled = !filled;
+    clrBtn.disabled = !filled;
+    favBtn.classList.toggle('is-on', fav);
+    favBtn.textContent = fav ? '★ UNFAVOURITE' : '☆ FAVOURITE';
+    delBtn.textContent = fav ? '🗑 DELETE (locked)' : '🗑 DELETE';
   }
 
   dropInventoryStack(index) {
     const slot = this.inventory[index];
     if (!slot || slot.id === 'empty' || slot.count <= 0) return;
+    // A favourited stack cannot be thrown on the floor. This is the guard the
+    // drag-out path lands in, so it covers every way of dropping from the bag.
+    if (!this.guardFavorite(slot, 'drop it')) return;
     const drop = new DropItem(
       this.player.x + this.player.width / 2,
       this.player.y,
@@ -2842,6 +2983,18 @@ class Game {
     if (!this.canCraftRecipe(recipe) || !this.canAddItem(recipe.result.id, recipe.result.count)) {
       this.showToast('🎒 Not enough inventory space.');
       return;
+    }
+    // A favourited stack is consumed by crafting just as surely as by dropping
+    // it, so it blocks here too. The player is being explicit (they picked the
+    // recipe and the cost is on screen), but silently eating something they
+    // marked "don't throw this away" is exactly the accident a favourite is
+    // meant to prevent — so ask first, and say how to undo it.
+    for (const m of recipe.materials) {
+      if (this.hasFavoritedStack(m.id)) {
+        const data = ITEMS[m.id];
+        this.showToast(`⭐ ${data ? data.name : m.id} is favourited — unfavourite it to craft this.`);
+        return;
+      }
     }
     for (const m of recipe.materials) {
       this.removeItem(m.id, m.count);

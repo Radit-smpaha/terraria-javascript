@@ -79,6 +79,17 @@ const MARKERS = [
   ['particles.js', 'addBanStamp', 'the on-mob ban stamp'],
   ['particles.js', 'isBan', 'the ban stamp render branch'],
   ['audio.js', 'playBanHammer', 'the ban hammer impact SFX'],
+  // ---- Inventory favourites -------------------------------------------------
+  // A favourited stack must refuse delete AND drop. These markers catch a cached
+  // deploy still running the pre-favourite code, where either path would succeed.
+  ['terraria.js', 'toggleSelectedFavorite', 'the inventory favourite toggle'],
+  ['terraria.js', 'guardFavorite', 'the favourite delete/drop guard'],
+  ['terraria.js', 'hasFavoritedStack', 'the craft-consumption guard'],
+  ['terraria.js', 'fav: slot.fav === true', 'favourites survive a reload'],
+  ['terraria.html', 'slot-fav-btn', 'the favourite button'],
+  ['terraria.html', 'slot-delete-btn', 'the delete button'],
+  ['terraria.css', '.inv-slot.favorited', 'the favourited slot styling'],
+  ['terraria.css', '.slot-star', 'the gold star badge on a favourited slot'],
   ['space.js', 'nearestHitTarget', 'body hits, and the 8% tax they pay'],
   ['space.js', 'bodyDamageScale', 'the skull still hurts more than the spine'],
   ['space.js', 'blocksDragon', 'the dragon no longer wedges in arena rock'],

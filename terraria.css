@@ -863,6 +863,90 @@ kbd {
   box-shadow: 0 0 0 2px rgba(246, 195, 68, 0.45), inset 0 0 12px rgba(246, 195, 68, 0.18);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   SLOT MANAGEMENT — select, favourite, delete
+   Shift+click a bag slot to select it, then act on it with the buttons.
+   A favourited slot gets a gold ring and a star badge, and is refused by
+   both the delete and the drop paths until it is un-favourited.
+   ══════════════════════════════════════════════════════════════════════ */
+.inv-slot.selected {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.55), inset 0 0 14px rgba(56, 189, 248, 0.2);
+}
+
+.inv-slot.favorited {
+  border-color: #facc15;
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.5), inset 0 0 12px rgba(250, 204, 21, 0.14);
+}
+
+/* Both selected AND favourited: keep the selection ring, tint it gold. */
+.inv-slot.selected.favorited {
+  border-color: #facc15;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.55), inset 0 0 16px rgba(250, 204, 21, 0.22);
+}
+
+.inv-slot .slot-star {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 15px;
+  line-height: 1;
+  color: #facc15;
+  text-shadow: 0 0 6px rgba(250, 204, 21, 0.9), 0 1px 2px #000;
+  pointer-events: none;
+}
+
+.slot-manager {
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.slot-manager-hint {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.slot-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slot-selected-label {
+  flex: 1 1 150px;
+  min-width: 0;
+  font-size: 12px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-btn {
+  font-size: 11px;
+  padding: 6px 10px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+
+.slot-btn:hover:not(:disabled) { background: #334155; }
+.slot-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.slot-btn-fav:not(:disabled) { border-color: #facc15; color: #fde68a; }
+.slot-btn-fav.is-on { background: #facc15; color: #1a1405; font-weight: bold; }
+.slot-btn-delete:not(:disabled) { border-color: #ef4444; color: #fecaca; }
+.slot-btn-delete:not(:disabled):hover { background: #ef4444; color: #fff; }
+.slot-btn-clear { border-color: #64748b; }
+
 /* SETTLEMENT JOURNAL */
 .journal-btn {
   border-color: #a78bfa;

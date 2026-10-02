@@ -18,8 +18,10 @@ class ParticleSystem {
    *
    * It is a damageText so it rides the same update/render/cull path (world
    * coordinates, floats up, fades) and needs no new draw loop — but `isBan`
-   * switches the renderer to the big stamped hacker treatment: red glow,
-   * chromatic ghosting and a slight pop.
+   * switches the renderer to a full multi-pass terminal-ban treatment: a filled
+   * red slab behind the word, a heavy drop shadow, a white-hot core with a red
+   * bloom, and two offset chromatic ghosts that jitter every frame so the glyphs
+   * visibly tear rather than sit still.
    */
   addBanStamp(x, y) {
     this.damageTexts.push({
@@ -31,7 +33,8 @@ class ParticleSystem {
       color: '#ff1a1a',
       scale: 1.0,
       alpha: 1.0,
-      life: 1.35,
+      life: 1.6,
+      maxLife: 1.6,
       isCrit: false,
       isBan: true
     });
@@ -227,7 +230,9 @@ class ParticleSystem {
     // Update floating damage texts
     for (let i = this.damageTexts.length - 1; i >= 0; i--) {
       const t = this.damageTexts[i];
-      t.life -= dt * 1.5;
+      // Ban stamps live longer than damage numbers (they carry the whole
+      // "you just got banned" beat), so they opt out of the faster 1.5x decay.
+      t.life -= dt * (t.isBan ? 0.62 : 1.5);
       if (t.life <= 0) {
         this.damageTexts.splice(i, 1);
         continue;
@@ -235,7 +240,9 @@ class ParticleSystem {
       t.x += t.vx;
       t.y += t.vy;
       t.vy += 0.12; // slowly curve down
-      t.alpha = Math.max(0, t.life);
+      // Clamped: a ban stamp starts with life > 1, and an unclamped alpha would
+      // be handed to globalAlpha (harmless) but read as nonsense if inspected.
+      t.alpha = Math.max(0, Math.min(1, t.life));
     }
 
     // Update slashes
@@ -379,26 +386,62 @@ class ParticleSystem {
       ctx.globalAlpha = t.alpha;
 
       if (t.isBan) {
-        // THE BAN HAMMER's on-mob stamp. Bigger than a damage number, with the
-        // red bloom and two offset ghost copies faked as chromatic
-        // aberration — the same "glitched terminal" read as the screen overlay,
-        // but attached to the thing that just got banned.
-        const pop = 1 + 0.35 * Math.max(0, Math.min(1, t.life / 1.35));
-        ctx.font = `bold ${Math.round(20 * pop)}px 'Press Start 2P', monospace`;
+        // THE BAN HAMMER's on-mob stamp. Drawn in four passes so it reads as a
+        // stamped, glitching system notice rather than a red damage number:
+        //   1. a filled slab + hard border, so the word never competes with the
+        //      background it is stamped on top of,
+        //   2. two chromatic ghost copies that jitter EVERY FRAME (the tear),
+        //   3. a white-hot core with a heavy red bloom,
+        //   4. a hard black outline so it stays legible over bright tiles.
+        // `pop` overshoots on spawn then settles; the flicker keeps it alive.
+        const life = t.maxLife || 1.6;
+        const age = 1 - Math.max(0, Math.min(1, t.life / life));
+        // Slam in: starts ~2.4x and eases down hard over the first fifth.
+        const slam = Math.max(0, 1 - age / 0.18);
+        const pop = 1 + 1.4 * slam * slam;
+        const size = Math.round(26 * pop);
+        const jitter = (Math.random() - 0.5) * 5;
+        const flicker = age < 0.5 && Math.random() < 0.22 ? 0.55 : 1;
+
+        ctx.save();
+        ctx.globalAlpha = t.alpha * flicker;
+        ctx.font = `bold ${size}px 'Press Start 2P', monospace`;
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const w = ctx.measureText(t.text).width;
+        const h = size * 1.5;
+
+        // 1. slab
+        ctx.fillStyle = 'rgba(20,0,0,0.82)';
+        ctx.fillRect(sx - w / 2 - 12, sy - h / 2, w + 24, h);
+        ctx.strokeStyle = '#ff1a1a';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(sx - w / 2 - 12, sy - h / 2, w + 24, h);
+
+        // 2. chromatic ghosts, jittered
         ctx.shadowColor = '#ff0000';
-        ctx.shadowBlur = 18;
-        // Ghost copies first, so the real glyph lands on top of them.
-        ctx.fillStyle = 'rgba(255,60,60,0.55)';
-        ctx.fillText(t.text, sx - 2.5, sy - 1.5);
-        ctx.fillStyle = 'rgba(120,0,0,0.75)';
-        ctx.fillText(t.text, sx + 2.5, sy + 1.5);
+        ctx.shadowBlur = 22;
+        ctx.fillStyle = 'rgba(255,60,60,0.75)';
+        ctx.fillText(t.text, sx - 4 + jitter, sy - 2);
+        ctx.fillStyle = 'rgba(140,0,0,0.85)';
+        ctx.fillText(t.text, sx + 4 - jitter, sy + 2);
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = '#1a0000';
-        ctx.lineWidth = 4;
-        ctx.strokeText(t.text, sx, sy);
+
+        // 3. white-hot core with red fill glow
+        ctx.fillStyle = 'rgba(255,190,190,0.9)';
+        ctx.fillText(t.text, sx - 1, sy - 1);
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 26;
         ctx.fillStyle = t.color;
         ctx.fillText(t.text, sx, sy);
+
+        // 4. hard outline for legibility
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#1a0000';
+        ctx.lineWidth = 6;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(t.text, sx, sy);
         ctx.restore();
         continue;
       }

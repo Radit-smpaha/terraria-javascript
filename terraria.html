@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=19">
+  <link rel="stylesheet" href="terraria.css?v=20">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -326,7 +326,19 @@
           <div class="modal-body inventory-body">
             <div class="inventory-display">
               <h4>BAG CONTENTS</h4>
-              <div id="inventory-grid" class="inv-grid"></div>
+              <!-- Slot management: select a slot, then favourite or delete it. -->
+            <div class="slot-manager">
+              <p class="slot-manager-hint">
+                <kbd>Shift</kbd>+click a slot to select it, then use the buttons below.
+              </p>
+              <div class="slot-manager-row">
+                <span id="slot-selected-label" class="slot-selected-label">No slot selected</span>
+                <button id="slot-fav-btn" class="slot-btn slot-btn-fav" disabled>&#9733; FAVOURITE</button>
+                <button id="slot-delete-btn" class="slot-btn slot-btn-delete" disabled>&#128465; DELETE</button>
+                <button id="slot-clear-btn" class="slot-btn slot-btn-clear" disabled>CLEAR SELECTION</button>
+              </div>
+            </div>
+            <div id="inventory-grid" class="inv-grid"></div>
               <div class="shared-header">
                 <h4>📦 SHARED STASH</h4>
                 <span id="shared-count" class="shared-count">0 / 18 in use</span>
@@ -568,7 +580,7 @@
        exact failed file (see window.__terraNoteScript in the boot watchdog).
        onerror fires per-script for network/parse failures. -->
   <script src="audio.js?v=8" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL audio.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok audio.js: '+(typeof SoundSystem))"></script>
-  <script src="particles.js?v=7" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
+  <script src="particles.js?v=8" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
   <script src="world.js?v=13" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL world.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok world.js: '+(typeof World))"></script>
   <script src="weather.js?v=7" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL weather.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok weather.js: '+(typeof WeatherSystem))"></script>
   <script src="entities.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL entities.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok entities.js: Player='+(typeof Player))"></script>
@@ -577,7 +589,7 @@
   <script src="juice.js?v=13" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=29" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=30" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>
