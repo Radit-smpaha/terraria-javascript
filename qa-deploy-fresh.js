@@ -11,8 +11,14 @@
 // Needs network access; exits 1 when the deploy is stale and lists the fix.
 const REPO = 'Radit-smpaha/terraria-javascript';
 const branch = process.argv[2] || 'main';
+// Read the files through GitHub's CONTENTS API, not raw.githubusercontent.
+// raw is CDN-cached and will happily hand back a build from before the push you
+// are currently verifying — which reports a healthy deploy as STALE, and could
+// equally mask a genuinely broken one behind a lucky cache hit. The contents API
+// reads the repository, so its answer IS the commit.
+const CACHE_BUST = `?ref=${encodeURIComponent(branch)}`;
 const raw = (f) =>
-  `https://raw.githubusercontent.com/${REPO}/${branch}/${encodeURIComponent(f)}`;
+  `https://api.github.com/repos/${REPO}/contents/${encodeURIComponent(f)}${CACHE_BUST}`;
 
 // Every file Streamlit needs to inline the game (see app.py GAME_SCRIPTS).
 const REQUIRED = [
@@ -98,12 +104,22 @@ const files = new Map();
 (async () => {
   for (const name of REQUIRED) {
     try {
-      const res = await fetch(raw(name), { cache: 'no-store' });
+      // The CONTENTS API, not raw.githubusercontent. This tool's whole job is to
+      // tell the truth about what GitHub is serving, and raw is CDN-cached: it
+      // kept handing back a build from BEFORE the push being verified, which
+      // reported a healthy deploy as STALE (and would hide a genuinely broken
+      // one behind a lucky cache hit). The contents API reads the repository,
+      // so its answer is the commit itself.
+      const res = await fetch(raw(name), {
+        cache: 'no-store',
+        headers: { 'User-Agent': 'terracraft-qa', Accept: 'application/vnd.github+json' }
+      });
       if (!res.ok) {
         fails.push(`${name}: HTTP ${res.status} — the file is not on ${branch}`);
         continue;
       }
-      files.set(name, await res.text());
+      const json = await res.json();
+      files.set(name, Buffer.from(json.content, 'base64').toString('utf8'));
     } catch (error) {
       fails.push(`${name}: fetch failed (${error.message})`);
     }
