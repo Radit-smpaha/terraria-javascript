@@ -1060,11 +1060,595 @@ class Game {
 
     this.loadGame(true);
 
+    this.paused = true;
+    this.initTitleScreen();
+
     // Welcome toast
     this.showToast('🌲 Welcome to Terracraft! Chop wood & craft weapons.');
 
     // Start loop
     requestAnimationFrame(this.loop.bind(this));
+  }
+
+  /**
+   * Main menu. Terraria's title screen is a living scene rather than a static
+   * backdrop, so this draws one: a full day/night cycle with the sun and moon
+   * crossing the sky, drifting clouds, parallax ridges, trees that sway, a pond
+   * catching the light, fireflies after dark and the odd passing bird. It also
+   * owns the menu / world-select / credits panels and the splash line.
+   */
+  initTitleScreen() {
+    const screen = document.getElementById('title-screen');
+    const scene = document.getElementById('title-scene');
+    if (!screen || !scene) return;
+
+    const context = scene.getContext('2d');
+    if (!context) return;
+
+    const splash = document.getElementById('title-splash');
+    const menu = document.getElementById('title-menu');
+    const worlds = document.getElementById('title-worlds');
+    const credits = document.getElementById('title-credits');
+    this.titleScreenOpen = true;
+    this.titlePanel = 'menu';
+
+    // ---- Splash line ---------------------------------------------------
+    // Minecraft and Terraria both rotate a yellow blurb beside the logo. One
+    // entry is deliberately rare so pulling it feels like something happened.
+    const rareSplash = 'Shoutout to Terraria!';
+    const splashes = [
+      'A little world, a big adventure!',
+      'Watch the skies for falling stars!',
+      'Home is where the campfire is.',
+      'Made with dirt and determination!',
+      'Somewhere, a slime is bouncing.',
+      'Your next favorite tree is waiting.',
+      'Adventure grows on trees. Sort of.',
+      'Dig down - the good stuff is below.',
+      'Three worlds, one hero.',
+      'Now with 100% more parallax.',
+      'Chop wood, craft weapons, survive the night!',
+      'The guide believes in you.',
+      'Rain washes in, monsters wander out.',
+      'Bring a torch. Bring two.',
+      'No creepers here. Just slimes.',
+      'Terraria would be proud.',
+      'Sit back. Enjoy the view.',
+      'Sword in one hand, pickaxe in the other.'
+    ];
+    let lastSplash = performance.now();
+    const rollSplash = (first = false) => {
+      if (!splash) return;
+      const rare = Math.random() < (first ? 0.12 : 0.1);
+      splash.textContent = rare
+        ? rareSplash
+        : splashes[Math.floor(Math.random() * splashes.length)];
+      splash.classList.toggle('title-splash-rare', rare);
+      // Restart the pop so a freshly rolled line announces itself.
+      splash.classList.remove('splash-pop');
+      void splash.offsetWidth;
+      splash.classList.add('splash-pop');
+    };
+
+    // ---- Scene data ----------------------------------------------------
+    const stars = [];
+    for (let i = 0; i < 90; i++) {
+      stars.push({
+        x: Math.random() * 320,
+        y: Math.random() * 104,
+        big: Math.random() < 0.18,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+    const clouds = [
+      { x: 14, y: 30, scale: 1.15, speed: 3.2 },
+      { x: 148, y: 17, scale: 0.82, speed: 2.1 },
+      { x: 252, y: 51, scale: 0.66, speed: 4.0 },
+      { x: 92, y: 63, scale: 0.50, speed: 2.6 },
+      { x: 300, y: 24, scale: 0.95, speed: 1.7 }
+    ];
+    const fireflies = [];
+    for (let i = 0; i < 18; i++) {
+      fireflies.push({
+        x: Math.random() * 320,
+        y: 132 + Math.random() * 34,
+        phase: Math.random() * Math.PI * 2,
+        drift: 6 + Math.random() * 12
+      });
+    }
+    const birds = [];
+    let nextBird = 1500;
+    let shootingStar = null;
+    let nextShootingStar = 5000;
+    let prevTime = performance.now();
+
+    // One full cycle of the menu sky (sunrise -> noon -> sunset -> night).
+    const DAY_MS = 104000;
+    const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    const wrapPos = (v, span) => (((v % span) + span) % span);
+    const mixRGB = (a, b, t) => [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+    const css = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+    const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
+
+    // Three anchor palettes: deep night, golden hour, full day. Everything on
+    // screen is a blend of two of them, so the whole scene shifts together.
+    const NIGHT = {
+      skyTop: [7, 13, 40], skyMid: [22, 36, 82], skyBot: [44, 62, 104],
+      far: [26, 40, 70], near: [20, 46, 60], hill: [17, 52, 46],
+      grass: [16, 58, 45], deep: [10, 34, 30], water: [24, 48, 72],
+      leafA: [19, 47, 42], leafB: [25, 58, 50], trunk: [48, 36, 30]
+    };
+    const DUSK = {
+      skyTop: [70, 58, 126], skyMid: [214, 118, 84], skyBot: [246, 194, 128],
+      far: [120, 94, 120], near: [98, 98, 118], hill: [58, 72, 68],
+      grass: [52, 74, 62], deep: [36, 48, 48], water: [132, 104, 112],
+      leafA: [54, 70, 62], leafB: [68, 84, 72], trunk: [86, 64, 52]
+    };
+    const DAY = {
+      skyTop: [46, 103, 223], skyMid: [101, 185, 240], skyBot: [182, 225, 200],
+      far: [108, 159, 194], near: [77, 156, 154], hill: [55, 142, 107],
+      grass: [52, 146, 108], deep: [39, 111, 79], water: [74, 160, 196],
+      leafA: [37, 131, 84], leafB: [46, 145, 90], trunk: [104, 74, 50]
+    };
+    const KEYS = Object.keys(DAY);
+    const blendPalette = (day) => {
+      const from = day < 0.5 ? NIGHT : DUSK;
+      const to = day < 0.5 ? DUSK : DAY;
+      const t = day < 0.5 ? day * 2 : (day - 0.5) * 2;
+      const out = {};
+      for (const key of KEYS) out[key] = mixRGB(from[key], to[key], t);
+      return out;
+    };
+
+    const resize = () => {
+      scene.width = Math.max(320, Math.round(window.innerWidth / 2));
+      scene.height = Math.max(180, Math.round(window.innerHeight / 2));
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const drawCloud = (x, y, scale, body, shade) => {
+      context.fillStyle = body;
+      context.fillRect(x, y + 3 * scale, 24 * scale, 5 * scale);
+      context.fillRect(x + 5 * scale, y, 12 * scale, 8 * scale);
+      context.fillRect(x + 15 * scale, y + 2 * scale, 12 * scale, 6 * scale);
+      context.fillStyle = shade;
+      context.fillRect(x + 3 * scale, y + 7 * scale, 21 * scale, 2 * scale);
+    };
+
+    const drawTree = (x, ground, scale, leafA, leafB, trunk) => {
+      const trunkHi = mixRGB(trunk, [232, 204, 166], 0.35);
+      context.fillStyle = trunk;
+      context.fillRect(x - 2 * scale, ground - 24 * scale, 5 * scale, 25 * scale);
+      context.fillStyle = css(trunkHi);
+      context.fillRect(x - scale, ground - 23 * scale, scale, 20 * scale);
+      context.fillStyle = leafA;
+      context.fillRect(x - 10 * scale, ground - 35 * scale, 20 * scale, 15 * scale);
+      context.fillRect(x - 7 * scale, ground - 40 * scale, 14 * scale, 8 * scale);
+      context.fillRect(x - 14 * scale, ground - 32 * scale, 7 * scale, 9 * scale);
+      context.fillRect(x + 7 * scale, ground - 31 * scale, 7 * scale, 8 * scale);
+      context.fillStyle = leafB;
+      context.fillRect(x - 6 * scale, ground - 36 * scale, 4 * scale, 4 * scale);
+      context.fillRect(x + 4 * scale, ground - 30 * scale, 4 * scale, 4 * scale);
+    };
+
+    const mountains = [
+      [[-25, 118], [34, 62], [75, 118], [124, 72], [185, 124], [248, 64], [345, 125]],
+      [[-20, 134], [47, 88], [95, 135], [157, 86], [218, 136], [278, 92], [345, 142]]
+    ];
+
+    const draw = (time) => {
+      if (!this.titleScreenOpen) return;
+      const width = 320;
+      const height = 180;
+      const dt = Math.min(0.1, Math.max(0, (time - prevTime) / 1000));
+      prevTime = time;
+      context.setTransform(scene.width / width, 0, 0, scene.height / height, 0, 0);
+      context.imageSmoothingEnabled = false;
+
+      // ---- sky ---------------------------------------------------------
+      const cycle = (time % DAY_MS) / DAY_MS;   // 0 = sunrise, .5 = sunset
+      const sunAngle = cycle * Math.PI * 2;
+      const light = Math.sin(sunAngle);          // -1 midnight .. 1 noon
+      const day = clamp01((light + 0.28) / 0.56);
+      const night = 1 - day;
+      const P = blendPalette(day);
+
+      const sky = context.createLinearGradient(0, 0, 0, height * 0.8);
+      sky.addColorStop(0, css(P.skyTop));
+      sky.addColorStop(0.55, css(P.skyMid));
+      sky.addColorStop(1, css(P.skyBot));
+      context.fillStyle = sky;
+      context.fillRect(0, 0, width, height);
+
+      const sunX = 160 + Math.cos(sunAngle - Math.PI) * 152;
+      const sunY = 116 - light * 100;
+
+      // ---- stars + the occasional shooting star ------------------------
+      if (night > 0.06) {
+        for (const star of stars) {
+          const twinkle = 0.45 + 0.55 * Math.abs(Math.sin(time * 0.002 + star.phase));
+          context.fillStyle = 'rgba(255,252,226,' + (night * twinkle).toFixed(3) + ')';
+          const size = star.big ? 2 : 1;
+          context.fillRect(Math.round(star.x), Math.round(star.y), size, size);
+        }
+        if (night > 0.45) {
+          if (!shootingStar && time > nextShootingStar) {
+            shootingStar = {
+              x: 40 + Math.random() * 230,
+              y: 8 + Math.random() * 44,
+              born: time
+            };
+            nextShootingStar = time + 7000 + Math.random() * 9000;
+          }
+          if (shootingStar) {
+            const t = (time - shootingStar.born) / 750;
+            if (t >= 1) {
+              shootingStar = null;
+            } else {
+              const sx = shootingStar.x + t * 62;
+              const sy = shootingStar.y + t * 34;
+              const streak = context.createLinearGradient(sx - 26, sy - 15, sx, sy);
+              streak.addColorStop(0, 'rgba(255,255,255,0)');
+              streak.addColorStop(1, 'rgba(255,255,240,' + (night * (1 - t)).toFixed(3) + ')');
+              context.strokeStyle = streak;
+              context.lineWidth = 2;
+              context.beginPath();
+              context.moveTo(sx - 26, sy - 15);
+              context.lineTo(sx, sy);
+              context.stroke();
+            }
+          }
+        } else {
+          shootingStar = null;
+        }
+      }
+
+      // ---- sun ---------------------------------------------------------
+      if (sunY > -40 && sunY < 150) {
+        const glow = context.createRadialGradient(sunX, sunY, 2, sunX, sunY, 36);
+        glow.addColorStop(0, 'rgba(255,247,190,.95)');
+        glow.addColorStop(0.3, 'rgba(255,233,140,.5)');
+        glow.addColorStop(1, 'rgba(255,220,120,0)');
+        context.fillStyle = glow;
+        context.fillRect(sunX - 38, sunY - 38, 76, 76);
+        const sx = Math.round(sunX);
+        const sy = Math.round(sunY);
+        context.fillStyle = '#fff6b8';
+        context.fillRect(sx - 6, sy - 6, 12, 12);
+        context.fillStyle = '#fffde8';
+        context.fillRect(sx - 3, sy - 3, 6, 6);
+      }
+
+      // ---- moon --------------------------------------------------------
+      const moonAngle = sunAngle + Math.PI;
+      const moonX = 160 + Math.cos(moonAngle - Math.PI) * 152;
+      const moonY = 116 - Math.sin(moonAngle) * 100;
+      if (moonY > -40 && moonY < 150) {
+        const glow = context.createRadialGradient(moonX, moonY, 2, moonX, moonY, 28);
+        glow.addColorStop(0, 'rgba(226,240,255,.8)');
+        glow.addColorStop(1, 'rgba(200,224,255,0)');
+        context.fillStyle = glow;
+        context.fillRect(moonX - 30, moonY - 30, 60, 60);
+        const mx = Math.round(moonX);
+        const my = Math.round(moonY);
+        context.fillStyle = '#eef4ff';
+        context.fillRect(mx - 6, my - 6, 12, 12);
+        context.fillStyle = '#c6d4ea';
+        context.fillRect(mx - 4, my - 3, 3, 3);
+        context.fillRect(mx + 1, my + 1, 3, 3);
+        context.fillRect(mx - 1, my + 3, 2, 2);
+      }
+
+      // ---- clouds ------------------------------------------------------
+      const cloudBody = css(mixRGB([255, 255, 255], [54, 64, 102], night));
+      const cloudShade = css(mixRGB([189, 231, 255], [36, 44, 78], night));
+      const wrap = width + 80;
+      for (const cloud of clouds) {
+        const cx = wrapPos(cloud.x + time * 0.001 * cloud.speed, wrap) - 40;
+        drawCloud(cx, cloud.y, cloud.scale, cloudBody, cloudShade);
+      }
+
+      // ---- birds (day only) -------------------------------------------
+      if (day > 0.55) {
+        if (time > nextBird) {
+          birds.push({
+            x: -14,
+            y: 20 + Math.random() * 48,
+            speed: 13 + Math.random() * 10,
+            flap: Math.random() * 6
+          });
+          nextBird = time + 3200 + Math.random() * 4200;
+        }
+        for (let i = birds.length - 1; i >= 0; i--) {
+          const bird = birds[i];
+          bird.x += bird.speed * dt;
+          if (bird.x > width + 20) { birds.splice(i, 1); continue; }
+          const lift = Math.sin(time * 0.012 + bird.flap) * 3;
+          context.strokeStyle = 'rgba(24,34,46,' + (0.7 * day).toFixed(3) + ')';
+          context.lineWidth = 1.5;
+          context.beginPath();
+          context.moveTo(bird.x - 5, bird.y + lift);
+          context.lineTo(bird.x, bird.y);
+          context.lineTo(bird.x + 5, bird.y + lift);
+          context.stroke();
+        }
+      }
+
+      // ---- mountains ---------------------------------------------------
+      for (let layer = 0; layer < mountains.length; layer++) {
+        context.beginPath();
+        context.moveTo(-30, height);
+        for (const point of mountains[layer]) context.lineTo(point[0], point[1]);
+        context.lineTo(width + 30, height);
+        context.closePath();
+        context.fillStyle = css(layer === 0 ? P.far : P.near);
+        context.fill();
+      }
+      if (day > 0.3) {
+        context.fillStyle = 'rgba(255,255,255,' + (((day - 0.3) / 0.7) * 0.9).toFixed(3) + ')';
+        for (const point of mountains[0]) {
+          if (point[1] > 90) continue;
+          context.beginPath();
+          context.moveTo(point[0] - 9, point[1] + 12);
+          context.lineTo(point[0], point[1]);
+          context.lineTo(point[0] + 9, point[1] + 12);
+          context.closePath();
+          context.fill();
+        }
+      }
+
+      // ---- rolling hills ------------------------------------------------
+      const hillShade = css(mixRGB(P.hill, P.deep, 0.4));
+      for (let x = 0; x < width; x += 3) {
+        const ridge = 124 + Math.sin(x * 0.031) * 10 + Math.sin(x * 0.087) * 4;
+        context.fillStyle = (x % 6) ? css(P.hill) : hillShade;
+        context.fillRect(x, ridge, 3, height - ridge);
+      }
+      for (let x = -8; x < width + 20; x += 27) {
+        const ridge = 133 + Math.sin(x * 0.031) * 10 + Math.sin(x * 0.087) * 4;
+        const sway = Math.sin(time * 0.0012 + x * 0.4) * 1.6;
+        drawTree(x + 10 + sway, ridge + 9, 0.8 + (x % 3) * 0.08, css(P.leafA), css(P.leafB), css(P.trunk));
+      }
+
+      // ---- dark forest band + foreground grass --------------------------
+      const forest = css(mixRGB(P.deep, [0, 0, 0], 0.4));
+      for (let x = 0; x < width; x += 3) {
+        const edge = 150 + Math.sin(x * 0.06) * 3;
+        context.fillStyle = forest;
+        context.fillRect(x, edge, 3, height - edge);
+      }
+      context.fillStyle = css(P.grass);
+      context.fillRect(0, 168, width, height - 168);
+      context.fillStyle = css(mixRGB(P.grass, [255, 255, 255], 0.18));
+      context.fillRect(0, 168, width, 2);
+
+      // ---- pond ----------------------------------------------------------
+      const lakeX = 196;
+      const lakeY = 170;
+      const lakeW = 118;
+      const lakeH = height - lakeY;
+      context.fillStyle = css(P.water);
+      context.fillRect(lakeX, lakeY, lakeW, lakeH);
+      context.fillStyle = css(mixRGB(P.water, [255, 255, 255], 0.4));
+      context.fillRect(lakeX, lakeY, lakeW, 2);
+      context.fillStyle = 'rgba(255,255,255,' + (0.18 + 0.22 * day).toFixed(3) + ')';
+      const shimmerSpan = lakeW - 40;
+      for (let i = 0; i < 5; i++) {
+        const sx = lakeX + 8 + wrapPos(i * 33 + time * 0.011 * (i % 2 ? 1 : -1), shimmerSpan);
+        context.fillRect(Math.round(sx), lakeY + 4 + (i % 3) * 3, 13, 1);
+      }
+
+      // ---- foreground trees (kept clear of the water) --------------------
+      const fgLeafA = css(mixRGB(P.leafA, P.deep, 0.45));
+      const fgLeafB = css(mixRGB(P.leafB, P.deep, 0.35));
+      const fgTrunk = css(mixRGB(P.trunk, P.deep, 0.3));
+      for (let x = -12; x < width + 24; x += 41) {
+        if (x > lakeX - 26 && x < lakeX + lakeW + 6) continue;
+        const sway = Math.sin(time * 0.0009 + x * 0.3) * 1.2;
+        drawTree(x + 14 + sway, 186, 1.35, fgLeafA, fgLeafB, fgTrunk);
+      }
+
+      // ---- torches -------------------------------------------------------
+      const drawTorch = (x) => {
+        context.fillStyle = '#6a4a30';
+        context.fillRect(x, 158, 3, 14);
+        context.fillStyle = '#8a6642';
+        context.fillRect(x + 2, 158, 1, 14);
+        const flick = 0.72 + Math.abs(Math.sin(time * 0.012 + x)) * 0.28;
+        const strength = 0.35 + night * 0.65;
+        const glow = context.createRadialGradient(x + 1, 155, 1, x + 1, 155, 20 * flick);
+        glow.addColorStop(0, 'rgba(255,206,92,' + (0.75 * strength).toFixed(3) + ')');
+        glow.addColorStop(1, 'rgba(255,150,40,0)');
+        context.fillStyle = glow;
+        context.fillRect(x - 22, 133, 46, 46);
+        context.fillStyle = 'rgba(255,231,140,' + (0.9 * flick).toFixed(3) + ')';
+        context.fillRect(x, 153, 3, 5);
+        context.fillStyle = 'rgba(255,146,44,' + (0.85 * flick).toFixed(3) + ')';
+        context.fillRect(x, 151, 3, 3);
+      };
+      drawTorch(24);
+      drawTorch(168);
+
+      // ---- fireflies (night only) ----------------------------------------
+      if (night > 0.15) {
+        for (const fly of fireflies) {
+          const fx = Math.round(fly.x + Math.sin(time * 0.0007 + fly.phase) * fly.drift);
+          const fy = Math.round(fly.y + Math.cos(time * 0.0009 + fly.phase * 1.7) * 5);
+          const pulse = (Math.sin(time * 0.004 + fly.phase * 3) + 1) * 0.5;
+          context.fillStyle = 'rgba(255,240,130,' + (night * pulse * 0.4).toFixed(3) + ')';
+          context.fillRect(fx - 1, fy - 1, 4, 4);
+          context.fillStyle = 'rgba(255,244,150,' + (night * (0.25 + pulse * 0.75)).toFixed(3) + ')';
+          context.fillRect(fx, fy, 2, 2);
+        }
+      }
+
+      if (splash && time - lastSplash > 8000) {
+        lastSplash = time;
+        rollSplash();
+      }
+      requestAnimationFrame(draw);
+    };
+
+    rollSplash(true);
+    requestAnimationFrame(draw);
+
+    // ---- panels ---------------------------------------------------------
+    const enterWorld = () => {
+      if (!this.titleScreenOpen) return;
+      this.titleScreenOpen = false;
+      this.paused = false;
+      screen.classList.add('title-screen-leaving');
+      setTimeout(() => screen.classList.add('hidden'), 500);
+    };
+    const pickWorld = (slot) => {
+      if (this.startTitleWorld(slot)) enterWorld();
+    };
+    const showPanel = (name) => {
+      this.titlePanel = name;
+      menu.hidden = name !== 'menu';
+      if (worlds) worlds.hidden = name !== 'worlds';
+      credits.hidden = name !== 'credits';
+      if (name === 'worlds') this.renderTitleWorlds(pickWorld);
+      // Hand focus to whatever is now on top, so keyboard players are never
+      // stranded on a button that just disappeared.
+      const target = name === 'worlds'
+        ? document.querySelector('#title-world-list .title-world-card')
+        : name === 'credits'
+          ? document.getElementById('title-credits-back')
+          : document.getElementById('title-singleplayer');
+      if (target && target.focus) {
+        try { target.focus({ preventScroll: true }); } catch (_) { target.focus(); }
+      }
+    };
+
+    document.getElementById('title-singleplayer')?.addEventListener('click', () => showPanel('worlds'));
+    document.getElementById('title-credits-button')?.addEventListener('click', () => showPanel('credits'));
+    document.getElementById('title-worlds-back')?.addEventListener('click', () => showPanel('menu'));
+    document.getElementById('title-credits-back')?.addEventListener('click', () => showPanel('menu'));
+
+    // The menu owns the keyboard. stopPropagation keeps every one of these
+    // keypresses away from the game's own handlers running underneath, and a
+    // focus stop on the section itself covers the case where focus has not
+    // landed on a button yet (the very first arrow keypress, for instance).
+    const onKey = (event) => {
+      event.stopPropagation();
+      if (!this.titleScreenOpen) return;
+      if (event.key === 'Escape') {
+        if (this.titlePanel !== 'menu') {
+          event.preventDefault();
+          showPanel('menu');
+        }
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      const focusables = [];
+      for (const el of screen.querySelectorAll('button')) {
+        if (!el.disabled && el.offsetParent !== null) focusables.push(el);
+      }
+      if (!focusables.length) return;
+      const current = focusables.indexOf(document.activeElement);
+      const next = event.key === 'ArrowDown'
+        ? (current + 1 + focusables.length) % focusables.length
+        : (current <= 0 ? focusables.length - 1 : current - 1);
+      try { focusables[next].focus({ preventScroll: true }); } catch (_) { focusables[next].focus(); }
+      event.preventDefault();
+    };
+    screen.addEventListener('keydown', onKey);
+
+    // Without focus on the section itself the first keypress lands on <body>
+    // and never reaches the listener above.
+    try { screen.focus({ preventScroll: true }); } catch (_) { try { screen.focus(); } catch (__) {} }
+  }
+
+  /**
+   * The "select world" list behind the Singleplayer button: the three save
+   * files, each showing what it holds and what picking it would do.
+   * `onPick(slot)` is supplied by the menu so it can close itself afterwards.
+   */
+  renderTitleWorlds(onPick) {
+    const list = document.getElementById('title-world-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (let slot = 1; slot <= 3; slot++) {
+      const key = this.slotKey(slot);
+      let save = null;
+      try { save = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
+      const current = key === this.saveKey;
+
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'title-world-card' + (current ? ' is-current' : '') + (save ? '' : ' is-empty');
+
+      const badge = document.createElement('span');
+      badge.className = 'world-badge';
+      badge.textContent = String(slot);
+
+      const main = document.createElement('span');
+      main.className = 'world-main';
+
+      const name = document.createElement('span');
+      name.className = 'world-name';
+      name.textContent = (save && typeof save.name === 'string' && save.name) ? save.name : `World ${slot}`;
+      if (current) {
+        const tag = document.createElement('em');
+        tag.className = 'world-tag';
+        tag.textContent = 'CURRENT';
+        name.appendChild(tag);
+      }
+
+      const meta = document.createElement('span');
+      meta.className = 'world-meta';
+      if (save) {
+        const bits = [`Day ${Number.isFinite(save.dayCount) ? save.dayCount : 1}`];
+        const stats = save.progress && save.progress.stats ? save.progress.stats : null;
+        if (stats) {
+          const minutes = Math.max(0, Math.floor((Number(stats.playTime) || 0) / 60));
+          bits.push(minutes >= 60
+            ? `${Math.floor(minutes / 60)}h ${minutes % 60}m played`
+            : `${minutes}m played`);
+          bits.push(`${Number(stats.kills) || 0} kills`);
+        }
+        meta.textContent = bits.join(' · ');
+      } else {
+        meta.textContent = 'Empty slot - start a brand new world';
+      }
+
+      main.appendChild(name);
+      main.appendChild(meta);
+
+      const action = document.createElement('span');
+      action.className = 'world-action';
+      action.textContent = save ? 'PLAY' : 'CREATE';
+
+      card.appendChild(badge);
+      card.appendChild(main);
+      card.appendChild(action);
+      card.addEventListener('click', () => { if (onPick) onPick(slot); });
+      list.appendChild(card);
+    }
+  }
+
+  /**
+   * Pick one of the three save files from the main menu.
+   * Returns true when this session is already running that slot (the caller
+   * just closes the menu), false when the page is reloading onto another one.
+   *
+   * The menu boots paused, so nothing in this session is worth writing back -
+   * and writing it back would stamp a brand-new save into the slot we are
+   * leaving, turning an empty file into an occupied one.
+   */
+  startTitleWorld(slot) {
+    const key = this.slotKey(slot);
+    if (key === this.saveKey) return true;
+    this.suppressExitSave = true;
+    try { localStorage.setItem('terracraft-active-save', String(slot)); } catch (_) {}
+    location.reload();
+    return false;
   }
 
   loadSettings() {
@@ -1213,6 +1797,9 @@ class Game {
       // Never write a mid-death snapshot: dying is not a reason to persist the
       // moment the player fell, and the respawn handler saves the real state.
       if (this.isDead) return;
+      // Switching save files from the main menu must not stamp a save into the
+      // slot being left behind, or an empty file would become an occupied one.
+      if (this.suppressExitSave) return;
       this.saveGame(true);
     };
     window.addEventListener('pagehide', saveOnExit);

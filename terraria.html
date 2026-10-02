@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=20">
+  <link rel="stylesheet" href="terraria.css?v=22">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -572,6 +572,49 @@
       </div>
 
     </div>
+
+    <section id="title-screen" class="title-screen" tabindex="-1" aria-label="Terracraft main menu">
+      <canvas id="title-scene" aria-hidden="true"></canvas>
+      <div class="title-vignette" aria-hidden="true"></div>
+
+      <header class="title-brand">
+        <h1>Terracraft</h1>
+        <span class="title-tagline">Forest Survivor &amp; Boss Slayer</span>
+        <span id="title-splash" class="title-splash" aria-live="polite"></span>
+      </header>
+
+      <main id="title-menu" class="title-menu">
+        <button id="title-singleplayer" class="title-button">Singleplayer</button>
+        <div class="title-multiplayer-row">
+          <span class="coming-soon">( Coming soon! )</span>
+          <button class="title-button title-button-disabled" disabled aria-disabled="true">Multiplayer</button>
+        </div>
+        <button id="title-credits-button" class="title-button">Credits</button>
+      </main>
+
+      <!-- Three save files, Terraria's "select world" list. -->
+      <section id="title-worlds" class="title-worlds" aria-labelledby="worlds-heading" hidden>
+        <h2 id="worlds-heading">Select World</h2>
+        <p class="title-worlds-hint">Three save files — pick one to play.</p>
+        <div id="title-world-list" class="title-world-list"></div>
+        <button id="title-worlds-back" class="title-button">Back</button>
+      </section>
+
+      <section id="title-credits" class="title-credits" aria-labelledby="credits-heading" hidden>
+        <h2 id="credits-heading">Credits</h2>
+        <ul>
+          <li><span class="credit-name">Terraria</span><span class="credit-role">Inspiration</span></li>
+          <li><span class="credit-name">Minecraft</span><span class="credit-role">Inspiration</span></li>
+          <li><span class="credit-name">FISH (Ano)</span><span class="credit-role">Creator</span></li>
+          <li><span class="credit-name">Mikey (Radit)</span><span class="credit-role">Creator</span></li>
+          <li><span class="credit-name">Cline</span><span class="credit-role">Code AI</span></li>
+          <li><span class="credit-name">Codegpt</span><span class="credit-role">Code AI</span></li>
+        </ul>
+        <button id="title-credits-back" class="title-button">Back</button>
+      </section>
+
+      <span class="title-version">Terracraft · A little world, a big adventure</span>
+    </section>
   </div>
 
   <!-- Audio synthesizers and game scripts.
@@ -589,7 +632,7 @@
   <script src="juice.js?v=13" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=30" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=32" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>

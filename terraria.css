@@ -1965,3 +1965,359 @@ body {
 .boot-error-title { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
 .boot-error-body { white-space: pre-wrap; word-break: break-word; opacity: 0.95; }
 .boot-error-hint { margin-top: 8px; font-size: 12px; opacity: 0.8; }
+
+/* ============================================================
+   MAIN TITLE SCREEN — Terraria-styled menu over an animated scene
+   ============================================================ */
+.title-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  isolation: isolate;
+  color: #f7fff0;
+  text-align: center;
+  opacity: 1;
+  transition: opacity 450ms ease;
+}
+.title-screen:focus { outline: none; }
+.title-screen-leaving { opacity: 0; pointer-events: none; }
+#title-scene,
+.title-vignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#title-scene { image-rendering: pixelated; image-rendering: crisp-edges; }
+.title-vignette {
+  background:
+    radial-gradient(130% 70% at 50% 0%, rgba(255, 255, 255, .10), transparent 62%),
+    linear-gradient(180deg, rgba(9, 28, 49, .16), transparent 30%, rgba(7, 38, 34, .14) 57%, rgba(6, 22, 30, .68));
+}
+
+/* ---- Logo --------------------------------------------------------- */
+.title-brand {
+  position: absolute;
+  z-index: 1;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  animation: title-arrive 700ms cubic-bezier(.2, .8, .2, 1) both;
+}
+.title-brand h1 {
+  margin: 0;
+  color: #69ef66;
+  font: 104px/.85 'VT323', monospace;
+  -webkit-text-stroke: 3px #14512f;
+  text-shadow: 0 6px 0 #17482e, 0 10px 0 #102b21, 4px 4px 0 #123c2a, -4px 4px 0 #123c2a, 0 16px 28px rgba(4, 18, 20, .62);
+}
+.title-tagline {
+  display: block;
+  margin-top: 4px;
+  color: rgba(240, 255, 238, .9);
+  /* Kept narrower than the h1 above it: .title-brand shrink-wraps to its
+     widest child, and a wider tagline would push the splash off the logo. */
+  font: 24px/1 'VT323', monospace;
+  letter-spacing: 3px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, .8);
+}
+
+/* The Minecraft/Terraria blurb that hangs off the top-right of the logo. */
+.title-splash {
+  position: absolute;
+  top: -4px;
+  left: calc(100% + 8px);
+  width: 214px;
+  color: #fff16c;
+  font: 26px/1.05 'VT323', monospace;
+  text-align: left;
+  text-shadow: 2px 2px 0 #553d17, 0 0 12px rgba(255, 241, 108, .5);
+  transform: rotate(-11deg);
+  transform-origin: left center;
+  animation: splash-wiggle 3.8s ease-in-out infinite;
+}
+/* The 1-in-10 pull gets its own louder look so it reads as special. */
+.title-splash-rare {
+  color: #ffe08a;
+  text-shadow: 2px 2px 0 #7a2410, 0 0 16px rgba(255, 138, 62, .85);
+}
+.title-splash.splash-pop {
+  animation: splash-pop 420ms cubic-bezier(.2, .9, .3, 1.5), splash-wiggle 3.8s 420ms ease-in-out infinite;
+}
+/* ---- Menu panels -------------------------------------------------- */
+.title-menu,
+.title-worlds,
+.title-credits {
+  position: absolute;
+  z-index: 2;
+  top: 44%;
+  left: 50%;
+  display: flex;
+  width: min(340px, 94vw);
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  animation: menu-arrive 650ms 120ms ease-out both;
+}
+.title-menu[hidden],
+.title-worlds[hidden],
+.title-credits[hidden] { display: none; }
+
+/* ---- Terraria menu buttons --------------------------------------- */
+.title-button {
+  position: relative;
+  width: min(300px, 90vw);
+  min-height: 50px;
+  padding: 2px 14px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #f5fff4;
+  cursor: pointer;
+  font: 38px/1 'VT323', monospace;
+  letter-spacing: 1px;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, .88), -1px -1px 0 rgba(0, 0, 0, .55);
+  transition: color 130ms ease, transform 130ms ease;
+}
+/* The plate that lights up behind the words on hover, Terraria-style. */
+.title-button::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px;
+  z-index: -1;
+  border: 2px solid rgba(255, 255, 255, .45);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, .06) 55%, rgba(0, 0, 0, .20));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35), 0 5px 14px rgba(0, 0, 0, .38);
+  opacity: 0;
+  transform: scaleX(.9);
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+.title-button:hover:not(:disabled)::before,
+.title-button:focus-visible::before { opacity: 1; transform: scaleX(1); }
+.title-button:hover:not(:disabled),
+.title-button:focus-visible { color: #ffe66d; outline: none; }
+.title-button:focus-visible { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.title-button:active:not(:disabled) { transform: translateY(2px); }
+
+/* ---- Multiplayer: greyed out, with the note to its LEFT ---------- */
+.title-multiplayer-row { position: relative; display: flex; justify-content: center; width: min(300px, 90vw); }
+.title-button-disabled,
+.title-button-disabled:hover,
+.title-button-disabled:focus-visible {
+  border-color: transparent;
+  color: #9aa39b;
+  cursor: not-allowed;
+  opacity: .78;
+  transform: none;
+  text-decoration: none;
+}
+.title-button-disabled::before { display: none; }
+.coming-soon {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 16px);
+  width: 160px;
+  color: #ffd76e;
+  font: 24px/1.05 'VT323', monospace;
+  text-align: right;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 #3c321d, 0 2px 8px rgba(0, 0, 0, .75);
+  transform: translateY(-50%);
+  animation: soon-nudge 2.8s ease-in-out infinite;
+}
+@keyframes soon-nudge {
+  0%, 100% { translate: 0 0; }
+  50% { translate: -4px 0; }
+}
+/* ---- World (save file) selector ---------------------------------- */
+.title-worlds {
+  top: 30%;
+  width: min(470px, 94vw);
+  gap: 4px;
+}
+.title-worlds h2,
+.title-credits h2 {
+  margin: 0 0 2px;
+  color: #fff1a0;
+  font: 50px/.95 'VT323', monospace;
+  text-shadow: 0 3px 0 #53492a, 0 5px 12px rgba(0, 0, 0, .72);
+}
+.title-worlds-hint {
+  margin: 0 0 6px;
+  color: rgba(240, 255, 238, .84);
+  font: 22px/1 'VT323', monospace;
+  text-shadow: 1px 2px 0 rgba(0, 0, 0, .75);
+}
+.title-world-list { display: grid; gap: 8px; width: 100%; }
+.title-world-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid rgba(255, 255, 255, .30);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(10, 26, 20, .80), rgba(5, 15, 12, .88));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55), 0 5px 16px rgba(0, 0, 0, .45);
+  color: #f2fff0;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 130ms ease, background 130ms ease, transform 130ms ease;
+}
+.title-world-card:hover,
+.title-world-card:focus-visible {
+  border-color: #f9df63;
+  background: linear-gradient(180deg, rgba(30, 52, 32, .90), rgba(12, 27, 21, .94));
+  outline: none;
+  transform: translateX(4px);
+}
+.title-world-card:active { transform: translateX(4px) translateY(2px); }
+/* An empty slot reads as a slot you are about to create, not one you own. */
+.title-world-card.is-empty { border-style: dashed; }
+.world-badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .5);
+  color: #ffe66d;
+  font: 27px/1 'VT323', monospace;
+}
+.world-main { display: grid; gap: 1px; min-width: 0; }
+.world-name { font: 30px/1.05 'VT323', monospace; text-shadow: 2px 2px 0 rgba(0, 0, 0, .85); }
+.world-meta { color: rgba(210, 235, 214, .8); font: 19px/1.15 'VT323', monospace; }
+.world-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid #7bd17a;
+  border-radius: 3px;
+  background: rgba(20, 70, 40, .85);
+  color: #b9ffb0;
+  font: 10px/1.4 'Press Start 2P', monospace;
+  font-style: normal;
+  vertical-align: middle;
+  text-shadow: none;
+}
+.world-action {
+  color: #ffe66d;
+  font: 25px/1 'VT323', monospace;
+  letter-spacing: 2px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, .85);
+}
+.title-world-card.is-empty .world-action { color: #9ee6a2; }
+
+/* ---- Credits ------------------------------------------------------ */
+.title-credits { top: 24%; width: min(430px, 94vw); gap: 4px; }
+.title-credits ul { display: grid; gap: 3px; margin: 4px 0 10px; padding: 0; width: 100%; list-style: none; }
+.title-credits li {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  transition: background 130ms ease;
+}
+.title-credits li:hover { background: rgba(255, 255, 255, .09); }
+.credit-name {
+  color: #f6fff2;
+  font: 32px/1.05 'VT323', monospace;
+  text-shadow: 2px 2px 0 #1d4436, 0 2px 8px #17322b;
+}
+.credit-role {
+  color: #ffd76e;
+  font: 19px/1 'VT323', monospace;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  opacity: .88;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, .8);
+}
+
+.title-version {
+  position: absolute;
+  z-index: 1;
+  bottom: 13px;
+  left: 16px;
+  color: rgba(246, 255, 241, .86);
+  font: 19px/1 'VT323', monospace;
+  text-shadow: 1px 2px 0 #163d32;
+}
+
+/* ---- Animation ---------------------------------------------------- */
+@keyframes title-arrive {
+  from { opacity: 0; transform: translate(-50%, -14px) scale(.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes menu-arrive {
+  from { opacity: 0; translate: 0 10px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes splash-wiggle {
+  0%, 100% { rotate: -2deg; }
+  50% { rotate: 3deg; }
+}
+@keyframes splash-pop {
+  from { opacity: 0; scale: .55; }
+  to { opacity: 1; scale: 1; }
+}
+
+/* ---- Responsive --------------------------------------------------- */
+@media (max-width: 940px) {
+  /* Not enough room beside the logo any more: park the splash above-right. */
+  .title-splash { top: -34px; left: auto; right: -6px; width: 190px; text-align: right; transform-origin: right center; font-size: 23px; }
+}
+@media (max-width: 680px) {
+  .title-brand { top: 8%; }
+  .title-brand h1 { font-size: 74px; -webkit-text-stroke-width: 2px; }
+  .title-tagline { font-size: 19px; letter-spacing: 3px; }
+  .title-menu { top: 42%; gap: 4px; }
+  .title-button { min-height: 44px; font-size: 31px; }
+  .coming-soon {
+    top: -8px;
+    right: auto;
+    left: 0;
+    width: auto;
+    font-size: 19px;
+    text-align: left;
+    transform: translateY(-100%);
+  }
+  .title-worlds { top: 20%; gap: 2px; }
+  .title-worlds h2, .title-credits h2 { font-size: 40px; }
+  .title-worlds-hint { font-size: 18px; }
+  .title-world-card { gap: 9px; padding: 8px 10px; }
+  .world-badge { width: 32px; height: 32px; font-size: 22px; }
+  .world-name { font-size: 25px; }
+  .world-meta { font-size: 16px; }
+  .world-action { font-size: 20px; }
+  .title-credits { top: 16%; }
+  .title-credits ul { gap: 0; }
+  .credit-name { font-size: 26px; }
+  .credit-role { font-size: 16px; letter-spacing: 2px; }
+  .title-version { bottom: 9px; left: 10px; font-size: 16px; }
+}
+@media (max-height: 560px) {
+  .title-brand { top: 1%; }
+  .title-brand h1 { font-size: 68px; }
+  .title-tagline { display: none; }
+  .title-splash { top: -26px; font-size: 21px; }
+  .title-menu { top: 40%; gap: 0; }
+  .title-button { min-height: 38px; font-size: 30px; }
+  .title-worlds { top: 12%; gap: 0; }
+  .title-worlds-hint { display: none; }
+  .title-world-card { padding: 5px 10px; }
+  .world-badge { width: 30px; height: 30px; font-size: 20px; }
+  .title-credits { top: 8%; gap: 0; }
+  .title-credits h2 { font-size: 34px; }
+  .title-credits li { padding: 1px 8px; }
+  .credit-name { font-size: 24px; }
+  .credit-role { font-size: 15px; }
+}
