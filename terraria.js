@@ -174,6 +174,16 @@ const NEW_ITEMS = {
     id: 'void_rift_beacon', name: 'Void Rift Beacon', type: 'consumable',
     riftBeacon: true, icon: '🌀', stackMax: 5
   },
+  // The Sovereign is not waiting for you. Walking into the Ossuary finds a
+  // sealed grave and a great deal of mining; this is the candle you bring to
+  // open it, and it is priced only in things the arena itself gives up (bone
+  // piles, meteor seams, nebula clusters) plus Underworld souls. Craftable
+  // before you have ever killed a dragon, which is the point: the first fight
+  // is something you go and perform, not something that happens to you.
+  rite_of_waking: {
+    id: 'rite_of_waking', name: 'Rite of Waking', type: 'consumable',
+    dragonRite: true, icon: '🕯️', stackMax: 3
+  },
   // What you burn to wake the Sovereign after you have already killed it. A dead
   // dragon stays dead: the arena stops being a fight the moment it is won and
   // becomes a quarry, and going back for another round has to be a deliberate,
@@ -665,6 +675,19 @@ const RECIPES = [
       { id: 'crystal', count: 4 }, { id: 'gold_ore', count: 8 }
     ],
     name: 'Void Rift Beacon (tears open the Ossuary)'
+  },
+  // The FIRST Sovereign is woken by a rite too, not by walking in. Everything it
+  // asks for is mineable out of the Ossuary itself (dragonbone off the bone
+  // piles, meteor shards and nebula crystals out of the seams and the deep) plus
+  // a couple of Underworld souls, so the first expedition is a scouting trip you
+  // come back from prepared. The dragon never simply appears.
+  {
+    result: { id: 'rite_of_waking', count: 1 },
+    materials: [
+      { id: 'dragonbone', count: 15 }, { id: 'meteor_shard', count: 12 },
+      { id: 'nebula_crystal', count: 6 }, { id: 'demon_soul', count: 2 }
+    ],
+    name: 'Rite of Waking (wakes the first Sovereign in the Ossuary)'
   },
   // Waking the Sovereign a second time costs the arena's own leftovers plus the
   // Underworld's souls: harvesting a whole expedition of dragonbone is the price
@@ -4141,14 +4164,18 @@ class Game {
   }
 
   /**
-   * Right-click a Rite of Bones inside the Ossuary: the harvested bones burn and
-   * a whole Sovereign rises to replace the one in the ground.
+   * Right-click a rite inside the Ossuary: the harvested bones burn and a whole
+   * Sovereign rises out of the ground.
    *
-   * This is the only door back into the fight once the first dragon has been
-   * killed. The arena never re-arms itself, and neither does a beacon, a reload,
-   * a death, or a return trip — the player has to decide, in the Ossuary, with
-   * bones they mined, that they want to fight it again. Returns true when the
-   * rite was read, which is also when the bones are spent.
+   * This is the only door into the fight — the first time AND every time after.
+   * The arena never re-arms itself, a beacon never summons anything, and
+   * neither does a reload, a death or a return trip: the player has to stand in
+   * the Ossuary, with bones they mined, and decide they want this fight. Two
+   * rites open the same grave — the cheap Rite of Waking (mineable materials
+   * only, so the FIRST Sovereign is a prepared expedition rather than an
+   * ambush) and the expensive Rite of Bones, which is what a killed dragon's
+   * own grave pays for. Returns true when the rite was read, which is also
+   * when the bones are spent.
    */
   performBoneRite() {
     if (!this.world.isInSpace()) {
@@ -4179,15 +4206,27 @@ class Game {
       this.showToast('🦴 The old one is not finished — its wound is still waiting. Kill it before you burn bones.');
       return false;
     }
-    if (!this.dragonSlain) {
-      this.showToast('🦴 Nothing to bring back yet. Fell the Sovereign before you call another.');
+    // Which rite opens the grave. The Rite of Waking is the SUMMONING rite and
+    // is valid whenever the ground is empty — it is how the first Sovereign is
+    // ever raised. The Rite of Bones is the REANIMATION rite: it exists to
+    // stand a new dragon up out of one that has already fallen, so it still
+    // refuses on virgin ground and can never be used to skip the first
+    // expedition. Holding both spends the cheaper candle.
+    const rite = this.countItem('rite_of_waking') > 0 ? 'rite_of_waking'
+      : (this.dragonSlain && this.countItem('rite_of_bones') > 0) ? 'rite_of_bones' : null;
+    if (!rite) {
+      this.showToast(this.dragonSlain
+        ? '🦴 The rite needs a Rite of Bones: 25 Dragonbone, 10 Meteor Shards, 4 Demon Souls.'
+        : '🕯️ The grave is sealed. Craft a Rite of Waking (15 Dragonbone, 12 Meteor Shards, 6 Nebula Crystals, 2 Demon Souls) and right-click it here.');
       return false;
     }
-    if (!this.removeItem('rite_of_bones', 1)) {
-      this.showToast('🦴 The rite needs a Rite of Bones: 25 Dragonbone, 10 Meteor Shards, 4 Demon Souls.');
+    if (!this.removeItem(rite, 1)) {
+      this.showToast('🦴 The rite will not read without its bones.');
       return false;
     }
-    this.showAnnouncement('🕯️ THE BONES BURN — BONE BY BONE, IT COMES BACK.');
+    this.showAnnouncement(rite === 'rite_of_waking'
+      ? '🕯️ THE CANDLE CATCHES — THE GRAVE ANSWERS.'
+      : '🕯️ THE BONES BURN — BONE BY BONE, IT COMES BACK.');
     this.sound.playBossRoar?.();
     this.particles.magicSparkle(this.player.x, this.player.y, '#fbcfe8', 60);
     this.dragonHP = null;
@@ -4222,15 +4261,18 @@ class Game {
     this.player.vx = 0;
     this.player.vy = 0;
 
-    // ---- Wake the Sovereign, resuming any damage it already took ----
-    // Unless the player has already killed one: a slain Sovereign stays dead in
-    // the ground, and the Ossuary becomes a quarry to be mined rather than a
-    // fight that reopens itself every time someone walks in. Only a Rite of
-    // Bones raises another (see performBoneRite).
-    if (this.dragonSlain && !Number.isFinite(this.dragonHP)) {
+    // ---- The Sovereign is never implicit ----
+    // Walking in does not start the fight. The Ossuary stays a sealed grave
+    // until a rite is read inside it, so the first time here is a scouting trip
+    // through a mine rather than an ambush at the end of a cutscene. A banked
+    // wound is the one thing that resumes on its own — you cannot lose a fight
+    // to a loading screen.
+    if (Number.isFinite(this.dragonHP)) {
+      this.wakeSovereign(arena);
+    } else if (this.dragonSlain) {
       this.showToast('🕳️ Quiet as a church. The Sovereign you killed stays killed — read a 🦴 Rite of Bones here to wake another.');
     } else {
-      this.wakeSovereign(arena);
+      this.showToast('🕯️ Nothing stirs. The Sovereign is sealed under the bone-dust until a rite is read here — mine the seams and the deep, craft a Rite of Waking, and right-click it in the arena.');
     }
     this.showToast('🌌 The only way home is the 🕳️ Rift Gate on the west wall.');
     this.particles.magicSparkle(this.player.x, this.player.y, '#c4b5fd', 40);
@@ -4240,9 +4282,11 @@ class Game {
    * Stand a Sovereign up in the arena. `resumeHP` is the banked HP of a fight the
    * player walked out on; pass null (or leave it banked-empty) for a whole one.
    *
-   * Waking is never implicit: enterSpaceDimension calls this only while the first
-   * dragon is still unavenged, and every dragon after that has to be asked for by
-   * name and paid for in bones.
+   * Waking is never implicit. The only two callers are performBoneRite (a rite
+   * was read, bones were burned) and the re-entry branch of
+   * enterSpaceDimension, which resumes a wound the player already has rather
+   * than starting anything new. Nothing else in the game may call this: not a
+   * beacon, not a reload, not arriving in a cleared arena.
    */
   wakeSovereign(arena, resumeHP = this.dragonHP) {
     if (!arena) return null;
@@ -4345,9 +4389,12 @@ class Game {
     if (this.world.isInSpace()) {
       this.returnToOverworld();
       // Only a Sovereign that is still standing — or banked with damage on it —
-      // pulls you back in. Dying in an arena whose dragon you already killed
-      // just wakes you at home: the Ossuary waits there for a beacon.
-      if (!this.dragonSlain || Number.isFinite(this.dragonHP)) this.riftReturnDelay = 3.2;
+      // pulls you back in. Dying in a quiet Ossuary opens nothing: before the
+      // first rite is read there is no fight to be pulled into, and a player
+      // scouting the mine for ore must be free to die and simply come back.
+      if (Number.isFinite(this.dragonHP) || (this.boss && !this.boss.dead)) {
+        this.riftReturnDelay = 3.2;
+      }
     }
     const spawnX = Math.floor(this.world.width / 2) * TILE_SIZE;
     const spawnY = (this.world.surfaceHeights[Math.floor(this.world.width / 2)] - 3) * TILE_SIZE;

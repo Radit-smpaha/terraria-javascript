@@ -114,13 +114,24 @@ check('boss + wormhole classes exposed',
   typeof global.SkeletonDragonBoss === 'function' && typeof global.WormholeFX === 'function');
 const spaceItems = ['void_rift_beacon', 'nebula_crystal', 'meteor_shard',
   'dragonbone', 'dragon_trophy', 'void_star_blade', 'dragon_wings', 'voidscale_armor',
-  'rite_of_bones'];
+  'rite_of_waking', 'rite_of_bones'];
 for (const id of spaceItems) check('ITEMS.' + id, !!ITEMS[id]);
 const beaconRecipe = RECIPES.find(r => r.result && r.result.id === 'void_rift_beacon');
 check('beacon craftable', !!beaconRecipe);
 check('beacon recipe is finishable', !!beaconRecipe &&
   beaconRecipe.materials.every(m => !!ITEMS[m.id]),
   beaconRecipe ? beaconRecipe.materials.map(m => m.id + (ITEMS[m.id] ? '' : ' MISSING')).join(', ') : 'no recipe');
+// The FIRST Sovereign needs a rite too, and that rite has to be craftable from
+// things that exist before any dragon has died — otherwise the ritual gates the
+// game behind itself and the Ossuary is unenterable in practice.
+const wakingRecipe = RECIPES.find(r => r.result && r.result.id === 'rite_of_waking');
+check('the Rite of Waking is craftable', !!wakingRecipe);
+check('waking rite recipe is finishable', !!wakingRecipe &&
+  wakingRecipe.materials.every(m => !!ITEMS[m.id]),
+  wakingRecipe ? wakingRecipe.materials.map(m => m.id + (ITEMS[m.id] ? '' : ' MISSING')).join(', ') : 'no recipe');
+check('the first rite asks for no dragon trophies', !!wakingRecipe &&
+  !wakingRecipe.materials.some(m => /trophy|blade|armor|wings/.test(m.id)),
+  wakingRecipe ? wakingRecipe.materials.map(m => m.id).join(', ') : 'no recipe');
 const riteRecipe = RECIPES.find(r => r.result && r.result.id === 'rite_of_bones');
 check('the Rite of Bones is craftable', !!riteRecipe);
 check('rite recipe is finishable', !!riteRecipe &&
@@ -183,6 +194,22 @@ const ptx = g.player.x + g.player.width / 2;
 check('player dropped on the arena floor',
   ptx > ar.left * TILE_SIZE && ptx < ar.right * TILE_SIZE && g.player.y < ar.floorY * TILE_SIZE,
   'x=' + Math.round(ptx) + ' y=' + Math.round(g.player.y));
+// ---- THE RITE IS THE DOOR: arriving wakes nothing -------------------------
+// The Sovereign used to stand up the frame the rift tore open, which meant the
+// first trip to the Ossuary was a cutscene you got ambushed by. It is sealed
+// now: arrival is a scouting trip, and the fight starts when — and only when —
+// a rite is read on the arena floor.
+check('walking in does NOT wake the Sovereign', !g.boss && !g.dragonSlain);
+// The panel ships hidden in the real page; the harness builds elements lazily and
+// the game has not looked this one up yet (nothing woke a boss), so fetch it the
+// way the game does, pin it hidden, and prove that arriving — and refusing a
+// rite with empty hands — never reveals it.
+document.getElementById('boss-panel').classList.add('hidden');
+check('a rite with empty hands is refused', g.performBoneRite() === false && !g.boss);
+check('the boss bar stays down', !!els['boss-panel'] && els['boss-panel'].classList.contains('hidden'));
+g.addItem('rite_of_waking', 1);
+check('the rite is read in the arena', g.performBoneRite() === true);
+check('the candle is spent', g.countItem('rite_of_waking') === 0);
 check('the Sovereign wakes at full health',
   !!g.boss && g.boss.kind === 'dragon' && g.boss.hp === g.boss.maxHp);
 check('boss health bar shown', !!els['boss-panel'] && !els['boss-panel'].classList.contains('hidden'));
@@ -235,6 +262,67 @@ check('the sky is open behind the fight (no wall layer)', (() => {
   }
   return walled === 0;
 })());
+// ---- THE OSSUARY DEEP ----------------------------------------------------
+// The arena used to sit on a nine-row crust over raw void, so mining the space
+// dimension was worth about a minute. These lock in that there is now a real
+// mine under the arena: solid to the world floor, carved into chambers, and
+// richer the deeper it goes.
+(() => {
+  const W = g.world;
+  const fy = ar.floorY;
+  const tally = (y0, y1, wanted) => {
+    const out = {};
+    for (let x = 0; x < W.width; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const t = W.getTile(x, y);
+        if (wanted.indexOf(t) >= 0) out[t] = (out[t] || 0) + 1;
+      }
+    }
+    return out;
+  };
+  const ORE = [TILES.METEOR_ORE, TILES.NEBULA_CRYSTAL, TILES.SOUL_GLASS];
+  const sum = (o) => ORE.reduce((n, t) => n + (o[t] || 0), 0);
+  const shallowOre = sum(tally(fy + 1, fy + 9, ORE));
+  const deepOre = sum(tally(fy + 10, W.height - 1, ORE));
+  check('the mine runs from under the crust to the world floor',
+    deepOre > 600, 'deep ore tiles=' + deepOre);
+  check('the deep is worth more than the old crust band',
+    deepOre > shallowOre * 3, 'deep=' + deepOre + ' shallow=' + shallowOre);
+  // Ore has to thicken with depth, or "deeper" is only a longer walk.
+  const upper = sum(tally(fy + 10, fy + 15, ORE));
+  const lower = sum(tally(fy + 16, W.height - 1, ORE));
+  check('veins get richer the deeper you go', lower > upper,
+    'upper=' + upper + ' lower=' + lower);
+  // It has to be somewhere you can go, not a wall of rock.
+  let chambers = 0;
+  for (let x = 0; x < W.width; x++) {
+    for (let y = fy + 12; y < W.height - 1; y++) {
+      if (W.getTile(x, y) === TILES.AIR) chambers++;
+    }
+  }
+  check('the deep is carved into open chambers', chambers > 800, 'air tiles=' + chambers);
+  // And there must be no way to fall out of the world from down here.
+  let holes = 0;
+  for (let x = 0; x < W.width; x++) {
+    if (W.getTile(x, W.height - 1) === TILES.AIR) holes++;
+  }
+  check('there is no hole out of the bottom of the world', holes === 0, holes + ' holes');
+  // The rune lanterns are what make a deep chamber navigable at all.
+  let deepRunes = 0;
+  for (let x = 0; x < W.width; x++) {
+    for (let y = fy + 10; y < W.height - 1; y++) {
+      if (W.getTile(x, y) === TILES.SPACE_RUNE) deepRunes++;
+    }
+  }
+  check('the deep is lit by rune lanterns', deepRunes >= 10, 'lanterns=' + deepRunes);
+  // Nothing above may have changed: the crust is the duelling platform.
+  let crustHoles = 0;
+  for (let x = ar.left + 2; x <= ar.right - 2; x++) {
+    if (W.getTile(x, fy) === TILES.AIR) crustHoles++;
+  }
+  check('the arena floor is still unbroken above the mine', crustHoles === 0,
+    crustHoles + ' gaps');
+})();
 // Weather: frozen from the moment the player is actually in the Ossuary. (During
 // the crossing itself the player is still under the home sky, so the clock is
 // allowed to run.)

@@ -27,7 +27,13 @@ GAME_SCRIPTS = [
     "terraria.js",
 ]
 GITHUB_FALLBACK = "https://radit-smpaha.github.io/terraria-javascript/terraria.html"
-GAME_HEIGHT = 850  # iframe px height; game fills it via 100vh. Raise if hotbar is cut off.
+# The game fills 100vh of whatever frame it is given, so the frame has to be
+# sized to the WINDOW, not to a fixed pixel count. 850px was taller than a
+# laptop viewport, which put the bottom of the arena - the hotbar - below the
+# fold and made the player scroll to reach it. This is only the pre-CSS
+# fallback; the stylesheet below overrides the rendered height to calc(100vh -
+# 60px) so the game always fits the screen it is actually on.
+GAME_HEIGHT = 640
 
 st.set_page_config(
     page_title="Terracraft",
@@ -49,6 +55,31 @@ st.markdown(
     iframe {
         background: #000;
     }
+    /* ---- Fit the game to the window --------------------------------------
+       The whole game (canvas AND the hotbar pinned to its bottom edge) lives
+       inside this one iframe, and the game itself is already height:100vh
+       with overflow:hidden. So the only thing that can push the hotbar off
+       screen is the frame being taller than the browser viewport - which is
+       what the old fixed 850px height did on any laptop. Override the
+       rendered height with the viewport height instead. calc(100vh - 60px)
+       leaves room for Streamlit's own top gap and its resize bar so the
+       frame never overflows the page and never needs scrolling. vh first,
+       dvh where supported (mobile browser chrome changes the visible height).
+       min-height keeps a very short window playable rather than collapsing
+       the hotbar into nothing. */
+    iframe {
+        display: block !important;
+        width: 100% !important;
+        height: calc(100vh - 60px) !important;
+        height: calc(100dvh - 60px) !important;
+        min-height: 320px;
+        border: 0 !important;
+    }
+    /* Kill the vertical gap Streamlit puts between blocks, and stop the app
+       itself from scrolling (the game supplies its own scrolling-free view). */
+    [data-testid="stVerticalBlock"] { gap: 0 !important; }
+    [data-testid="stAppViewContainer"] { overflow: hidden !important; }
+    .stElementContainer { padding: 0 !important; }
 </style>
 """,
     unsafe_allow_html=True,

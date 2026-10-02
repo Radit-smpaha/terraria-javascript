@@ -36,8 +36,13 @@ const REQUIRED = [
 // marker: [file, substring that must exist, human description]
 const MARKERS = [
   ['space.js', 'SkeletonDragonBoss', 'the Ossuary Sovereign boss'],
+  ['space.js', 'THE OSSUARY DEEP', 'the mine under the arena'],
+  ['space.js', 'DEEP_RICH', 'ore that thickens with depth'],
+  ['terraria.html', 'WAKING THE SOVEREIGN', 'the in-game ritual instructions'],
   ['terraria.html', 'space.js', 'terraria.html loads the space module'],
   ['app.py', '"space.js"', 'app.py inlines space.js into the Streamlit page'],
+  ['app.py', 'calc(100vh - 60px)', 'the game frame fits the window (hotbar was cut off)'],
+  ['terraria.js', 'rite_of_waking', 'the Rite of Waking opens the grave'],
   ['terraria.js', 'enterSpaceDimension', 'the wormhole dimension plumbing'],
   ['terraria.js', 'dragon_wings', 'the Sovereign drops Dragon Wings'],
   ['terraria.js', 'equippedAccessoryId', 'the accessory slot (wings) saves/loads'],

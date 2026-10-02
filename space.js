@@ -128,6 +128,147 @@ World.prototype.generateSpaceArena = function() {
     }
   }
 
+  // ---- THE OSSUARY DEEP: the mine under the arena -------------------------
+  // The arena used to sit on a nine-row crust with raw void underneath it, so
+  // "go and mine in the space dimension" was worth about a minute of work.
+  // This is the reason to dig: a solid body of rock from the crust all the way
+  // down to the world floor, carved into chambers and shafts, seeded with ore
+  // that gets richer the deeper you go, and lit well enough to navigate by.
+  //
+  // The same two rules as the arena above still hold without exception:
+  //   * NOTHING written here is ever inside the flight box. Every tile below
+  //     is at y >= floorY and the Sovereign's clamp STOPS at the crust, so no
+  //     amount of new rock can end up in a lane it flies down.
+  //   * The crust row (floorY) is left exactly as generated above it, so the
+  //     duelling platform stays unbroken. You break into the deep yourself.
+  const DEEP_TOP = floorY + 10;          // where the old crust band ran out
+  const DEEP_BOTTOM = h - 1;             // the world floor: no hole out of it
+  // Full world width on purpose. The rune pillars stop you ever leaving the
+  // arena from above, but once you are down here you can tunnel sideways
+  // through solid rock — so the body has to run the whole way across or a
+  // player can walk out of the mine into the old void and fall out of the
+  // world. It includes the two border columns, which nothing else here ever
+  // writes. There is no floor beneath this but more floor.
+  const dLeft = 0;
+  const dRight = w - 1;
+  // The deep proper: rich enough to be worth the climb back down.
+  const DEEP_RICH = 12;
+
+  // ---- 1. The rock body -------------------------------------------------
+  for (let x = dLeft; x <= dRight; x++) {
+    for (let y = DEEP_TOP; y <= DEEP_BOTTOM; y++) {
+      const depth = y - floorY;
+      const rich = depth >= DEEP_RICH;
+      // Two overlapping sine fields wander instead of speckling, so the seams
+      // read as geology rather than static.
+      const seamA = Math.sin(x * 0.17 + depth * 0.42) + Math.cos(x * 0.07 - depth * 0.23);
+      const seamB = Math.sin(x * 0.41 - depth * 0.61);
+      const roll = rng();
+      let tile = TILES.VOID_STONE;
+      if (seamA > 1.55) tile = TILES.METEOR_ORE;
+      else if (seamB < -1.45) tile = TILES.NEBULA_CRYSTAL;
+      else if (rich && roll < 0.10) tile = TILES.SOUL_GLASS;
+      else if (roll < (rich ? 0.08 : 0.035)) tile = TILES.BONE_PILE;
+      this.setTile(x, y, tile);
+    }
+  }
+
+  const carve = (x, y) => {
+    // The world-floor row is never carved: it is the bottom of the mine, and a
+    // chamber that breached it would drop the player out of the world.
+    if (x < dLeft || x > dRight || y < DEEP_TOP || y >= DEEP_BOTTOM) return;
+    this.setTile(x, y, TILES.AIR);
+  };
+
+  // ---- 2. Chambers, joined by tunnels -----------------------------------
+  // Somewhere to find, not a solid wall to chew through. Room edges are
+  // wobbled per-tile so they are not obvious ellipses.
+  const rooms = [];
+  for (let i = 0; i < 18; i++) {
+    const room = {
+      cx: Math.round(dLeft + 4 + rng() * Math.max(1, dRight - dLeft - 8)),
+      cy: Math.round(DEEP_TOP + 3 + rng() * Math.max(2, DEEP_BOTTOM - DEEP_TOP - 6)),
+      rx: 4 + Math.round(rng() * 6),
+      ry: 2 + Math.round(rng() * 3)
+    };
+    rooms.push(room);
+    for (let y = room.cy - room.ry; y <= room.cy + room.ry; y++) {
+      for (let x = room.cx - room.rx; x <= room.cx + room.rx; x++) {
+        const nx = (x - room.cx) / room.rx;
+        const ny = (y - room.cy) / room.ry;
+        if (nx * nx + ny * ny < 0.72 + rng() * 0.45) carve(x, y);
+      }
+    }
+  }
+  // Two-tile corridors on an L between neighbouring rooms: wide enough to
+  // walk and fall down, narrow enough that it still reads as a mine tunnel.
+  for (let i = 1; i < rooms.length; i++) {
+    const a = rooms[i - 1];
+    const b = rooms[i];
+    let x = a.cx;
+    let y = a.cy;
+    while (x !== b.cx) { x += Math.sign(b.cx - x); carve(x, y); carve(x, y + 1); }
+    while (y !== b.cy) { y += Math.sign(b.cy - y); carve(x, y); carve(x + 1, y); }
+  }
+
+  // ---- 3. The shaft -----------------------------------------------------
+  // One drop straight down from under the middle of the arena, so breaking
+  // through the crust lands you in the mine instead of in a dead end. It
+  // starts at floorY + 2, which leaves the arena floor itself untouched.
+  const shaftX = Math.round((dLeft + dRight) / 2 + (rng() - 0.5) * 24);
+  let shaftEnd = DEEP_TOP + 4;
+  let bestRoom = rooms[0];
+  for (const room of rooms) {
+    if (Math.abs(room.cx - shaftX) < Math.abs(bestRoom.cx - shaftX)) bestRoom = room;
+  }
+  if (bestRoom && bestRoom.cy > DEEP_TOP + 4) shaftEnd = bestRoom.cy;
+  for (let y = floorY + 2; y <= shaftEnd; y++) {
+    carve(shaftX, y);
+    carve(shaftX + 1, y);
+    // A rest notch every other row. This shaft is the one place a player can
+    // end up under the arena with nothing beneath them, so it is stepped
+    // rather than sheer: two tiles per step goes up on a plain jump, with no
+    // wings and no platforms of your own. Nobody gets stranded in the mine.
+    if ((y - floorY) % 2 === 0) carve(shaftX + 2, y);
+  }
+
+  // ---- 4. Exposed veins on the cave surfaces ----------------------------
+  // The rock the caves cut through is where the good ore SHOWS. Anything
+  // solid with air against it gets a depth-scaled roll, so every chamber is
+  // ringed with metal you can see rather than rock you have to trust.
+  const DEEP_NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (let x = dLeft; x <= dRight; x++) {
+    for (let y = DEEP_TOP; y <= DEEP_BOTTOM; y++) {
+      const tile = this.getTile(x, y);
+      if (tile === TILES.AIR || tile === TILES.METEOR_ORE ||
+        tile === TILES.NEBULA_CRYSTAL) continue;
+      let exposed = false;
+      for (const [dx, dy] of DEEP_NEIGHBOURS) {
+        if (this.getTile(x + dx, y + dy) === TILES.AIR) { exposed = true; break; }
+      }
+      if (!exposed) continue;
+      const depth = y - floorY;
+      const rich = depth >= DEEP_RICH ? 0.17 : depth >= 6 ? 0.10 : 0.05;
+      const roll = rng();
+      if (roll < rich) this.setTile(x, y, TILES.METEOR_ORE);
+      else if (roll < rich * 2.0) this.setTile(x, y, TILES.NEBULA_CRYSTAL);
+      else if (depth >= DEEP_RICH + 2 && roll < rich * 2.5) this.setTile(x, y, TILES.SOUL_GLASS);
+    }
+  }
+
+  // ---- 5. Ledges and lanterns -------------------------------------------
+  // One-way star platforms so the deep is climbable back out before you craft
+  // your own, and a rune brick hanging in each room: indestructible, and the
+  // only thing lighting a chamber too deep for its own ore to glow.
+  for (const room of rooms) {
+    for (let k = 0; k < 3; k++) {
+      const lx = Math.round(room.cx - room.rx + 1 + rng() * Math.max(1, room.rx * 2 - 2));
+      const ly = room.cy - room.ry + 1 + Math.round(rng() * Math.max(1, room.ry * 2 - 2));
+      this.setTile(lx, ly, TILES.VOID_PLATFORM);
+    }
+    this.setTile(Math.round(room.cx), room.cy - room.ry, TILES.SPACE_RUNE);
+  }
+
   // ---- Rune pillars on both flanks (indestructible; they frame the arena) ----
   // They stand one tile OUTSIDE the boss clamp and their capitals lean away
   // from the fight, so no rune brick can ever sit in the lane the serpent

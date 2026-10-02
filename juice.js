@@ -882,7 +882,25 @@ function describeItem(id, game) {
     rows.push({ label: 'Use', value: 'Right-click under open sky — tears a wormhole to the Ossuary' });
   }
   if (item.dragonRite) {
-    rows.push({ label: 'Use', value: 'Right-click inside the Ossuary — burns the bones and wakes a new Sovereign' });
+    rows.push({
+      label: 'Use',
+      value: item.id === 'rite_of_waking'
+        ? 'Right-click inside the Ossuary — the grave opens and the first Sovereign rises'
+        : 'Right-click inside the Ossuary — burns the bones and wakes a new Sovereign'
+    });
+    // The recipe is the whole instruction. A player who cannot see what the
+    // rite costs, or that nothing else will do it for them, never performs it.
+    const riteRecipe = (typeof RECIPES !== 'undefined' ? RECIPES : [])
+      .find(r => r.result && r.result.id === item.id);
+    if (riteRecipe) {
+      rows.push({
+        label: 'Needs',
+        value: riteRecipe.materials
+          .map(m => `${m.count}× ${ITEMS[m.id] ? ITEMS[m.id].name : m.id}`)
+          .join(', ')
+      });
+    }
+    rows.push({ label: 'Where', value: 'Only inside the Ossuary — nothing you carry wakes it from home' });
   }
   if (item.hunger) rows.push({ label: 'Fills', value: `+${item.hunger} hunger` });
   if (item.mana) rows.push({ label: 'Restores', value: `+${item.mana} mana` });

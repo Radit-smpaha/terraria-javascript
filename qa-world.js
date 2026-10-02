@@ -447,7 +447,13 @@ const toHome = () => {
 };
 
 check('the rift opens from the meadow with open sky', toSpace() === true);
-check('the Sovereign wakes on the first visit',
+// The Sovereign is sealed. Arriving finds a mine, not a boss — the fight is
+// something the player performs with a rite, not something that happens to
+// them when the rift tears open.
+check('walking into the Ossuary wakes nothing', !g.boss && g.dragonSlain === false);
+g.addItem('rite_of_waking', 1);
+check('the rite opens the grave', g.performBoneRite() === true);
+check('the Sovereign rises whole',
   !!g.boss && g.boss.kind === 'dragon' && g.dragonSlain === false);
 
 // ---- Kill it. ----
