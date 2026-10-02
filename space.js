@@ -889,11 +889,6 @@ World.prototype.renderLighting = function(lightCtx, camera, player, entities) {
   if (!this.isInSpace()) return BASE_RENDER_LIGHTING.call(this, lightCtx, camera, player, entities);
   BASE_RENDER_LIGHTING.call(this, lightCtx, camera, player, entities);
 
-  const minX = Math.max(0, Math.floor(camera.x / TILE_SIZE) - 2);
-  const maxX = Math.min(this.width - 1, Math.ceil((camera.x + camera.viewportWidth) / TILE_SIZE) + 2);
-  const minY = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 2);
-  const maxY = Math.min(this.height - 1, Math.ceil((camera.y + camera.viewportHeight) / TILE_SIZE) + 2);
-
   lightCtx.save();
   lightCtx.globalCompositeOperation = 'source-over';
   // Only a light veil. The old 0.55 crushes the star backdrop into a cave
@@ -961,10 +956,6 @@ World.prototype.renderGlow = function(glowCtx, camera, player, entities = []) {
   if ((this.glowScale ?? 1) <= 0 || !this.isInSpace()) return;
 
   const t = Date.now() * 0.001;
-  const minX = Math.max(0, Math.floor(camera.x / TILE_SIZE) - 2);
-  const maxX = Math.min(this.width - 1, Math.ceil((camera.x + camera.viewportWidth) / TILE_SIZE) + 2);
-  const minY = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 2);
-  const maxY = Math.min(this.height - 1, Math.ceil((camera.y + camera.viewportHeight) / TILE_SIZE) + 2);
 
   // Tile bloom, baked per chunk. These blobs DO breathe, but on a 2.4s sine -
   // far too slow to notice being refreshed a few times a second instead of 60,

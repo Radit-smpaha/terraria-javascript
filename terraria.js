@@ -361,509 +361,6 @@ const NEW_ITEMS = {
 Object.assign(ITEMS, NEW_ITEMS);
 
 // ============================================================
-// ITEM ART — every item drawn, not typed as an emoji
-// ============================================================
-//
-// The whole inventory used to be a wall of emoji: a bone pile was "🦴", the
-// Sovereign's own blade was "⚔️", and those glyphs are indistinguishable from
-// any other sword-shaped glyph in the font, render differently on every OS, and
-// vanish entirely on a machine with no colour-emoji font. The player could not
-// tell a Voidstar Cleaver from a Rusty Shortsword at a glance.
-//
-// So items are now PAINTED. Each icon is drawn from the item's own type and a
-// per-item colour table, into a small offscreen canvas, and cached as a data
-// URL. The emoji is kept strictly as a fallback for an id we have no art for,
-// so an unrecognised item still renders as something rather than nothing.
-
-// Base + accent colour per item. Anything missing falls back to the tile's own
-// colour, then to neutral grey, so a new item is never invisible.
-const ITEM_ART_COLORS = {
-  dirt: ['#8b5a2b', '#6b4420'], stone: ['#8a8f98', '#5f646d'],
-  wood: ['#92400e', '#6b300a'], planks: ['#c98a3c', '#9a6524'],
-  cobblestone: ['#7d838c', '#565b63'], brick_block: ['#b4553f', '#8a3c2c'],
-  polished_stone: ['#c3cad3', '#98a0ab'], sandstone_brick: ['#e0bf7a', '#bfa061'],
-  hay_block: ['#d4a017', '#a16207'], wool_block: ['#f5f5f4', '#d6d3d1'],
-  ice_block: ['#a5e8f5', '#67c7dd'], bookshelf: ['#7c4a1e', '#5a3413'],
-  slate_brick: ['#475569', '#334155'], thatch: ['#ca8a04', '#854d0e'],
-  marble: ['#e7e5e4', '#b8b5b2'], bamboo: ['#84cc16', '#65a30d'],
-  copper_block: ['#b87333', '#8a5424'], snow_block: ['#e0f2fe', '#bae6fd'],
-  sand_block: ['#e7c76b', '#c9a227'], mud_block: ['#6b4423', '#4a2f18'],
-  glass_block: ['#bae6fd', '#7dd3fc'], obsidian_block: ['#3f3f46', '#27272a'],
-  castle_brick: ['#9ca3af', '#6b7280'], demon_brick: ['#7f1d1d', '#450a0a'],
-  star_platform: ['#818cf8', '#4f46e5'], void_platform: ['#818cf8', '#4f46e5'],
-  iron_ore: ['#b87333', '#8a5424'], gold_ore: ['#facc15', '#ca8a04'],
-  diamond: ['#67e8f9', '#22d3ee'], crystal: ['#a78bfa', '#7c3aed'],
-  rainbow_ore: ['#f472b6', '#8b5cf6'], fallen_star: ['#fde68a', '#fbbf24'],
-  hellstone: ['#f97316', '#c2410c'], acorn: ['#d97706', '#92400e'],
-  apple: ['#fb7185', '#e11d48'], wool: ['#f8fafc', '#d6d3d1'],
-  raw_mutton: ['#fb923c', '#c2410c'], meteor_shard: ['#fb923c', '#c2410c'],
-  nebula_crystal: ['#e879f9', '#a21caf'], glass: ['#bae6fd', '#7dd3fc'],
-  bone: ['#f5f5f4', '#a8a29e'], dragonbone: ['#e7e5e4', '#a8a29e'],
-  demon_soul: ['#f87171', '#7f1d1d'],
-  copper_pickaxe: ['#d97706', '#92400e'], copper_sword: ['#d97706', '#92400e'],
-  iron_broadsword: ['#cbd5e1', '#94a3b8'], silver_saber: ['#e2e8f0', '#94a3b8'],
-  starlight_bow: ['#fbbf24', '#b45309'], forest_wand: ['#4ade80', '#166534'],
-  crystal_spear: ['#a78bfa', '#6d28d9'], ember_bow: ['#fb923c', '#c2410c'],
-  moon_staff: ['#c7d2fe', '#4f46e5'], diamond_blade: ['#67e8f9', '#0891b2'],
-  hellstone_greatblade: ['#fb923c', '#9a3412'], soulfire_repeater: ['#f87171', '#7f1d1d'],
-  abyssal_staff: ['#2dd4bf', '#0f766e'], void_star_blade: ['#c084fc', '#6d28d9'],
-  ossuary_blade: ['#e7e5e4', '#78716c'], prismatic_saber: ['#f0abfc', '#a855f7'],
-  aurora_blade: ['#67e8f9', '#c084fc'],
-  iron_armor: ['#cbd5e1', '#64748b'], gold_armor: ['#facc15', '#ca8a04'],
-  diamond_armor: ['#67e8f9', '#0e7490'], crystal_armor: ['#a78bfa', '#5b21b6'],
-  rainbow_armor: ['#f472b6', '#7e22ce'], fallen_star_armor: ['#fde68a', '#d97706'],
-  voidscale_armor: ['#a78bfa', '#1e1b4b'], demon_armor: ['#f87171', '#450a0a'],
-  ossuary_armor: ['#e7e5e4', '#292524'],
-  angel_wings: ['#f8fafc', '#c7d2fe'], dragon_wings: ['#c4b5fd', '#4c1d95'],
-  healing_potion: ['#f87171', '#b91c1c'], life_crystal: ['#fb7185', '#9f1239'],
-  mana_crystal: ['#818cf8', '#3730a3'], swiftness_potion: ['#4ade80', '#15803d'],
-  ironskin_potion: ['#94a3b8', '#334155'], wrath_potion: ['#ef4444', '#7f1d1d'],
-  regeneration_potion: ['#4ade80', '#166534'], bomb: ['#1f2937', '#6b7280'],
-  campfire: ['#fb923c', '#7c2d12'], chest: ['#b45309', '#78350f'],
-  bed: ['#f472b6', '#9f1239'], torch: ['#fbbf24', '#c2410c'],
-  lantern: ['#fbbf24', '#b45309'], arrow: ['#d6b58a', '#92400e'],
-  dragon_trophy: ['#fbbf24', '#b45309'], demon_trophy: ['#ef4444', '#7f1d1d'],
-  guardian_trophy: ['#38b764', '#14532d'],
-  rite_of_waking: ['#fbbf24', '#b45309'], rite_of_bones: ['#e7e5e4', '#78716c'],
-  void_rift_beacon: ['#22d3ee', '#0e7490'],
-  backpack_small: ['#a16207', '#713f12'], backpack_mid: ['#854d0e', '#5a3413'],
-  backpack_large: ['#78350f', '#451a03']
-};
-
-/** Which silhouette to draw for an item. Shape beats colour for recognition. */
-function itemArtShape(id, item) {
-  if (!item) return 'nugget';
-  if (id === 'dragonbone' || id === 'bone') return 'bone';
-  if (item.type === 'backpack') return 'pack';
-  if (id === 'rite_of_bones') return 'skull';
-  if (id === 'rite_of_waking' || id === 'campfire' || id === 'torch' ||
-      id === 'lantern') return 'candle';
-  if (id === 'void_rift_beacon') return 'rune';
-  if (/_trophy$/.test(id)) return 'trophy';
-  if (item.grantsFlight) return 'wings';
-  if (item.type === 'armor') return 'armor';
-  if (item.type === 'ammo') return 'arrow';
-  if (item.type === 'tool') return 'pick';
-  if (item.type === 'weapon') {
-    if (item.weaponType === 'ranged') return 'bow';
-    if (item.weaponType === 'magic') return 'staff';
-    if (item.weaponType === 'melee') return 'sword';
-  }
-  if (item.type === 'consumable') {
-    if (item.heal || item.hunger || item.mana || item.buff || item.maxHpBonus ||
-        item.maxManaBonus) return 'flask';
-    return 'orb';
-  }
-  if (id === 'fallen_star') return 'star';
-  if (id === 'apple') return 'apple';
-  if (id === 'acorn') return 'acorn';
-  if (item.type === 'tile') {
-    const prop = TILE_PROPERTIES[item.tile];
-    if (prop && prop.isPlatform) return 'platform';
-    if (/_ore$|_shard$|crystal|diamond|gem|glass/.test(id)) return 'gem';
-    return 'block';
-  }
-  return 'nugget';
-}
-
-/** Lighten (positive) or darken (negative) a hex colour. */
-function shade(hex, amount) {
-  const n = parseInt(String(hex).replace('#', ''), 16);
-  if (!Number.isFinite(n)) return hex;
-  const clamp = (v) => Math.max(0, Math.min(255, v));
-  return `rgb(${clamp(((n >> 16) & 255) + amount)},${clamp(((n >> 8) & 255) + amount)},${clamp((n & 255) + amount)})`;
-}
-
-/**
- * Paint one item icon into `ctx`, filling a size x size box. Designs on a fixed
- * 40x40 grid so every shape scales to any slot. Returns true if it drew.
- */
-function paintItemIcon(ctx, id, size = 40) {
-  if (!ctx) return false;
-  const item = ITEMS[id];
-  const table = ITEM_ART_COLORS[id];
-  const tileColor = item && item.tile && TILE_PROPERTIES[item.tile]
-    ? TILE_PROPERTIES[item.tile].color : null;
-  const base = (table && table[0]) || tileColor || '#94a3b8';
-  const accent = (table && table[1]) || shade(base, -60);
-  const shape = itemArtShape(id, item);
-
-  ctx.save();
-  ctx.scale(size / 40, size / 40);
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
-  switch (shape) {
-    case 'sword': {
-      // Blade, fuller, crossguard, wrapped grip, pommel — a real sword, so the
-      // Sovereign's Voidstar Cleaver is distinguishable from a copper shortsword.
-      ctx.fillStyle = accent;
-      ctx.beginPath();
-      ctx.moveTo(20, 3); ctx.lineTo(24, 9); ctx.lineTo(24, 24);
-      ctx.lineTo(16, 24); ctx.lineTo(16, 9); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = base;
-      ctx.fillRect(17, 10, 2, 13);
-      ctx.fillStyle = shade(base, 70);
-      ctx.beginPath();
-      ctx.moveTo(16, 8); ctx.lineTo(20, 3); ctx.lineTo(24, 8); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = accent;
-      ctx.fillRect(11, 24, 18, 3);
-      ctx.fillStyle = shade(accent, -30);
-      ctx.fillRect(18, 27, 4, 8);
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.arc(20, 36, 3, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'bow': {
-      ctx.strokeStyle = base; ctx.lineWidth = 3.4;
-      ctx.beginPath(); ctx.arc(24, 20, 13, -2.5, 2.5); ctx.stroke();
-      ctx.strokeStyle = shade(base, 60); ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(17.4, 8.6); ctx.lineTo(17.4, 31.4); ctx.stroke();
-      ctx.strokeStyle = accent; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(10, 20); ctx.lineTo(30, 20); ctx.stroke();
-      ctx.fillStyle = shade(base, 40);
-      ctx.beginPath(); ctx.moveTo(30, 20); ctx.lineTo(25, 17); ctx.lineTo(25, 23); ctx.closePath(); ctx.fill();
-      break;
-    }
-    case 'staff': {
-      ctx.strokeStyle = accent; ctx.lineWidth = 3.2;
-      ctx.beginPath(); ctx.moveTo(14, 37); ctx.lineTo(23, 15); ctx.stroke();
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.arc(25, 11, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = shade(base, 90);
-      ctx.beginPath(); ctx.arc(23.5, 9.5, 2.2, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = shade(base, 50); ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.arc(25, 11, 8.5, 0, Math.PI * 2); ctx.stroke();
-      break;
-    }
-    case 'pick': {
-      ctx.strokeStyle = accent; ctx.lineWidth = 3.4;
-      ctx.beginPath(); ctx.moveTo(13, 37); ctx.lineTo(24, 14); ctx.stroke();
-      ctx.strokeStyle = base; ctx.lineWidth = 4.2;
-      ctx.beginPath();
-      ctx.moveTo(11, 15);
-      ctx.quadraticCurveTo(24, 6, 37, 15);
-      ctx.stroke();
-      ctx.fillStyle = shade(base, 60);
-      ctx.beginPath(); ctx.arc(24, 13, 2.4, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'arrow': {
-      ctx.strokeStyle = accent; ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.moveTo(8, 32); ctx.lineTo(28, 12); ctx.stroke();
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.moveTo(32, 8); ctx.lineTo(24, 11); ctx.lineTo(29, 16); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(accent, 40);
-      ctx.beginPath(); ctx.moveTo(8, 32); ctx.lineTo(13, 28); ctx.lineTo(12, 34); ctx.closePath(); ctx.fill();
-      break;
-    }
-    case 'flask': {
-      ctx.fillStyle = shade(base, -30);
-      ctx.beginPath();
-      ctx.moveTo(17, 8); ctx.lineTo(17, 15);
-      ctx.lineTo(10, 28); ctx.quadraticCurveTo(8, 36, 20, 36);
-      ctx.quadraticCurveTo(32, 36, 30, 28); ctx.lineTo(23, 15);
-      ctx.lineTo(23, 8); ctx.closePath(); ctx.fill();
-      ctx.save(); ctx.clip();
-      ctx.fillStyle = base;
-      ctx.fillRect(8, 20, 24, 18);
-      ctx.fillStyle = shade(base, 60);
-      ctx.fillRect(8, 20, 24, 2);
-      ctx.restore();
-      ctx.fillStyle = shade(accent, 40);
-      ctx.fillRect(16, 5, 8, 4);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(13, 18, 3, 12);
-      break;
-    }
-    case 'orb':
-    case 'gem': {
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.moveTo(20, 5); ctx.lineTo(32, 15); ctx.lineTo(20, 35); ctx.lineTo(8, 15);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(base, 70);
-      ctx.beginPath();
-      ctx.moveTo(20, 5); ctx.lineTo(32, 15); ctx.lineTo(20, 20); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(accent, -20);
-      ctx.beginPath();
-      ctx.moveTo(20, 20); ctx.lineTo(32, 15); ctx.lineTo(20, 35); ctx.closePath(); ctx.fill();
-      break;
-    }
-    case 'star': {
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const ang = -Math.PI / 2 + i * Math.PI / 5;
-        const r = i % 2 === 0 ? 15 : 6.5;
-        if (i === 0) ctx.moveTo(20 + Math.cos(ang) * r, 20 + Math.sin(ang) * r);
-        else ctx.lineTo(20 + Math.cos(ang) * r, 20 + Math.sin(ang) * r);
-      }
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(base, 80);
-      ctx.beginPath(); ctx.arc(17, 17, 3, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'bone': {
-      // A real bone: shaft with two knuckle ends.
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.moveTo(12, 26); ctx.lineTo(28, 14);
-      ctx.lineTo(31, 18); ctx.lineTo(15, 30); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.arc(11, 28, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(29, 12, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = shade(base, -35);
-      ctx.beginPath(); ctx.arc(11, 28, 2.4, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(29, 12, 2.4, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'skull': {
-      // The Sovereign's own dead, for the Rite of Bones.
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.ellipse(20, 18, 12, 11, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillRect(13, 24, 14, 8);
-      ctx.fillStyle = '#1c1917';
-      ctx.beginPath(); ctx.ellipse(15.5, 17, 3.4, 3.8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(24.5, 17, 3.4, 3.8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillRect(19, 21, 2, 4);
-      ctx.fillStyle = shade(base, -40);
-      for (let i = 0; i < 4; i++) ctx.fillRect(14 + i * 3.4, 27, 2, 5);
-      break;
-    }
-    case 'wings': {
-      ctx.fillStyle = base;
-      for (const dir of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(20, 22);
-        ctx.quadraticCurveTo(20 + dir * 16, 8, 20 + dir * 15, 26);
-        ctx.quadraticCurveTo(20 + dir * 11, 22, 20 + dir * 9, 31);
-        ctx.quadraticCurveTo(20 + dir * 6, 25, 20, 22);
-        ctx.closePath(); ctx.fill();
-      }
-      ctx.fillStyle = shade(accent, -10);
-      ctx.beginPath(); ctx.ellipse(20, 22, 3, 5, 0, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'armor': {
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.moveTo(9, 13); ctx.lineTo(16, 9); ctx.lineTo(24, 9); ctx.lineTo(31, 13);
-      ctx.lineTo(29, 30); ctx.lineTo(20, 36); ctx.lineTo(11, 30);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = shade(accent, -20); ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(20, 11); ctx.lineTo(20, 35); ctx.stroke();
-      ctx.fillStyle = shade(base, 70);
-      ctx.fillRect(12, 14, 6, 4);
-      break;
-    }
-    case 'pack': {
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.moveTo(11, 16); ctx.quadraticCurveTo(20, 10, 29, 16);
-      ctx.lineTo(32, 34); ctx.quadraticCurveTo(20, 38, 8, 34);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(accent, -10);
-      ctx.fillRect(9, 22, 22, 6);
-      ctx.fillStyle = shade(base, 70);
-      ctx.fillRect(17, 20, 6, 10);
-      ctx.strokeStyle = accent; ctx.lineWidth = 2.6;
-      ctx.beginPath(); ctx.arc(20, 16, 7, Math.PI, 0); ctx.stroke();
-      break;
-    }
-    case 'trophy': {
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.moveTo(11, 8); ctx.lineTo(29, 8); ctx.lineTo(27, 20);
-      ctx.quadraticCurveTo(20, 27, 13, 20); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = accent;
-      ctx.fillRect(18, 24, 4, 7);
-      ctx.fillRect(13, 31, 14, 4);
-      ctx.strokeStyle = base; ctx.lineWidth = 2.4;
-      ctx.beginPath(); ctx.arc(11, 13, 4, 1.6, 4.7); ctx.stroke();
-      ctx.beginPath(); ctx.arc(29, 13, 4, -1.6, 1.6); ctx.stroke();
-      break;
-    }
-    case 'candle': {
-      ctx.fillStyle = base;
-      ctx.fillRect(16, 17, 8, 18);
-      ctx.fillStyle = shade(base, -25);
-      ctx.fillRect(16, 17, 8, 3);
-      ctx.fillStyle = '#fbbf24';
-      ctx.beginPath();
-      ctx.moveTo(20, 5); ctx.quadraticCurveTo(25, 11, 20, 16);
-      ctx.quadraticCurveTo(15, 11, 20, 5); ctx.fill();
-      ctx.fillStyle = '#fef3c7';
-      ctx.beginPath(); ctx.ellipse(20, 11, 2, 3.4, 0, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'rune': {
-      ctx.fillStyle = accent;
-      ctx.beginPath(); ctx.arc(20, 20, 14, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.arc(20, 20, 10, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = accent; ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.moveTo(20, 10); ctx.lineTo(20, 30);
-      ctx.moveTo(13, 15); ctx.lineTo(27, 25);
-      ctx.moveTo(27, 15); ctx.lineTo(13, 25);
-      ctx.stroke();
-      break;
-    }
-    case 'platform': {
-      ctx.fillStyle = base; ctx.fillRect(4, 18, 32, 5);
-      ctx.fillStyle = shade(base, -30);
-      for (let i = 0; i < 5; i++) ctx.fillRect(6 + i * 6.4, 18, 2, 5);
-      break;
-    }
-    case 'apple': {
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.arc(20, 24, 11, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#65a30d';
-      ctx.fillRect(19, 8, 2.5, 6);
-      ctx.beginPath(); ctx.ellipse(25, 11, 5, 2.6, -0.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.beginPath(); ctx.arc(15, 20, 3, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case 'acorn': {
-      ctx.fillStyle = base;
-      ctx.beginPath(); ctx.ellipse(20, 24, 9, 11, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = accent;
-      ctx.beginPath(); ctx.ellipse(20, 15, 11, 5, 0, Math.PI, 0); ctx.fill();
-      ctx.fillStyle = '#65a30d';
-      ctx.fillRect(19, 6, 2.4, 6);
-      break;
-    }
-    case 'nugget': {
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.moveTo(11, 22); ctx.lineTo(17, 12); ctx.lineTo(29, 15);
-      ctx.lineTo(31, 26); ctx.lineTo(20, 32); ctx.lineTo(10, 28);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(base, 70);
-      ctx.beginPath();
-      ctx.moveTo(17, 12); ctx.lineTo(29, 15); ctx.lineTo(21, 21); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(accent, -20);
-      ctx.beginPath();
-      ctx.moveTo(21, 21); ctx.lineTo(29, 15); ctx.lineTo(31, 26); ctx.closePath(); ctx.fill();
-      break;
-    }
-    default: {
-      // A block: a lit top face and two shaded sides, so it reads as a cube
-      // rather than a flat swatch, with a speckle so a wall is not one colour.
-      const bx = 8, by = 12, bs = 24;
-      ctx.fillStyle = accent;
-      ctx.fillRect(bx, by, bs, bs);
-      ctx.fillStyle = shade(base, 30);
-      ctx.fillRect(bx, by, bs, bs * 0.32);
-      ctx.fillStyle = shade(base, -28);
-      ctx.fillRect(bx, by + bs * 0.68, bs, bs * 0.32);
-      ctx.fillStyle = base;
-      ctx.fillRect(bx, by, bs * 0.3, bs);
-      ctx.fillStyle = shade(base, 55);
-      ctx.fillRect(bx + 6, by + 7, 3, 3);
-      ctx.fillRect(bx + 15, by + 15, 3, 3);
-      ctx.fillStyle = shade(accent, -25);
-      ctx.fillRect(bx + 9, by + 4, 2, 2);
-      break;
-    }
-  }
-  ctx.restore();
-  // A faint frame ties every silhouette to the slot behind it.
-  ctx.save();
-  ctx.globalAlpha = 0.22;
-  ctx.strokeStyle = '#0b1220';
-  ctx.lineWidth = 1.2;
-  ctx.strokeRect(0.6, 0.6, size - 1.2, size - 1.2);
-  ctx.restore();
-  return true;
-}
-
-const ITEM_ICON_URL_CACHE = new Map();
-
-/**
- * A cached data URL for an item's painted icon, or null when this environment
- * cannot rasterise one (the headless QA harness). Callers fall back to the emoji
- * then, so the UI is never blank.
- */
-function itemIconURL(id, size = 40) {
-  const key = id + '@' + size;
-  if (ITEM_ICON_URL_CACHE.has(key)) return ITEM_ICON_URL_CACHE.get(key);
-  let url = null;
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const c = canvas.getContext && canvas.getContext('2d');
-    if (c && paintItemIcon(c, id, size) && typeof canvas.toDataURL === 'function') {
-      url = canvas.toDataURL();
-    }
-  } catch (err) {
-    url = null;
-  }
-  ITEM_ICON_URL_CACHE.set(key, url);
-  return url;
-}
-
-/**
- * Put an item's real art into a UI slot.
- *
- * The art is inserted as a real, explicitly-sized <canvas> child rather than
- * painted onto the slot as a background image. That is not a stylistic choice:
- * .slot-icon, .recipe-icon and .creative-cell-icon are all sized purely by their
- * text (`font-size` and nothing else), so the moment the emoji was replaced with
- * an empty string the element collapsed to 0x0 and the background had nothing to
- * paint into — every item in the hotbar, bag, creative grid and forge rendered
- * as a blank tile. A canvas carries its own dimensions, so it cannot collapse.
- *
- * The emoji remains a fallback for any environment that cannot rasterise.
- */
-function applyItemIcon(el, id, size = 40) {
-  if (!el) return false;
-  // Never stack icons: a re-render must replace, not accumulate.
-  const stale = el.querySelector && el.querySelector('canvas.item-icon-canvas');
-  if (stale && stale.remove) stale.remove();
-  if (el.style) el.style.backgroundImage = '';
-
-  let painted = false;
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    canvas.className = 'item-icon-canvas';
-    if (canvas.style) {
-      canvas.style.width = size + 'px';
-      canvas.style.height = size + 'px';
-      canvas.style.display = 'block';
-      canvas.style.imageRendering = 'pixelated';
-      canvas.style.pointerEvents = 'none';
-    }
-    const c = canvas.getContext && canvas.getContext('2d');
-    if (c && paintItemIcon(c, id, size)) {
-      el.appendChild(canvas);
-      painted = true;
-    }
-  } catch (err) {
-    painted = false;
-  }
-
-  if (painted) {
-    el.textContent = '';
-  } else {
-    const item = ITEMS[id];
-    el.textContent = item && item.icon ? item.icon : '📦';
-  }
-  return painted;
-}
-
-if (typeof window !== 'undefined') {
-  window.paintItemIcon = paintItemIcon;
-  window.itemIconURL = itemIconURL;
-  window.applyItemIcon = applyItemIcon;
-  window.ITEM_ART_COLORS = ITEM_ART_COLORS;
-}
-
-// ============================================================
 // ARMOUR LADDER
 // One ordered list, strongest first. Everything that needs to
 // reason about "which armour is better" reads this instead of
@@ -2312,7 +1809,7 @@ class Game {
         ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take, Shift+click for one`
         : 'Empty chest slot';
       if (filled) {
-        applyItemIcon(div, slot.id, 34);
+        div.textContent = data ? data.icon : '📦';
         if (slot.count > 1) {
           const c = document.createElement('span');
           c.className = 'slot-count';
@@ -2339,7 +1836,7 @@ class Game {
         ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to store, Shift+click for one`
         : 'Empty bag slot';
       if (filled) {
-        applyItemIcon(div, slot.id, 34);
+        div.textContent = data ? data.icon : '📦';
         if (slot.count > 1) {
           const c = document.createElement('span');
           c.className = 'slot-count';
@@ -2871,7 +2368,7 @@ class Game {
       if (slot && slot.id !== 'empty') {
         const iconDiv = document.createElement('div');
         iconDiv.className = 'slot-icon';
-        applyItemIcon(iconDiv, slot.id, 36);
+        iconDiv.textContent = itemData ? itemData.icon : '📦';
         slotDiv.appendChild(iconDiv);
 
         if (slot.count > 1) {
@@ -3033,7 +2530,7 @@ class Game {
 
       const icon = document.createElement('span');
       icon.className = 'creative-cell-icon';
-      applyItemIcon(icon, item.id, 30);
+      icon.textContent = item.icon || '📦';
       cell.appendChild(icon);
 
       const badge = document.createElement('span');
@@ -3099,8 +2596,7 @@ class Game {
 
       const icon = document.createElement('div');
       icon.className = 'recipe-icon';
-      if (resItem) applyItemIcon(icon, resItem.id, 30);
-      else icon.textContent = '🛠️';
+      icon.textContent = resItem ? resItem.icon : '🛠️';
 
       const details = document.createElement('div');
       details.className = 'recipe-details';
@@ -3148,7 +2644,7 @@ class Game {
           ? `${data.name}${slot.count > 1 ? ` x${slot.count}` : ''} — click to take one back`
           : 'Empty shared slot';
         if (filled) {
-          applyItemIcon(div, slot.id, 30);
+          div.textContent = data ? data.icon : '📦';
           if (slot.count > 1) {
             const c = document.createElement('span');
             c.className = 'slot-count';
@@ -3220,7 +2716,6 @@ class Game {
       if (slot && slot.id !== 'empty') {
         const item = ITEMS[slot.id];
         div.textContent = item ? item.icon : '📦';
-        if (item) applyItemIcon(div, slot.id, 34);
         if (slot.count > 1) {
           const count = document.createElement('span');
           count.className = 'slot-count';

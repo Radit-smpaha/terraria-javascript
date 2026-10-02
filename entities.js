@@ -51,40 +51,27 @@ class DropItem {
     ctx.shadowColor = '#fbbf24';
     ctx.shadowBlur = 6;
 
-    // The dropped stack wears the SAME painted icon the hotbar and the bag use,
-    // so a bone on the ground is a bone everywhere. The emoji underneath is
-    // only ever reached if this canvas cannot rasterise the art. The painter
-    // works on its own origin, so it is translated onto the drop first.
-    const painted = typeof paintItemIcon === 'function' && (() => {
-      ctx.save();
-      ctx.translate(Math.round(sx), Math.round(sy));
-      const ok = paintItemIcon(ctx, this.id, 16);
-      ctx.restore();
-      return ok;
-    })();
-    if (!painted) {
-      const itemData = ITEMS[this.id];
-      const icon = itemData && itemData.icon ? itemData.icon : '📦';
-      // The pixel buffer does not reliably rasterize color emoji on every browser.
-      // Always draw a bright, readable item-colored token underneath the icon, so
-      // dropped blocks/materials remain visible even when the emoji font is absent.
-      const accent = itemData ? {
-        dirt: '#8b5a2b', stone: '#64748b', wood: '#92400e', iron_ore: '#b87333',
-        gold_ore: '#facc15', diamond: '#67e8f9', crystal: '#a78bfa', wool: '#f8fafc',
-        rainbow_ore: '#f472b6', fallen_star: '#fde68a', apple: '#fb7185', acorn: '#d97706'
-      }[this.id] || '#fbbf24' : '#fbbf24';
-      ctx.fillStyle = 'rgba(15,23,42,.88)';
-      ctx.fillRect(Math.round(sx) - 1, Math.round(sy) - 1, 16, 16);
-      ctx.fillStyle = accent;
-      ctx.fillRect(Math.round(sx) + 1, Math.round(sy) + 1, 12, 12);
-      ctx.fillStyle = 'rgba(255,255,255,.35)';
-      ctx.fillRect(Math.round(sx) + 2, Math.round(sy) + 2, 5, 2);
-      ctx.fillStyle = '#0f172a';
-      ctx.font = "13px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(icon, Math.round(sx) + 7, Math.round(sy) + 7);
-    }
+    const itemData = ITEMS[this.id];
+    const icon = itemData && itemData.icon ? itemData.icon : '📦';
+    // The pixel buffer does not reliably rasterize color emoji on every browser.
+    // Always draw a bright, readable item-colored token underneath the icon, so
+    // dropped blocks/materials remain visible even when the emoji font is absent.
+    const accent = itemData ? {
+      dirt: '#8b5a2b', stone: '#64748b', wood: '#92400e', iron_ore: '#b87333',
+      gold_ore: '#facc15', diamond: '#67e8f9', crystal: '#a78bfa', wool: '#f8fafc',
+      rainbow_ore: '#f472b6', fallen_star: '#fde68a', apple: '#fb7185', acorn: '#d97706'
+    }[this.id] || '#fbbf24' : '#fbbf24';
+    ctx.fillStyle = 'rgba(15,23,42,.88)';
+    ctx.fillRect(Math.round(sx) - 1, Math.round(sy) - 1, 16, 16);
+    ctx.fillStyle = accent;
+    ctx.fillRect(Math.round(sx) + 1, Math.round(sy) + 1, 12, 12);
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    ctx.fillRect(Math.round(sx) + 2, Math.round(sy) + 2, 5, 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = "13px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, Math.round(sx) + 7, Math.round(sy) + 7);
     ctx.restore();
   }
 }

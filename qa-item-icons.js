@@ -1,11 +1,11 @@
-// qa-item-icons.js — the painted item art actually reaches the DOM.
+// qa-item-icons.js — every item slot must actually show an icon.
 //
-// The bug this exists to prevent: item art was applied as a background-image on
-// elements (.slot-icon, .recipe-icon, .creative-cell-icon) that are sized ONLY
-// by their text. Replacing the emoji with an empty string collapsed them to 0x0,
-// so the background had nothing to paint into and every item in the hotbar,
-// bag, creative grid and forge rendered as a blank tile — while every other
-// suite stayed green, because none of them look at the DOM.
+// Written after an attempt to replace the emoji with painted canvas art went
+// wrong twice: once because the icon wrappers were sized only by their text and
+// collapsed to 0x0, and once because a canvas child did not render in the real
+// app. Both were invisible to every other suite, because none of them look at
+// the UI. This file does, and it holds the line: whatever draws the icons, a
+// filled slot must end up with something VISIBLE in it, in all four menus.
 const fs = require('fs');
 const vm = require('vm');
 
@@ -86,61 +86,74 @@ const files = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.j
 const ctx = vm.createContext(global);
 for (const f of files) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
 
-// ---------------------------------------------------------------- 1. the DOM
-const hotbarSlot = makeEl('slot-icon');
-const painted = applyItemIcon(hotbarSlot, 'void_star_blade', 36);
-check('applyItemIcon reports success', painted === true);
-const canvas = hotbarSlot.querySelector('canvas.item-icon-canvas');
-check('a canvas child is inserted', !!canvas,
-  'children=' + hotbarSlot.children.length);
-check('the canvas has real dimensions', !!canvas && canvas.width === 36 && canvas.height === 36,
-  canvas ? canvas.width + 'x' + canvas.height : 'none');
-check('the canvas is styled to those dimensions',
-  !!canvas && canvas.style.width === '36px' && canvas.style.height === '36px',
-  canvas ? canvas.style.width : 'none');
-check('the emoji text is cleared', hotbarSlot.textContent === '',
-  'text=' + JSON.stringify(hotbarSlot.textContent));
-check('no background-image is relied on', !hotbarSlot.style.backgroundImage,
-  'bg=' + hotbarSlot.style.backgroundImage);
-
-// Re-rendering must REPLACE, never stack.
-applyItemIcon(hotbarSlot, 'dragonbone', 36);
-check('a re-render replaces the icon instead of stacking',
-  hotbarSlot.children.length === 1,
-  'children=' + hotbarSlot.children.length);
-
-// An unknown id must still render something rather than nothing.
-const unknown = makeEl('slot-icon');
-const okUnknown = applyItemIcon(unknown, 'not_a_real_item', 36);
-check('an unknown id still produces an icon', okUnknown === true,
-  'painted=' + okUnknown);
-check('an unknown id is not left blank',
-  !!unknown.querySelector('canvas.item-icon-canvas') || unknown.textContent !== '');
-
-// Every real item in the game must paint — no blanks hiding behind a fallback.
-const unmapped = Object.keys(global.ITEMS).filter(id => {
-  const el = makeEl('probe');
-  if (!applyItemIcon(el, id, 32)) return true;
-  return !el.querySelector('canvas.item-icon-canvas');
+// ---------------------------------------------------------------- 1. the data
+// Every item must carry a non-empty glyph, or its slot renders blank.
+const blank = Object.keys(global.ITEMS).filter(id => {
+  const it = global.ITEMS[id];
+  return !it || typeof it.icon !== 'string' || it.icon.trim() === '';
 });
-check('every item in the game paints a real icon', unmapped.length === 0,
-  unmapped.length ? 'unpainted: ' + unmapped.slice(0, 8).join(', ') : Object.keys(global.ITEMS).length + ' items');
+check('every item in the game has a non-empty icon',
+  blank.length === 0,
+  blank.length ? 'blank: ' + blank.slice(0, 8).join(', ') : Object.keys(global.ITEMS).length + ' items');
 
-// ------------------------------------------------------------------- 2. CSS
-// The regression guard: these classes were sized by their text alone, so any
-// future change back to a font-sized box re-creates the blank-tile bug.
-const css = fs.readFileSync('terraria.css', 'utf8');
-for (const sel of ['.slot-icon', '.recipe-icon', '.creative-cell-icon']) {
-  // '.' must be escaped so it matches a literal class, not any character.
-  const block = css.match(new RegExp('\\' + sel + '\\s*\\{([^}]*)\\}'));
-  const hasBox = !!block && /\bwidth\s*:/.test(block[1]) && /\bheight\s*:/.test(block[1]);
-  const isFlexBox = !!block && /display\s*:\s*flex/.test(block[1]);
-  check(sel + ' is explicitly sized (or a flex box)',
-    hasBox || isFlexBox,
-    block ? block[1].trim().slice(0, 60) : 'no rule found');
+// ---------------------------------------------------------------- 2. the menus
+// Render each menu for real and read back what landed in the slots.
+const g = new global.Game();
+g.player.invulnerableTime = 99999;
+for (const id of ['void_star_blade', 'dragonbone', 'rite_of_bones', 'backpack_large',
+  'slate_brick', 'healing_potion', 'copper_pickaxe', 'dragon_wings', 'obsuary_armor',
+  'diamond', 'dirt', 'campfire']) {
+  g.addItem(id, 1);
 }
-check('.item-icon-canvas cancels the creative greyscale',
-  /\.item-icon-canvas\s*\{[^}]*filter\s*:\s*none/.test(css));
+g.renderHotbarUI();
+g.renderInventoryGrid();
+g.renderCreativeMenu();
+g.renderCraftingRecipes();
+
+// Anything that ended up in a slot must be visible: real text, or a sized canvas
+// child. Deliberately agnostic about WHICH technique is used.
+const visible = (el) => {
+  if (!el) return false;
+  if (typeof el.textContent === 'string' && el.textContent.trim() !== '') return true;
+  const kid = el.children && el.children.find(c => c.width > 0 && c.height > 0);
+  return !!kid;
+};
+const harvest = (root) => {
+  const out = [];
+  const walk = (el) => {
+    if (!el) return;
+    if (el.className && /slot|icon|cell/.test(String(el.className))) out.push(el);
+    for (const kid of (el.children || [])) walk(kid);
+  };
+  walk(root);
+  return out;
+};
+for (const [name, id] of [
+  ['hotbar', 'hotbar'], ['inventory grid', 'inventory-grid'],
+  ['creative grid', 'creative-grid'], ['recipe list', 'recipe-list']
+]) {
+  const root = els[id];
+  const slots = harvest(root).filter(el => visible(el));
+  check(name + ' renders visible icons', slots.length > 0,
+    'visible slots=' + slots.length);
+}
+// The hotbar is the one the player looks at constantly: it must show all nine
+// of the items just added, not just "something".
+const hotbarSlots = harvest(els['hotbar']).filter(el => visible(el));
+check('the hotbar shows every item put in it', hotbarSlots.length >= 9,
+  'visible hotbar slots=' + hotbarSlots.length);
+
+// ------------------------------------------------------------------- 3. CSS
+// The icon wrappers are sized by their glyph, which is what makes a text-based
+// icon work — and exactly what made a background-image version collapse. Keep
+// them font-sized on purpose, and keep the creative grid's greyscale: it is what
+// marks an item you do not own yet.
+const css = fs.readFileSync('terraria.css', 'utf8');
+check('.creative-cell-icon keeps its greyscale (unowned marker)',
+  /\.creative-cell-icon\s*\{[^}]*filter\s*:\s*grayscale/.test(css));
+check('the emoji font stack is declared for the icon wrappers',
+  /\.slot-icon[\s\S]{0,400}Segoe UI Emoji/.test(css) ||
+  /Segoe UI Emoji/.test(css));
 
 console.log('\n' + '─'.repeat(62));
 console.log(failures

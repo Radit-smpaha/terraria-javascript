@@ -155,7 +155,34 @@ W.renderGlow(reuseStub, camera, g.player, []);
 check('a tile edit forces a repaint', paints > 0, 'paints=' + paints);
 W.glowBlob = counted;
 
-// ---- 5. Leaving the dimension must drop the baked layers.
+// ---- 5. The layer must ALWAYS cover the viewport, wherever the camera sits.
+// This is the geometry that makes the cache safe: a viewport-sized layer could
+// only ever be reused while the camera stood still, and panning onto unpainted
+// edge would show a seam of missing light. Pan the whole chunk and check.
+// (This runs BEFORE the exit test below, because outside the dimension the
+// layer correctly declines to bake at all.)
+W._spacePostLayers = null;
+const step = 8 * global.TILE_SIZE;   // must match SPACE_POST_CHUNK
+let worst = { dx: 0, dy: 0, ok: true, bailed: 0 };
+for (let ox = 0; ox < step; ox += 37) {
+  for (let oy = 0; oy < step; oy += 37) {
+    const pan = { x: camera.x + ox, y: camera.y + oy, viewportWidth: 1280, viewportHeight: 720 };
+    const l = W._spacePostLayer('light', pan, reuseStub, () => {}, {});
+    if (!l) { worst.bailed++; continue; }
+    // The blit offset must sit inside the layer, and the far edge of the
+    // viewport must still land inside it.
+    const covers = l.dx >= 0 && l.dy >= 0 &&
+      l.dx + 1280 <= l.canvas.width && l.dy + 720 <= l.canvas.height;
+    if (!covers) worst.ok = false;
+    worst.dx = Math.max(worst.dx, l.dx);
+    worst.dy = Math.max(worst.dy, l.dy);
+  }
+}
+check('the baked layer covers the view at every camera offset',
+  worst.ok && worst.bailed === 0,
+  'max dx=' + worst.dx + ' dy=' + worst.dy + ' skipped=' + worst.bailed);
+
+// ---- 6. Leaving the dimension must drop the baked layers.
 W.renderGlow(reuseStub, camera, g.player, []);
 const hadLayers = !!W._spacePostLayers;
 W.exitSpaceDimension();
