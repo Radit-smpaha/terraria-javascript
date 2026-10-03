@@ -1865,7 +1865,14 @@ kbd {
 .settings-btn { border-color: #64748b; color: #cbd5e1; }
 .settings-btn:hover { border-color: #facc15; color: #fef3c7; }
 .settings-modal-content { width: 540px; border-color: #64748b; }
-.settings-body { padding: 12px 16px 16px; }
+.settings-body { padding: 12px 16px 16px; max-height: min(70vh, 620px); overflow-y: auto; }
+/* The settings list grew by three sections. A scroll container on the body is
+   what keeps the QUICK ACTIONS buttons reachable on a short window instead of
+   pushing the Save/Load row off the bottom of the modal. */
+.settings-body::-webkit-scrollbar { width: 10px; }
+.settings-body::-webkit-scrollbar-track { background: #0b1220; }
+.settings-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
+.settings-body::-webkit-scrollbar-thumb:hover { background: #475569; }
 .settings-help { margin: 0 0 12px; color: #94a3b8; font-size: 14px; line-height: 1.35; }
 .settings-section { margin-top: 12px; }
 .settings-section h4 { margin: 0 0 7px; color: var(--accent-gold); font: 9px 'Press Start 2P', monospace; letter-spacing: .5px; }
@@ -1876,6 +1883,12 @@ kbd {
 .settings-row select { min-width: 132px; padding: 6px 8px; color: #e2e8f0; background: #1e293b; border: 2px solid #475569; border-radius: 4px; font: 14px 'VT323', monospace; }
 .settings-row select:focus { outline: none; border-color: #facc15; }
 .settings-toggle input { width: 18px; height: 18px; accent-color: #facc15; }
+/* Volume slider. Kept inline with its % readout so dragging it shows the
+   number without needing a separate click to commit. */
+.settings-slider { display: flex; align-items: center; gap: 8px; min-width: 132px; }
+.settings-slider input[type=range] { flex: 1; min-width: 84px; height: 18px; accent-color: #facc15; cursor: pointer; }
+.settings-slider input[type=range]:focus { outline: 2px solid #facc15; outline-offset: 2px; }
+.settings-slider output { min-width: 40px; text-align: right; color: #facc15; font: 14px 'VT323', monospace; }
 .settings-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .settings-actions .ui-btn { min-width: 0; padding: 7px 5px; font-size: 7px; }
 @media (max-width: 760px) {

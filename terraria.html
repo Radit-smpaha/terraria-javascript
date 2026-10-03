@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=26">
+  <link rel="stylesheet" href="terraria.css?v=27">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -289,6 +289,55 @@
                   <option value="180">Every 3 min</option>
                   <option value="300">Every 5 min</option>
                 </select>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>AUDIO</h4>
+              <label class="settings-row">
+                <span><strong>Master volume</strong><small>Overall loudness of music and effects</small></span>
+                <span class="settings-slider">
+                  <input id="settings-volume" type="range" min="0" max="100" step="5" value="90">
+                  <output id="settings-volume-value">90%</output>
+                </span>
+              </label>
+              <label class="settings-row settings-toggle">
+                <span><strong>Music</strong><small>Ambient soundtrack; sound effects are separate</small></span>
+                <input id="settings-music" type="checkbox" checked>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>GAME FEEL</h4>
+              <label class="settings-row">
+                <span><strong>Screen shake</strong><small>Camera kick from hits, explosions and boss slams</small></span>
+                <select id="settings-shake">
+                  <option value="full">Full</option>
+                  <option value="reduced">Reduced</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              <label class="settings-row settings-toggle">
+                <span><strong>Impact hit-stop</strong><small>Brief freeze on heavy hits and crits</small></span>
+                <input id="settings-hitstop" type="checkbox" checked>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>DISPLAY</h4>
+              <label class="settings-row settings-toggle">
+                <span><strong>Floating damage numbers</strong><small>Combat text above whatever you hit</small></span>
+                <input id="settings-damagetext" type="checkbox" checked>
+              </label>
+              <label class="settings-row">
+                <span><strong>Minimap size</strong><small>Starting size — M still cycles it</small></span>
+                <select id="settings-minimap">
+                  <option value="hidden">Hidden</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+              <label class="settings-row settings-toggle">
+                <span><strong>Item name readouts</strong><small>Hover tooltips and the name above the hotbar</small></span>
+                <input id="settings-tooltips" type="checkbox" checked>
               </label>
             </section>
             <section class="settings-section">
@@ -637,17 +686,17 @@
        Each script self-reports on load so "X is not defined" points at the
        exact failed file (see window.__terraNoteScript in the boot watchdog).
        onerror fires per-script for network/parse failures. -->
-  <script src="audio.js?v=8" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL audio.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok audio.js: '+(typeof SoundSystem))"></script>
-  <script src="particles.js?v=8" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
+  <script src="audio.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL audio.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok audio.js: '+(typeof SoundSystem))"></script>
+  <script src="particles.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
   <script src="world.js?v=13" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL world.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok world.js: '+(typeof World))"></script>
   <script src="weather.js?v=7" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL weather.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok weather.js: '+(typeof WeatherSystem))"></script>
   <script src="entities.js?v=15" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL entities.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok entities.js: Player='+(typeof Player))"></script>
   <script src="underworld.js?v=4" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL underworld.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok underworld.js: '+(typeof UnderworldMonster))"></script>
   <script src="space.js?v=7" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL space.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok space.js: '+(typeof SkeletonDragonBoss))"></script>
-  <script src="juice.js?v=13" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
+  <script src="juice.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=36" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=37" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>

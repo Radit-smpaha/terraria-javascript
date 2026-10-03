@@ -7,6 +7,16 @@ class ParticleSystem {
     this.lightSources = [];
     this.ambientLeaves = [];
     this.density = 1;
+    // Floating combat text can be turned off wholesale. It is a separate switch
+    // from `density` on purpose: a player at "minimal" effects still wants to
+    // read how much damage a hit landed, but plenty of players want neither.
+    this.damageTextEnabled = true;
+  }
+
+  setDamageTextEnabled(on) {
+    this.damageTextEnabled = on !== false;
+    if (!this.damageTextEnabled) this.damageTexts.length = 0;
+    return this.damageTextEnabled;
   }
 
   setDensity(density) {
@@ -42,6 +52,7 @@ class ParticleSystem {
 
   // Floating combat text (like Terraria damage numbers)
   addDamageText(x, y, text, color = '#ffeb3b', isCrit = false) {
+    if (!this.damageTextEnabled) return;
     this.damageTexts.push({
       x: x + (Math.random() - 0.5) * 12,
       y: y - 10,

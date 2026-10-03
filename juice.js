@@ -19,6 +19,11 @@ class GameFeel {
     this.healFlash = 0;     // 0..1 green screen pulse
     this.time = 0;
     this.maxShake = 20;     // pixels of shake at full trauma
+    // Player-facing accessibility. Both are multipliers applied at the point of
+    // use rather than baked into the numbers above, so switching a setting back
+    // and forth can never drift away from the authored defaults.
+    this.shakeScale = 1;      // 0 = off, 1 = full, 0.4 = reduced
+    this.hitStopEnabled = true;
     this._flashR = 239;
     this._flashG = 68;
     this._flashB = 68;
@@ -31,9 +36,31 @@ class GameFeel {
 
   /** Freeze the world for a few frames. Strong hits ~0.06s, crits ~0.09s. */
   stop(seconds, scale = 0.06) {
+    if (!this.hitStopEnabled) return;
     if (seconds <= this.hitStop) return;
     this.hitStop = seconds;
     this.hitStopScale = scale;
+  }
+
+  /**
+   * Screen shake amount. 0 turns it off outright (the trauma is discarded, not
+   * merely not drawn — otherwise the decay would keep running for no reason),
+   * 1 is the authored level.
+   */
+  setShakeScale(v) {
+    const n = Number(v);
+    this.shakeScale = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1;
+    if (this.shakeScale === 0) {
+      this.trauma = 0;
+      this.shakeX = 0; this.shakeY = 0; this.shakeRot = 0;
+    }
+    return this.shakeScale;
+  }
+
+  setHitStopEnabled(on) {
+    this.hitStopEnabled = on !== false;
+    if (!this.hitStopEnabled) this.hitStop = 0;
+    return this.hitStopEnabled;
   }
 
   /** Bullet-time, used for boss phase transitions and near-death moments. */
@@ -73,11 +100,12 @@ class GameFeel {
     // Trauma decays linearly; intensity is quadratic so small knocks stay subtle.
     this.trauma = Math.max(0, this.trauma - dt * 1.7);
     const intensity = this.trauma * this.trauma;
-    if (intensity > 0.00005) {
+    if (intensity > 0.00005 && this.shakeScale > 0) {
       const t = this.time;
-      this.shakeX = (this._noise(t * 41.7) * 2 - 1) * this.maxShake * intensity;
-      this.shakeY = (this._noise(t * 33.1 + 11.2) * 2 - 1) * (this.maxShake * 0.75) * intensity;
-      this.shakeRot = (this._noise(t * 19.3 + 5.5) * 2 - 1) * 0.015 * intensity;
+      const amp = this.maxShake * this.shakeScale;
+      this.shakeX = (this._noise(t * 41.7) * 2 - 1) * amp * intensity;
+      this.shakeY = (this._noise(t * 33.1 + 11.2) * 2 - 1) * (amp * 0.75) * intensity;
+      this.shakeRot = (this._noise(t * 19.3 + 5.5) * 2 - 1) * 0.015 * intensity * this.shakeScale;
     } else {
       this.shakeX = 0; this.shakeY = 0; this.shakeRot = 0;
     }

@@ -9,6 +9,10 @@ class SoundSystem {
     this.masterGain = null;
     this.ambientGain = null;
     this.stepTimer = 0;
+    // Player-facing mixer state. Applied to the live gain nodes in applyMixer()
+    // once init() has built them, so a saved setting survives first load.
+    this.volume = 0.9;
+    this.musicEnabled = true;
   }
 
   init() {
@@ -40,6 +44,10 @@ class SoundSystem {
       } catch (e) { /* delay is optional */ }
 
       this.startAmbientMusic();
+      // Saved mixer settings only land here, once the gain nodes exist. Before
+      // this the player has chosen a volume in Settings but AudioContext is not
+      // allowed to exist until a click, so nothing was audible to apply it to.
+      this.applyMixer();
     } catch (e) {
       console.warn("Web Audio not supported or blocked:", e);
     }
@@ -54,9 +62,43 @@ class SoundSystem {
   toggle() {
     this.enabled = !this.enabled;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(this.enabled ? 0.9 : 0, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.enabled ? this.volume * 0.9 : 0, this.ctx.currentTime);
     }
     return this.enabled;
+  }
+
+  /**
+   * Master volume, 0..1. Kept as a field rather than written straight into the
+   * gain node so that toggling sound off and back on does not lose the level
+   * the player actually chose.
+   */
+  setVolume(v) {
+    const vol = Math.max(0, Math.min(1, Number(v)));
+    this.volume = Number.isFinite(vol) ? vol : 0.9;
+    if (this.masterGain && this.ctx && this.enabled) {
+      this.masterGain.gain.setValueAtTime(this.volume * 0.9, this.ctx.currentTime);
+    }
+    return this.volume;
+  }
+
+  /**
+   * Music on/off, separate from sound effects. Every music voice routes through
+   * ambientGain, so one gain node gates the whole soundtrack while SFX (which
+   * connect to masterGain directly) keep playing.
+   */
+  setMusicEnabled(on) {
+    this.musicEnabled = on !== false;
+    if (this.ambientGain && this.ctx) {
+      this.ambientGain.gain.setValueAtTime(this.musicEnabled ? 0.75 : 0, this.ctx.currentTime);
+    }
+    return this.musicEnabled;
+  }
+
+  /** Re-apply volume and music after init(), when the gain nodes first exist. */
+  applyMixer() {
+    if (!this.ctx) return;
+    this.setVolume(this.volume);
+    this.setMusicEnabled(this.musicEnabled);
   }
 
   // Jump sound: cheerful retro frequency sweep

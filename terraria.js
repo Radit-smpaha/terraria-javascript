@@ -931,6 +931,12 @@ class Game {
     this.feel = new GameFeel();
     this.buffs = new BuffSystem();
     this.minimap = new Minimap(this.world);
+    // Volume, music, shake, hit-stop, damage numbers, minimap and tooltips.
+    // Applied HERE, not next to loadSettings() above, because every one of them
+    // reaches a subsystem that is constructed after it: the sound mixer (line
+    // 849), the particle system (850), GameFeel and the minimap (both just
+    // above). Called earlier it would throw on the first missing one.
+    this.applyAllSettings();
     // Villagers who hand out quests (see npcs.js).
     this.npcs = typeof NPCManager !== 'undefined' ? new NPCManager(this) : null;
     // Persistent journey goals, explorer ranks, biome discoveries and streaks.
@@ -1650,7 +1656,17 @@ class Game {
   }
 
   loadSettings() {
-    const defaults = { quality: 'auto', effects: 'full', glow: 'full', showFps: false, autosave: 90 };
+    const defaults = {
+      quality: 'auto', effects: 'full', glow: 'full', showFps: false, autosave: 90,
+      // Audio
+      volume: 90, music: true,
+      // Game feel (accessibility)
+      shake: 'full', hitStop: true,
+      // Display
+      damageText: true, minimap: 'medium',
+      // Interface
+      tooltips: true
+    };
     try {
       const raw = localStorage.getItem('terracraft-settings');
       if (!raw) return defaults;
@@ -1662,6 +1678,16 @@ class Game {
       // Clamped so a corrupt or hand-edited value can't stall the game with a
       // 0s autosave loop (or effectively disable saving with a huge one).
       if (Number.isFinite(saved.autosave)) defaults.autosave = Math.max(15, Math.min(600, Math.round(saved.autosave)));
+      // Every value below is validated against an allow-list or a numeric
+      // range, never trusted raw: this object is read straight out of
+      // localStorage, which the player (or any script on the page) can edit.
+      if (Number.isFinite(saved.volume)) defaults.volume = Math.max(0, Math.min(100, Math.round(saved.volume)));
+      defaults.music = saved.music !== false;
+      if (['off', 'reduced', 'full'].includes(saved.shake)) defaults.shake = saved.shake;
+      defaults.hitStop = saved.hitStop !== false;
+      defaults.damageText = saved.damageText !== false;
+      if (['hidden', 'small', 'medium', 'large'].includes(saved.minimap)) defaults.minimap = saved.minimap;
+      defaults.tooltips = saved.tooltips !== false;
     } catch (_) {}
     return defaults;
   }
@@ -1672,6 +1698,74 @@ class Game {
 
   effectScale() {
     return this.settings.effects === 'minimal' ? 0.3 : this.settings.effects === 'reduced' ? 0.65 : 1;
+  }
+
+  // ---- Newer settings: audio, game feel, display -------------------------
+  // Each of these has one apply function so the boot path, the change handler
+  // and syncSettingsUI can never disagree about what a setting means.
+
+  /** Master volume, 0..100 in the UI, 0..1 on the mixer. */
+  applyVolume(announce = true) {
+    const pct = Math.max(0, Math.min(100, Number(this.settings.volume) || 0));
+    this.sound.setVolume(pct / 100);
+    const readout = document.getElementById('settings-volume-value');
+    if (readout) readout.textContent = pct + '%';
+    if (announce) this.showToast(`🔊 Volume: ${pct}%`);
+  }
+
+  applyMusic() {
+    this.sound.setMusicEnabled(this.settings.music !== false);
+  }
+
+  /** Screen shake. Off discards trauma; reduced scales it down. */
+  applyShake(announce = true) {
+    const mode = ['off', 'reduced', 'full'].includes(this.settings.shake) ? this.settings.shake : 'full';
+    this.feel.setShakeScale(mode === 'off' ? 0 : mode === 'reduced' ? 0.4 : 1);
+    if (announce) this.showToast(`📳 Screen shake: ${mode[0].toUpperCase() + mode.slice(1)}`);
+  }
+
+  applyHitStop() {
+    this.feel.setHitStopEnabled(this.settings.hitStop !== false);
+  }
+
+  applyDamageText(announce = true) {
+    const on = this.settings.damageText !== false;
+    this.particles.setDamageTextEnabled(on);
+    if (announce) this.showToast(on ? '🔢 Damage numbers: On' : '🔢 Damage numbers: Off');
+  }
+
+  /** Minimap default size. M still cycles it; this sets where it starts. */
+  applyMinimap(announce = true) {
+    const order = ['hidden', 'small', 'medium', 'large'];
+    const mode = order.indexOf(this.settings.minimap);
+    if (mode >= 0) {
+      this.minimap.mode = mode;
+      this.minimap.applyVisibility();
+    }
+    if (announce) this.showToast(`🗺 Minimap: ${this.settings.minimap}`);
+  }
+
+  /**
+   * Item name readouts: the hover tooltip and the hotbar popup, which are two
+   * halves of one feature and were therefore one switch.
+   */
+  applyTooltips(announce = true) {
+    const on = this.settings.tooltips !== false;
+    this.tooltipsEnabled = on;
+    const tooltip = this._itemTooltip || document.getElementById('item-tooltip');
+    if (tooltip && !on) tooltip.hidden = true;
+    if (announce) this.showToast(on ? '🏷️ Item names: On' : '🏷️ Item names: Off');
+  }
+
+  /** Boot: push every non-performance setting into the live game. */
+  applyAllSettings() {
+    this.applyVolume(false);
+    this.applyMusic();
+    this.applyShake(false);
+    this.applyHitStop();
+    this.applyDamageText(false);
+    this.applyMinimap(false);
+    this.applyTooltips(false);
   }
 
   applyGlowMode(announce = true) {
@@ -1717,6 +1811,25 @@ class Game {
     if (glow) glow.value = this.settings.glow;
     if (fps) fps.checked = this.settings.showFps === true;
     if (autosave) autosave.value = String(this.settings.autosave);
+    // Audio / feel / display / interface. Written the same defensive way as
+    // loadSettings: a stale save must never leave a control blank.
+    const setSel = (id, value) => {
+      const el = document.getElementById(id);
+      if (el && value !== undefined && value !== null) el.value = String(value);
+    };
+    const setCheck = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = value !== false;
+    };
+    setSel('settings-volume', this.settings.volume);
+    setCheck('settings-music', this.settings.music);
+    setSel('settings-shake', this.settings.shake);
+    setCheck('settings-hitstop', this.settings.hitStop);
+    setCheck('settings-damagetext', this.settings.damageText);
+    setSel('settings-minimap', this.settings.minimap);
+    setCheck('settings-tooltips', this.settings.tooltips);
+    const readout = document.getElementById('settings-volume-value');
+    if (readout) readout.textContent = (Number(this.settings.volume) || 0) + '%';
   }
 
   toggleSettings(force) {
@@ -2025,6 +2138,7 @@ class Game {
     };
 
     layer.addEventListener('mouseover', (event) => {
+      if (this.tooltipsEnabled === false) return;
       const el = tipTarget(event.target);
       if (!el) return;
       tooltip.textContent = el.dataset.tip;
@@ -2032,7 +2146,7 @@ class Game {
       this.moveItemTooltip(event.clientX, event.clientY);
     });
     layer.addEventListener('mousemove', (event) => {
-      if (tooltip.hidden) return;
+      if (tooltip.hidden || this.tooltipsEnabled === false) return;
       this.moveItemTooltip(event.clientX, event.clientY);
     });
     layer.addEventListener('mouseout', (event) => {
@@ -2086,6 +2200,14 @@ class Game {
   showItemNamePopup(slot) {
     const popup = document.getElementById('item-name-popup');
     if (!popup) return;
+    // Turning item names off has to hide the popup too, not merely decline to
+    // show the next one — otherwise a popup already on screen survives the
+    // setting change and then animates away on its own timer.
+    if (this.tooltipsEnabled === false) {
+      popup.textContent = '';
+      popup.classList.remove('show');
+      return;
+    }
     const data = slot && slot.id && slot.id !== 'empty' ? ITEMS[slot.id] : null;
     const text = data ? data.name + (slot.count > 1 ? ' x' + slot.count : '') : '';
     popup.textContent = text;
@@ -2145,6 +2267,56 @@ class Game {
       this.autosaveTimer = this.autosaveInterval;
       this.saveSettings();
       this.showToast(`💾 Autosave: every ${this.autosaveInterval}s`);
+    });
+
+    // ---- Audio --------------------------------------------------------
+    // `input` rather than `change` so dragging the slider is audible live.
+    document.getElementById('settings-volume')?.addEventListener('input', (event) => {
+      const value = Number(event.target.value);
+      if (!Number.isFinite(value)) return;
+      this.settings.volume = Math.max(0, Math.min(100, Math.round(value)));
+      // No toast on every pixel of a drag; the readout beside it says it.
+      this.applyVolume(false);
+      this.saveSettings();
+    });
+    document.getElementById('settings-volume')?.addEventListener('change', () => {
+      this.showToast(`🔊 Volume: ${this.settings.volume}%`);
+    });
+    document.getElementById('settings-music')?.addEventListener('change', (event) => {
+      this.settings.music = event.target.checked === true;
+      this.applyMusic();
+      this.saveSettings();
+    });
+
+    // ---- Game feel ----------------------------------------------------
+    document.getElementById('settings-shake')?.addEventListener('change', (event) => {
+      this.settings.shake = event.target.value;
+      this.applyShake();
+      this.saveSettings();
+    });
+    document.getElementById('settings-hitstop')?.addEventListener('change', (event) => {
+      this.settings.hitStop = event.target.checked === true;
+      this.applyHitStop();
+      this.saveSettings();
+    });
+
+    // ---- Display ------------------------------------------------------
+    document.getElementById('settings-damagetext')?.addEventListener('change', (event) => {
+      this.settings.damageText = event.target.checked === true;
+      this.applyDamageText();
+      this.saveSettings();
+    });
+    document.getElementById('settings-minimap')?.addEventListener('change', (event) => {
+      this.settings.minimap = event.target.value;
+      this.applyMinimap();
+      this.saveSettings();
+    });
+
+    // ---- Interface ----------------------------------------------------
+    document.getElementById('settings-tooltips')?.addEventListener('change', (event) => {
+      this.settings.tooltips = event.target.checked === true;
+      this.applyTooltips();
+      this.saveSettings();
     });
 
     // Sound toggle button
