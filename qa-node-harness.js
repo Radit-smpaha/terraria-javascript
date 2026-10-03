@@ -192,19 +192,29 @@ try {
   if (!recOk) process.exit(1);
 
   // ---- Bed respawn + campfire fallback ----
+  // Find the starter bed by SEARCHING for it. It used to be hard-coded as
+  // (spawnX + 2, surface - 1), which is the row the house floor sits on - the
+  // bed has since moved onto the standing row inside the house, and pinning a
+  // coordinate here just meant this check silently tested nothing.
   const sx0 = Math.floor(g.world.width / 2);
-  const bedBy = g.world.surfaceHeights[sx0] - 1;
-  const bedExists = g.world.getTile(sx0 + 2, bedBy) === TILES.BED;
-  const bedRespX = (sx0 + 3) * TILE_SIZE + 3;
-  const bedRespY = (bedBy + 1) * TILE_SIZE - g.player.height;
-  g.respawnPoint = { kind: 'bed', bedX: sx0 + 2, bedY: bedBy, x: bedRespX, y: bedRespY };
+  let bedX = -1, bedY = -1;
+  for (let y = g.world.surfaceHeights[sx0] - 10; y <= g.world.surfaceHeights[sx0]; y++) {
+    for (let x = sx0 - 7; x <= sx0 + 7; x++) {
+      if (g.world.getTile(x, y) === TILES.BED) { bedX = x; bedY = y; }
+    }
+  }
+  const bedExists = bedX >= 0;
+  const bedRespX = (bedX + 1) * TILE_SIZE + 3;
+  const bedRespY = (bedY + 1) * TILE_SIZE - g.player.height;
+  g.respawnPoint = { kind: 'bed', bedX, bedY, x: bedRespX, y: bedRespY };
   g.player.x = 9999; g.player.y = 9999;
   g.respawnPlayer();
   const bedOk = bedExists && Math.abs(g.player.x - bedRespX) < 1;
-  console.log('bed respawn (bed exists=' + bedExists + '): ' + (bedOk ? 'OK' : 'FAIL') + ' x=' + g.player.x);
+  console.log('bed respawn (bed at ' + bedX + ',' + bedY + '): ' +
+    (bedOk ? 'OK' : 'FAIL') + ' x=' + g.player.x);
   if (!bedOk) process.exit(1);
   // Break the bed -> back to the first campfire
-  g.world.setTile(sx0 + 2, bedBy, TILES.STONE);
+  g.world.setTile(bedX, bedY, TILES.STONE);
   g.player.x = 9999;
   g.respawnPlayer();
   const fallOk = Math.abs(g.player.x - sx0 * TILE_SIZE) < 1 && g.respawnPoint === null;

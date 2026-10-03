@@ -2421,3 +2421,375 @@ body {
   .item-name-popup { font-size: 19px; padding: 2px 10px; }
   .item-tooltip { font-size: 17px; max-width: 220px; }
 }
+/* ============================================================
+   PLATFORM CHOOSER  ("How are you playing?")
+   The question that has to be answered before the main menu, because the
+   answer decides which control scheme the game arms. These are TITLE SCREEN
+   rules: deliberately NOT shrunk in touch mode, same as the rest of the menu.
+   ============================================================ */
+.title-platform {
+  position: absolute;
+  z-index: 2;
+  top: 40%;
+  left: 50%;
+  display: flex;
+  width: min(620px, 94vw);
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  animation: menu-arrive 650ms 120ms ease-out both;
+}
+.title-platform[hidden] { display: none; }
+.title-platform h2 {
+  margin: 0;
+  color: #fff1a0;
+  font: 50px/.95 'VT323', monospace;
+  text-align: center;
+  text-shadow: 0 3px 0 #53492a, 0 5px 12px rgba(0, 0, 0, .72);
+}
+.title-platform-hint {
+  margin: 0 0 4px;
+  max-width: min(520px, 92vw);
+  color: rgba(240, 255, 238, .84);
+  font: 21px/1.1 'VT323', monospace;
+  text-align: center;
+  text-shadow: 1px 2px 0 rgba(0, 0, 0, .75);
+}
+.title-platform-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+/* Two cards rather than two menu rows: the choice is a mode, so it needs room
+   for a picture, the name AND what it means. Still .title-button underneath,
+   so the hover plate and focus ring are the ones the menu already uses. */
+.title-platform-btn {
+  position: relative;
+  width: auto;
+  min-height: 104px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.platform-icon { font-size: 40px; line-height: 1; }
+.platform-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+}
+.platform-copy strong { font: 30px/1 'VT323', monospace; }
+.platform-copy small {
+  color: rgba(236, 253, 245, .8);
+  font: 18px/1 'VT323', monospace;
+  letter-spacing: .5px;
+}
+.platform-badge {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  padding: 1px 7px;
+  border: 1px solid #facc15;
+  border-radius: 999px;
+  background: #221a05;
+  color: #fde68a;
+  font: 13px/1.5 'VT323', monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.platform-badge[hidden] { display: none; }
+
+/* The corner chip that reopens the chooser. Small on purpose: it must not read
+   as a fourth menu item. */
+.title-controls-chip {
+  position: absolute;
+  z-index: 3;
+  right: 16px;
+  bottom: 11px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 2px solid rgba(255, 255, 255, .28);
+  border-radius: 999px;
+  background: rgba(4, 14, 11, .6);
+  color: rgba(246, 255, 241, .88);
+  cursor: pointer;
+  font: 18px/1 'VT323', monospace;
+  text-shadow: 1px 2px 0 #163d32;
+  transition: border-color 130ms ease, color 130ms ease;
+}
+.title-controls-chip:hover,
+.title-controls-chip:focus-visible {
+  border-color: #facc15;
+  color: #ffe66d;
+  outline: none;
+}
+
+@media (max-width: 680px) {
+  .title-platform { top: 34%; gap: 6px; }
+  .title-platform h2 { font-size: 40px; }
+  .title-platform-hint { font-size: 18px; }
+  .title-platform-options { grid-template-columns: 1fr; gap: 6px; }
+  .title-platform-btn { min-height: 74px; padding: 6px 12px; }
+  .platform-icon { font-size: 30px; }
+  .platform-copy strong { font-size: 26px; }
+  .platform-copy small { font-size: 16px; }
+  .title-controls-chip { right: 10px; bottom: 8px; font-size: 16px; }
+}
+@media (max-height: 560px) {
+  .title-platform { top: 26%; gap: 4px; }
+  .title-platform h2 { font-size: 34px; }
+}
+
+/* ============================================================
+   TOUCH CONTROLS
+   The on-screen pad for players who answered "Mobile". Sizes are laid out in
+   CSS variables so the narrow-phone query below only has to restate the
+   numbers once, and every cluster is anchored to a corner so it cannot drift
+   as the HUD changes size around it.
+
+   Ergonomics: the left thumb owns movement (with drop-through just above it),
+   the right thumb owns jump and the action buttons. Attack sits nearest the
+   screen centre because it is the one that gets held down the most; the rarer
+   buttons (use, dodge) live out towards the edges.
+   ============================================================ */
+.mobile-controls {
+  --touch-edge: 14px;
+  --touch-gap: 10px;
+  position: absolute;
+  inset: 0;
+  /* Above the HUD (10) so the pad is never buried under it, below every modal
+     (50) and the pause / death / title screens (90+) so those cover it. */
+  z-index: 20;
+  /* Taps on empty space must reach the canvas underneath, or the world could
+     never be aimed at. Only the buttons below re-enable pointer events.
+
+     This has to be written as #ui-layer > .mobile-controls rather than a bare
+     .mobile-controls: #mobile-controls is a DIRECT child of #ui-layer, and the
+     #ui-layer>* rule above (specificity 1,0,0) sets pointer-events: auto on
+     every one of its children. A class selector here would lose to it and the
+     full-screen pad would silently eat every tap aimed at the world. */
+  pointer-events: none;
+  touch-action: none;
+  display: none;
+}
+#ui-layer > .mobile-controls { pointer-events: none; }
+/* The buttons are the exception, and need the same treatment for the same
+   reason - .touch-cluster is a grandchild, but its buttons must still win. */
+#ui-layer .touch-cluster > * { pointer-events: auto; }
+.mobile-controls.hidden { display: none; }
+body.controls-touch .mobile-controls:not(.hidden) { display: block; }
+
+.touch-cluster {
+  position: absolute;
+  display: flex;
+  gap: var(--touch-gap);
+  pointer-events: none;
+}
+.touch-cluster > * { pointer-events: auto; }
+
+.touch-btn {
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(226, 232, 240, .55);
+  border-radius: 50%;
+  background: rgba(8, 15, 28, .55);
+  color: #e8eef7;
+  font: 26px/1 'VT323', monospace;
+  /* Stop the browser treating a held thumb as a scroll/zoom gesture, and stop
+     the grey flash rectangle painting over the button. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .14);
+  transition: transform 90ms ease, background 90ms ease, border-color 90ms ease,
+              color 90ms ease;
+}
+.touch-btn:active,
+.touch-btn.is-down {
+  transform: scale(.9);
+  border-color: #facc15;
+  background: rgba(250, 204, 21, .32);
+  color: #fffbeb;
+}
+
+/* Left thumb: the two move buttons, with drop-through stacked above them. */
+.touch-move {
+  left: var(--touch-edge);
+  bottom: var(--touch-edge);
+}
+.touch-move .touch-dir { width: 62px; height: 62px; font-size: 30px; }
+.touch-alt {
+  left: var(--touch-edge);
+  bottom: calc(var(--touch-edge) + 62px + var(--touch-gap));
+}
+.touch-drop { width: 48px; height: 48px; font-size: 22px; opacity: .85; }
+
+/* Small utility column above the movement pad: pause, heal, buff, talk. */
+.touch-utility {
+  left: var(--touch-edge);
+  bottom: calc(var(--touch-edge) + 62px + 48px + var(--touch-gap) * 3 + 12px);
+  display: grid;
+  grid-template-columns: repeat(2, 46px);
+  gap: 8px;
+}
+.touch-small { width: 46px; height: 46px; font-size: 20px; opacity: .9; }
+/* The button is #touch-pause in the markup and carries no .touch-pause class,
+   so this has to key off the id to apply at all. */
+#touch-pause { border-color: rgba(250, 204, 21, .7); }
+
+/* Right thumb. A 2x2 grid, placed so the biggest button lands nearest the
+   middle of the screen where the thumb naturally rests. */
+.touch-act {
+  right: var(--touch-edge);
+  bottom: var(--touch-edge);
+  display: grid;
+  gap: var(--touch-gap);
+  grid-template-areas:
+    "dodge use"
+    "attack jump";
+  align-items: end;
+  justify-items: end;
+}
+.touch-attack { grid-area: attack; width: 70px; height: 70px; font-size: 30px; border-color: rgba(250, 204, 21, .75); }
+.touch-jump { grid-area: jump; width: 62px; height: 62px; font-size: 30px; }
+.touch-use { grid-area: use; width: 54px; height: 54px; font-size: 24px; }
+.touch-dodge { grid-area: dodge; width: 54px; height: 54px; font-size: 24px; }
+
+/* Narrow phones: the pad has to give way before the world does. */
+@media (max-width: 420px) {
+  .mobile-controls { --touch-edge: 8px; --touch-gap: 7px; }
+  .touch-move .touch-dir { width: 54px; height: 54px; font-size: 26px; }
+  .touch-alt { bottom: calc(var(--touch-edge) + 54px + var(--touch-gap)); }
+}
+
+/* ============================================================
+   TOUCH MODE: A SMALLER HUD
+   The pad needs the bottom corners, so the in-game HUD is drawn smaller in
+   this mode ONLY. Every rule below is scoped to body.controls-touch and
+   targets HUD selectors - never .title-*. The main menu is a sibling of
+   #ui-layer and is not touched by any of it, which is checked by qa-mobile.js.
+   ============================================================ */
+body.controls-touch #ui-layer { padding: 8px; }
+body.controls-touch .controls-hint { display: none; }
+body.controls-touch .controls-hint-touch { display: flex; }
+/* The bottom panel sits between the two thumb clusters, not under them. */
+body.controls-touch .bottom-panel { bottom: 78px !important; }
+
+body.controls-touch .top-left-panel {
+  max-width: 186px;
+  padding: 5px 7px;
+  gap: 4px;
+  border-width: 2px;
+}
+body.controls-touch .clock-display { gap: 5px; font-size: 13px; }
+body.controls-touch .badge-day,
+body.controls-touch .badge-night { font-size: 8px; padding: 1px 4px; }
+body.controls-touch .weather-badge,
+body.controls-touch .dimension-badge { font-size: 7px; padding: 1px 4px; }
+body.controls-touch .bar-header { font-size: 9px; }
+body.controls-touch .bar-outer { height: 9px; }
+body.controls-touch .armor-chip { font-size: 8px; padding: 1px 4px; }
+
+body.controls-touch .hotbar-wrapper { padding: 3px 4px; border-width: 2px; }
+body.controls-touch .hotbar-slots { gap: 2px; }
+body.controls-touch .hotbar-slot { width: 32px; height: 32px; border-width: 2px; }
+body.controls-touch .slot-icon { font-size: 16px; }
+body.controls-touch .slot-count { font-size: 11px; bottom: 0; right: 2px; }
+body.controls-touch .slot-num { display: none; }
+
+body.controls-touch .top-right-status { top: 6px; right: 6px; gap: 4px; }
+body.controls-touch .ui-btn { padding: 4px 6px; font-size: 7px; }
+body.controls-touch .right-hud-column { top: 34px; right: 6px; gap: 4px; }
+body.controls-touch .journey-panel { width: 168px; padding: 4px 5px; }
+body.controls-touch .journey-objective { min-height: 26px; }
+body.controls-touch .journey-objective strong { font-size: 11px; }
+body.controls-touch .journey-objective p { font-size: 9px; }
+body.controls-touch .journey-rank-icon { font-size: 14px; }
+body.controls-touch .journey-rank-copy > span { display: none; }
+body.controls-touch .journey-rank-copy strong { font-size: 11px; }
+body.controls-touch .journey-meter { height: 6px; margin-top: 3px; }
+body.controls-touch .minimap-panel { display: none; }
+body.controls-touch #quest-tracker { font-size: 10px; max-width: 168px; }
+
+body.controls-touch .boss-panel { top: 6px; width: min(340px, 62vw); }
+body.controls-touch .boss-title { font-size: 8px; }
+body.controls-touch .boss-bar-outer { height: 13px; }
+body.controls-touch .boss-hp-text { font-size: 10px; }
+body.controls-touch .announcement-banner { top: 74px; padding: 6px 12px; }
+body.controls-touch #announcement-text { font-size: 10px; }
+body.controls-touch .toast-container { font-size: 12px; }
+body.controls-touch .item-name-popup { font-size: 15px; padding: 2px 8px; margin-bottom: 6px; }
+
+/* Panels have to fit a phone. The pause box, settings, crafting and the chest
+   all get a little shorter so their own buttons stay on screen. */
+body.controls-touch .pause-overlay .pause-box { padding: 12px 16px; }
+body.controls-touch .pause-overlay h2 { font-size: 22px; }
+body.controls-touch .pause-hint { font-size: 12px; }
+body.controls-touch .modal-content { width: min(96vw, 560px); }
+body.controls-touch .settings-modal-content { width: min(96vw, 460px); }
+body.controls-touch .modal-header h3 { font-size: 11px; }
+body.controls-touch .settings-body { max-height: min(72vh, 520px); padding: 9px 11px 12px; }
+body.controls-touch .settings-row { padding: 6px 8px; }
+body.controls-touch .settings-row strong { font-size: 13px; }
+body.controls-touch .settings-row small { font-size: 9px; }
+body.controls-touch .settings-row select { min-width: 104px; padding: 5px 6px; font-size: 12px; }
+body.controls-touch .settings-help { font-size: 11px; }
+body.controls-touch .settings-section h4 { font-size: 8px; }
+body.controls-touch .settings-actions { grid-template-columns: repeat(3, 1fr); gap: 5px; }
+body.controls-touch .settings-actions .ui-btn { padding: 6px 4px; font-size: 6px; }
+body.controls-touch .death-content h1,
+body.controls-touch .victory-content h1 { font-size: 16px; }
+body.controls-touch .death-content p,
+body.controls-touch .victory-content p { font-size: 12px; }
+
+/* Which half of a two-part label is shown: keys or thumbs. */
+.hint-touch { display: none; }
+.controls-hint-touch { display: none; }
+body.controls-touch .hint-keys { display: none; }
+body.controls-touch .hint-touch { display: inline; }
+body.controls-touch .item-tooltip { display: none; }
+/* Hover-only affordances do nothing with a thumb, so they stay off. */
+body.controls-touch .hotbar-slot:hover { border-color: #475569; background: #1e293b; }
+
+/* Narrow phones, continued: the pad itself has to give way too. */
+@media (max-width: 420px) {
+  .touch-drop { width: 42px; height: 42px; font-size: 19px; }
+  .touch-utility {
+    grid-template-columns: repeat(2, 40px);
+    gap: 6px;
+    bottom: calc(var(--touch-edge) + 54px + 42px + var(--touch-gap) * 3 + 10px);
+  }
+  .touch-small { width: 40px; height: 40px; font-size: 17px; }
+  .touch-attack { width: 60px; height: 60px; font-size: 26px; }
+  .touch-jump { width: 54px; height: 54px; font-size: 26px; }
+  .touch-use, .touch-dodge { width: 46px; height: 46px; font-size: 21px; }
+}
+
+/* Short windows (a phone in landscape): keep the pad low and stop the utility
+   column from marching up into the top-left HUD panel. */
+@media (max-height: 460px) {
+  .touch-utility { grid-template-columns: repeat(4, 40px); grid-auto-flow: column; }
+  .touch-small { width: 40px; height: 40px; font-size: 17px; }
+}
+
+/* Belt and braces: a stale class can never leave the pad armed on top of a
+   screen that owns input. refreshTouchControls drives the real show/hide. */
+body:not(.controls-touch) .mobile-controls { display: none; }
+
+/* The platform question itself, on a narrow phone. This is title-screen CSS and
+   is keyed off the VIEWPORT, not off body.controls-touch - the main menu keeps
+   its full size on a desktop no matter which scheme was picked. */
+@media (max-width: 680px) {
+  .title-platform-hint { display: none; }
+  .title-platform-btn { min-height: 60px; }
+  .platform-icon { font-size: 26px; }
+  .platform-copy strong { font-size: 24px; }
+}

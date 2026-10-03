@@ -416,18 +416,34 @@ class World {
       }
     }
 
-    // Place starting campfire and torches at spawn point (center)
+    // The starter camp: a small house on the flat plot with everything the
+    // player needs inside it.
+    //
+    // buildHouseShell's `groundY` argument is the row of the SOLID GROUND, and
+    // it measures the house UP from there: the floor lands on groundY - 1 and
+    // the row you stand in (and therefore the row furniture belongs on) is
+    // groundY - 2. Every other building passes surfaceHeights[x] straight
+    // through.
+    //
+    // This used to pass surfaceHeights[x] - 1 and put the furnishings on that
+    // same row. That lifted the whole shell one tile, so the floor floated a
+    // tile above the real ground and the campfire, chest and bed were all
+    // dropped into the gap UNDERNEATH the house instead of inside it.
     const spawnX = Math.floor(this.width / 2);
-    const spawnY = this.surfaceHeights[spawnX] - 1;
-    this.setTile(spawnX, spawnY, TILES.CAMPFIRE);
-    this.setTile(spawnX - 4, spawnY, TILES.TORCH);
-    this.setTile(spawnX + 4, spawnY, TILES.TORCH);
+    const groundY = this.surfaceHeights[spawnX];
+    const roomY = groundY - 2;          // the row a standing player occupies
 
-    // Build a compact starter camp with a clear doorway and a safe respawn point.
-    this.buildHouseShell(spawnX, spawnY, 6, 6, TILES.WOOD, TILES.WOOD_STAIRS);
-    this.setTile(spawnX - 3, spawnY, TILES.CHEST);
-    this.setTile(spawnX + 2, spawnY, TILES.BED);
-    this.landmarks.push({ x: spawnX, y: spawnY - 6, type: 'spawn_camp' });
+    this.buildHouseShell(spawnX, groundY, 6, 6, TILES.WOOD, TILES.WOOD_STAIRS);
+
+    // Columns spawnX - 1 .. spawnX + 1 are the doorway and its framing, so the
+    // furnishings go in the clear interior either side of it and never block
+    // the way in or out.
+    this.setTile(spawnX - 5, roomY, TILES.TORCH);
+    this.setTile(spawnX + 5, roomY, TILES.TORCH);
+    this.setTile(spawnX - 2, roomY, TILES.CAMPFIRE);
+    this.setTile(spawnX - 4, roomY, TILES.CHEST);
+    this.setTile(spawnX + 3, roomY, TILES.BED);
+    this.landmarks.push({ x: spawnX, y: groundY - 6, type: 'spawn_camp' });
 
     this.generateLandmarks();
     this.generateSurfaceStructures();
@@ -739,8 +755,11 @@ class World {
       const groundY = this.surfaceHeights[cabinX];
       this.landmarks.push({ x: cabinX, y: groundY - 4, type: 'cabin' });
       this.buildHouseShell(cabinX, groundY, 5, 6, TILES.WOOD, TILES.WOOD_STAIRS);
-      this.setTile(cabinX, groundY - 2, TILES.CHEST);
-      this.setTile(cabinX - 1, groundY - 2, TILES.CAMPFIRE);
+      // Standing row is groundY - 2 (the floor is groundY - 1). Columns
+      // cabinX - 1 .. cabinX + 1 are the doorway and its posts, so the chest and
+      // the fire go either side of the entrance instead of plugging it.
+      this.setTile(cabinX + 3, groundY - 2, TILES.CHEST);
+      this.setTile(cabinX - 3, groundY - 2, TILES.CAMPFIRE);
     }
   }
 
@@ -753,22 +772,24 @@ class World {
     const groundY = this.surfaceHeights[centerX];
     this.landmarks.push({ x: centerX, y: groundY - 5, type: 'snow_lodge' });
     this.buildHouseShell(centerX, groundY, 5, 6, TILES.SNOW, TILES.SNOW);
-    this.setTile(centerX, groundY - 2, TILES.CHEST);
-    this.setTile(centerX - 2, groundY - 1, TILES.CAMPFIRE);
+    // Both on the standing row: groundY - 1 is the stone floor itself, so a
+    // furnishing placed there is buried in the boards.
+    this.setTile(centerX + 3, groundY - 2, TILES.CHEST);
+    this.setTile(centerX - 3, groundY - 2, TILES.CAMPFIRE);
   }
 
   buildSavannaOutpost(centerX) {
     const groundY = this.surfaceHeights[centerX];
     this.landmarks.push({ x: centerX, y: groundY - 6, type: 'savanna_outpost' });
     this.buildHouseShell(centerX, groundY, 5, 7, TILES.STONE_BRICK, TILES.SAND);
-    this.setTile(centerX, groundY - 1, TILES.CHEST);
+    this.setTile(centerX + 3, groundY - 2, TILES.CHEST);
   }
 
   buildSwampHut(centerX) {
     const groundY = this.surfaceHeights[centerX];
     this.landmarks.push({ x: centerX, y: groundY - 5, type: 'swamp_hut' });
     this.buildHouseShell(centerX, groundY, 5, 6, TILES.MUD, TILES.MANGROVE_LEAVES);
-    this.setTile(centerX, groundY - 2, TILES.CHEST);
+    this.setTile(centerX + 3, groundY - 2, TILES.CHEST);
   }
 
   generateUndergroundFeatures() {

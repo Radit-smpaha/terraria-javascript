@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=27">
+  <link rel="stylesheet" href="terraria.css?v=28">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -236,6 +236,19 @@
           <span><kbd>J</kbd> Journal</span>
           <span><kbd>F</kbd> FPS</span>
         </div>
+        <!-- The same cheat-sheet for thumbs. Only one of the two is ever
+             displayed (see body.controls-touch), so the bottom panel never
+             grows taller than it was. -->
+        <div class="controls-hint controls-hint-touch">
+          <span><kbd>◀</kbd><kbd>▶</kbd> Move</span>
+          <span><kbd>⤒</kbd> Jump / Double Jump</span>
+          <span><kbd>⤓</kbd> Drop Through</span>
+          <span><kbd>💨</kbd> Dodge Roll</span>
+          <span><kbd>⛏️</kbd> Attack / Mine</span>
+          <span><kbd>✋</kbd> Place / Use</span>
+          <span><kbd>Tap the world</kbd> Aim</span>
+          <span><kbd>⏸</kbd> Pause Menu</span>
+        </div>
       </div>
 
       <!-- Settings: secondary actions and performance controls -->
@@ -339,6 +352,19 @@
                 <span><strong>Item name readouts</strong><small>Hover tooltips and the name above the hotbar</small></span>
                 <input id="settings-tooltips" type="checkbox" checked>
               </label>
+            </section>
+            <section class="settings-section">
+              <h4>CONTROLS</h4>
+              <label class="settings-row">
+                <span><strong>Control scheme</strong><small>Keyboard &amp; mouse, or the on-screen touch controls</small></span>
+                <select id="settings-controls">
+                  <option value="pc">PC / Laptop</option>
+                  <option value="touch">Mobile (touch)</option>
+                </select>
+              </label>
+              <p class="settings-help settings-help-tight" id="settings-controls-note">
+                Switching to Mobile draws thumb controls over the world and shrinks the HUD to make room for them.
+              </p>
             </section>
             <section class="settings-section">
               <h4>QUICK ACTIONS</h4>
@@ -477,7 +503,7 @@
       </div>
 
       <!-- NPC talk prompt + quest dialog (see npcs.js) -->
-      <div id="npc-prompt" class="npc-prompt hidden">Press <kbd>T</kbd> to talk</div>
+      <div id="npc-prompt" class="npc-prompt hidden"><span class="hint-keys">Press <kbd>T</kbd> to talk</span><span class="hint-touch">Tap <strong>💬</strong> to talk</span></div>
       <div id="npc-modal" class="modal hidden">
         <div class="modal-content npc-modal-content">
           <div class="modal-header">
@@ -591,6 +617,24 @@
               <li><kbd>J</kbd> — Open the Settlement Journal (discoveries and score).</li>
               <li><kbd>Right-click</kbd> with the Fishing Rod on water — cast or reel in a line.</li>
             </ul>
+            <h4>PLAYING ON A PHONE OR TABLET</h4>
+            <ul>
+              <li>On your first visit the title screen asks <strong>how you are playing</strong>. Pick
+                <strong>Mobile</strong> and on-screen thumb controls appear over the world; pick
+                <strong>PC / Laptop</strong> and you get the keyboard and mouse bindings above. The answer is
+                remembered — change it any time in <strong>Settings → Controls</strong>, or with the small
+                🎮 chip in the corner of the title screen.</li>
+              <li><kbd>◀</kbd> <kbd>▶</kbd> — move. <kbd>⤒</kbd> — jump (tap again in the air to double jump).
+                <kbd>⤓</kbd> — drop through a platform. <kbd>💨</kbd> — dodge roll.</li>
+              <li><kbd>⛏️</kbd> — attack, mine or interact, held down to keep swinging. <kbd>✋</kbd> — place the
+                block in your hand, drink a potion, cast the rod.</li>
+              <li><strong>Tap the world to aim.</strong> Your fingertip is far less precise than a mouse, so if you
+                tap near a monster the aim snaps onto it — mining stays exact, combat stays forgiving.</li>
+              <li><kbd>⏸</kbd> opens the pause menu (Resume, Save World, Settings, Main Menu). <kbd>❤</kbd> quick-heals,
+                <kbd>🧪</kbd> drinks the best buff potion, <kbd>💬</kbd> talks to a nearby villager.</li>
+              <li>The HUD is drawn smaller in this mode so the controls have room to sit; the main menu is left at
+                full size.</li>
+            </ul>
             <h4>PERFORMANCE</h4>
             <ul>
               <li>Terracraft watches its own frame time. If your machine starts to struggle it quietly drops to
@@ -606,6 +650,38 @@
         </div>
       </div>
 
+      <!-- Touch controls. Drawn only for players who answered "Mobile", and
+           only while the world is actually playable (see refreshTouchControls)
+           - pausing, dying or opening a modal puts this away and drops any key
+           it was holding.
+           Every button writes into the SAME this.input.keys map the keyboard
+           fills, and the two action buttons drive the SAME handleLeftClick /
+           handleRightClick the mouse does. There is deliberately no separate
+           "mobile player" code path in the simulation. #mobile-controls lives
+           INSIDE #ui-layer so that every modal, the pause box, the death screen
+           and the title screen (all z-index 50+) stack above it for free. -->
+      <div id="mobile-controls" class="mobile-controls hidden">
+        <div class="touch-cluster touch-utility">
+          <button id="touch-pause" class="touch-btn touch-small" data-code="Escape" aria-label="Pause menu">⏸</button>
+          <button id="touch-heal" class="touch-btn touch-small" data-code="KeyH" aria-label="Quick heal">❤</button>
+          <button id="touch-buff" class="touch-btn touch-small" data-code="KeyQ" aria-label="Drink buff potion">🧪</button>
+          <button id="touch-talk" class="touch-btn touch-small" data-code="KeyT" aria-label="Talk to a villager">💬</button>
+        </div>
+        <div class="touch-cluster touch-move">
+          <button id="touch-left" class="touch-btn touch-dir" data-code="KeyA" aria-label="Move left">◀</button>
+          <button id="touch-right" class="touch-btn touch-dir" data-code="KeyD" aria-label="Move right">▶</button>
+        </div>
+        <div class="touch-cluster touch-alt">
+          <button id="touch-drop" class="touch-btn touch-drop" data-code="KeyS" aria-label="Drop through platform">⤓</button>
+        </div>
+        <div class="touch-cluster touch-act">
+          <button id="touch-dodge" class="touch-btn touch-dodge" data-code="ShiftLeft" aria-label="Dodge roll">💨</button>
+          <button id="touch-use" class="touch-btn touch-use" data-action="right" aria-label="Place block / use item">✋</button>
+          <button id="touch-attack" class="touch-btn touch-attack" data-action="left" aria-label="Attack / mine">⛏️</button>
+          <button id="touch-jump" class="touch-btn touch-jump" data-code="Space" aria-label="Jump / double jump">⤒</button>
+        </div>
+      </div>
+
       <!-- Pause Overlay -->
       <div id="pause-overlay" class="pause-overlay hidden">
         <div class="pause-box">
@@ -616,7 +692,7 @@
             <button id="btn-pause-settings" class="ui-btn" title="Settings and controls">⚙️ SETTINGS</button>
             <button id="btn-pause-menu" class="ui-btn" title="Save, then return to the main menu to switch worlds">🏠 MAIN MENU</button>
           </div>
-          <p>Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</p>
+          <p class="pause-hint"><span class="hint-keys">Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</span><span class="hint-touch">Tap <strong>▶ RESUME</strong> to head back out</span></p>
         </div>
       </div>
 
@@ -668,6 +744,35 @@
         <button id="title-credits-button" class="title-button">Credits</button>
       </main>
 
+      <!-- Which controls the player gets. This is the FIRST thing the title
+           screen shows, ahead of the menu: the answer decides whether the game
+           listens for a keyboard or draws thumb controls over the world. It is
+           remembered, so it is asked once rather than on every visit. It sits
+           OUTSIDE #title-menu on purpose - that block is the fixed three-item
+           Terraria menu and must not grow a fourth row. -->
+      <section id="title-platform" class="title-platform" aria-labelledby="platform-heading" hidden>
+        <h2 id="platform-heading">How are you playing?</h2>
+        <p class="title-platform-hint">This sets your controls — you can change it any time in Settings.</p>
+        <div class="title-platform-options">
+          <button id="title-platform-pc" class="title-button title-platform-btn" data-scheme="pc">
+            <span class="platform-icon" aria-hidden="true">🖥️</span>
+            <span class="platform-copy">
+              <strong>PC / Laptop</strong>
+              <small>Keyboard &amp; mouse</small>
+            </span>
+            <span class="platform-badge" id="title-platform-pc-badge" hidden>Recommended</span>
+          </button>
+          <button id="title-platform-mobile" class="title-button title-platform-btn" data-scheme="touch">
+            <span class="platform-icon" aria-hidden="true">📱</span>
+            <span class="platform-copy">
+              <strong>Mobile</strong>
+              <small>On-screen touch controls</small>
+            </span>
+            <span class="platform-badge" id="title-platform-mobile-badge" hidden>Recommended</span>
+          </button>
+        </div>
+      </section>
+
       <!-- Three save files, Terraria's "select world" list. -->
       <section id="title-worlds" class="title-worlds" aria-labelledby="worlds-heading" hidden>
         <h2 id="worlds-heading">Select World</h2>
@@ -689,6 +794,14 @@
         <button id="title-credits-back" class="title-button">Back</button>
       </section>
 
+      <!-- Escape hatch for the platform question. Small, in the corner and
+           outside #title-menu, so it reopens the chooser without adding a row
+           to the menu itself. -->
+      <button id="title-controls-chip" class="title-controls-chip" title="Change the control scheme">
+        <span id="title-controls-chip-icon" aria-hidden="true">🎮</span>
+        <span id="title-controls-chip-label">Controls: Keyboard</span>
+      </button>
+
       <span class="title-version">Terracraft · A little world, a big adventure</span>
     </section>
   </div>
@@ -700,7 +813,7 @@
        onerror fires per-script for network/parse failures. -->
   <script src="audio.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL audio.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok audio.js: '+(typeof SoundSystem))"></script>
   <script src="particles.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
-  <script src="world.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL world.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok world.js: '+(typeof World))"></script>
+  <script src="world.js?v=15" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL world.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok world.js: '+(typeof World))"></script>
   <script src="weather.js?v=7" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL weather.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok weather.js: '+(typeof WeatherSystem))"></script>
   <script src="entities.js?v=15" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL entities.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok entities.js: Player='+(typeof Player))"></script>
   <script src="underworld.js?v=4" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL underworld.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok underworld.js: '+(typeof UnderworldMonster))"></script>
@@ -708,7 +821,7 @@
   <script src="juice.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=40" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=41" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>

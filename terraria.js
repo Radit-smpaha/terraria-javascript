@@ -1005,6 +1005,27 @@ class Game {
       mouseRightDown: false
     };
 
+    // ---- Control scheme -------------------------------------------------
+    // 'pc' = keyboard + mouse, 'touch' = the on-screen pad, null = the player
+    // has not been asked yet. The title screen answers this BEFORE it shows the
+    // menu. Kept deliberately out of this.settings: settings are per-world
+    // tuning the player adjusts in game, this is a per-device fact about the
+    // hardware, and mixing them would put "are you on a phone?" into save files.
+    this.platform = null;
+    // Both of these are read by refreshTouchControls, which loadControlScheme()
+    // calls further down the constructor - before paused is set and before
+    // initTitleScreen() runs. Left undefined they would be falsy-but-accidental,
+    // so the pad could be armed for one frame before the title screen covers it.
+    this.titleScreenOpen = true;
+    this.isDead = false;
+    // Which virtual keys the pad is currently holding, so it can let go of all
+    // of them at once when it goes away (see releaseTouchInput).
+    this._touchHeld = new Set();
+    this._touchActions = new Set();
+    this._touchControlsShown = false;
+    // The pointer id that owns the aim, or null. Only one finger aims at a time.
+    this._touchAimPointer = null;
+
     // Timers & spawning
     this.spawnTimer = 1.5;
     this.critterTimer = 0;
@@ -1060,6 +1081,10 @@ class Game {
     this.initWindow();
     this.initInput();
     this.initUI();
+    // Arms the touch pad's listeners and reads the remembered platform answer,
+    // which initTitleScreen then uses to decide what it shows FIRST.
+    this.initTouchControls();
+    this.loadControlScheme();
     this.particles.initAmbientLeaves(this.world.pixelWidth, this.world.pixelHeight);
 
     this.loadGame(true);
@@ -1104,8 +1129,10 @@ class Game {
     const menu = document.getElementById('title-menu');
     const worlds = document.getElementById('title-worlds');
     const credits = document.getElementById('title-credits');
+    // The platform question, which owns the very first thing the screen shows.
+    const platform = document.getElementById('title-platform');
     this.titleScreenOpen = true;
-    this.titlePanel = 'menu';
+    this.titlePanel = this.platform ? 'menu' : 'platform';
 
     // ---- Splash line ---------------------------------------------------
     // Minecraft and Terraria both rotate a yellow blurb beside the logo. One
@@ -1528,6 +1555,7 @@ class Game {
       menu.hidden = name !== 'menu';
       if (worlds) worlds.hidden = name !== 'worlds';
       credits.hidden = name !== 'credits';
+      if (platform) platform.hidden = name !== 'platform';
       if (name === 'worlds') this.renderTitleWorlds(pickWorld);
       // Hand focus to whatever is now on top, so keyboard players are never
       // stranded on a button that just disappeared.
@@ -1535,11 +1563,45 @@ class Game {
         ? document.querySelector('#title-world-list .title-world-card')
         : name === 'credits'
           ? document.getElementById('title-credits-back')
-          : document.getElementById('title-singleplayer');
+          : name === 'platform'
+            ? document.getElementById('title-platform-pc')
+            : document.getElementById('title-singleplayer');
       if (target && target.focus) {
         try { target.focus({ preventScroll: true }); } catch (_) { target.focus(); }
       }
     };
+
+    // ---- The platform question ------------------------------------------
+    // A coarse pointer with no fine one is a phone or a tablet, so pre-flag the
+    // answer that is almost certainly right. It is a hint, not a decision: both
+    // buttons behave identically and the answer is what the player clicks.
+    const coarseOnly = (() => {
+      try {
+        if (typeof window.matchMedia !== 'function') return false;
+        return window.matchMedia('(pointer: coarse)').matches &&
+          !window.matchMedia('(pointer: fine)').matches;
+      } catch (_) { return false; }
+    })();
+    const pcBadge = document.getElementById('title-platform-pc-badge');
+    const mobileBadge = document.getElementById('title-platform-mobile-badge');
+    if (pcBadge) pcBadge.hidden = coarseOnly;
+    if (mobileBadge) mobileBadge.hidden = !coarseOnly;
+
+    const pickScheme = (mode) => (event) => {
+      event?.stopPropagation?.();
+      // This tap is very often the FIRST user gesture on a phone, and an
+      // AudioContext can only be built inside one - so unlock here or the game
+      // stays silent until the player happens to find a keyboard.
+      this.sound.init();
+      this.setControlScheme(mode);
+    };
+    document.getElementById('title-platform-pc')?.addEventListener('click', pickScheme('pc'));
+    document.getElementById('title-platform-mobile')?.addEventListener('click', pickScheme('touch'));
+    // The corner chip: the way back to the question once it has been answered.
+    document.getElementById('title-controls-chip')?.addEventListener('click', (event) => {
+      event?.stopPropagation?.();
+      showPanel('platform');
+    });
 
     document.getElementById('title-singleplayer')?.addEventListener('click', () => showPanel('worlds'));
     document.getElementById('title-credits-button')?.addEventListener('click', () => showPanel('credits'));
@@ -1553,6 +1615,13 @@ class Game {
     const onKey = (event) => {
       event.stopPropagation();
       if (!this.titleScreenOpen) return;
+      // The platform question has to be answered before anything else: there is
+      // no menu behind it to fall back on, and backing out would leave the game
+      // with no control scheme at all.
+      if (this.titlePanel === 'platform') {
+        event.preventDefault();
+        return;
+      }
       if (event.key === 'Escape') {
         if (this.titlePanel !== 'menu') {
           event.preventDefault();
@@ -1583,6 +1652,11 @@ class Game {
     // way it was found, without rebuilding any of the above.
     this._titleShowPanel = showPanel;
     this._titleEnterWorld = enterWorld;
+    // Open on the question when it has never been answered, otherwise straight
+    // on the menu. showTitleScreen always opens on 'menu': coming back mid-
+    // session is not a reason to interrogate the player again.
+    showPanel(this.platform ? 'menu' : 'platform');
+    this.syncControlSchemeLabels();
   }
 
   /**
@@ -1615,6 +1689,9 @@ class Game {
     this.input.keys = {};
     this.input.mouseDown = false;
     this.input.mouseRightDown = false;
+    // Put the touch pad away as well, and let go of anything it was holding.
+    this.releaseTouchInput();
+    this.refreshTouchControls();
     // The "leaving" class was added on the way out and never taken back off, so
     // without this the screen would fade itself straight out again.
     screen.classList.remove('hidden', 'title-screen-leaving');
@@ -1640,6 +1717,335 @@ class Game {
     try { this.saveGame(true); } catch (_) { /* saveGame reports its own failure */ }
     this.showTitleScreen();
     return true;
+  }
+
+  /** Where the answer to "how are you playing?" is remembered. */
+  get controlSchemeKey() { return 'terracraft-controls'; }
+
+  /**
+   * Read the remembered platform answer.
+   *
+   * Returns 'pc', 'touch', or null when the player has never been asked — which
+   * is exactly the state that makes initTitleScreen open on the question
+   * instead of the menu.
+   */
+  loadControlScheme() {
+    let saved = null;
+    try { saved = localStorage.getItem(this.controlSchemeKey); } catch (_) { /* blocked storage */ }
+    this.platform = saved === 'pc' || saved === 'touch' ? saved : null;
+    this.applyControlScheme({ silent: true });
+    return this.platform;
+  }
+
+  /**
+   * Put the chosen control scheme into force.
+   *
+   * Everything downstream keys off a single class on <body>: the stylesheet
+   * shrinks the HUD and reveals the pad under `body.controls-touch`, and
+   * nothing else has to know which mode is live. The main menu is a sibling of
+   * #ui-layer, so it cannot be caught by any of those rules.
+   */
+  applyControlScheme({ silent = true } = {}) {
+    const touch = this.platform === 'touch';
+    if (document.body) {
+      document.body.classList.toggle('controls-touch', touch);
+      document.body.classList.toggle('controls-pc', this.platform === 'pc');
+    }
+    // A finger that was down while the scheme changed must not stay down.
+    this.releaseTouchInput();
+    this.refreshTouchControls();
+    this.syncControlSchemeLabels();
+    if (!silent) {
+      this.showToast(touch
+        ? '📱 Touch controls on — tap the world to aim.'
+        : '🖥️ Keyboard & mouse controls on.');
+    }
+    return touch;
+  }
+
+  /**
+   * Remember and apply a new answer.
+   *
+   * Called from the title-screen chooser, the corner chip and the Settings row,
+   * so all three routes land in the same place. Picking from the title screen
+   * also drops the player in front of the menu, so the question is never a
+   * dead end they have to back out of.
+   */
+  setControlScheme(mode, { silent = false } = {}) {
+    if (mode !== 'pc' && mode !== 'touch') return false;
+    const changed = this.platform !== mode;
+    this.platform = mode;
+    try { localStorage.setItem(this.controlSchemeKey, mode); } catch (_) { /* blocked storage */ }
+    this.applyControlScheme({ silent: silent || !changed });
+    if (this.titleScreenOpen && this._titleShowPanel) this._titleShowPanel('menu');
+    return true;
+  }
+
+  /** Keep the title-screen chip and the Settings row telling the same story. */
+  syncControlSchemeLabels() {
+    const who = !this.platform ? 'not set' : this.platform === 'touch' ? 'Mobile' : 'PC / Laptop';
+    const label = document.getElementById('title-controls-chip-label');
+    if (label) {
+      label.textContent = 'Controls: ' + (!this.platform
+        ? 'Not set'
+        : this.platform === 'touch' ? 'Mobile' : 'Keyboard');
+    }
+    const icon = document.getElementById('title-controls-chip-icon');
+    if (icon) icon.textContent = this.platform === 'touch' ? '📱' : '🎮';
+    const chip = document.getElementById('title-controls-chip');
+    if (chip) chip.title = 'Change the control scheme (currently ' + who + ')';
+    const select = document.getElementById('settings-controls');
+    if (select && this.platform) select.value = this.platform;
+  }
+
+  /**
+   * Show or hide the on-screen pad.
+   *
+   * Run every frame from the main loop rather than from a dozen call sites:
+   * pausing, dying, opening a modal, walking into the world and returning to
+   * the main menu all change the answer, and one place that recomputes it
+   * cannot drift out of step with any of them.
+   *
+   * The DOM is only touched when the answer actually changes, which also makes
+   * this cheap enough to call 60 times a second.
+   */
+  refreshTouchControls() {
+    const layer = this._mobileControls;
+    if (!layer) return;
+    // Keep the stylesheet's view of the mode in step with this.platform. The
+    // CSS trusts `body.controls-touch` for both the smaller HUD and the pad's
+    // visibility, so if the two ever disagreed the pad could be armed over a
+    // screen that owns input. Cheap enough to re-assert every frame.
+    if (document.body) {
+      document.body.classList.toggle('controls-touch', this.platform === 'touch');
+      document.body.classList.toggle('controls-pc', this.platform === 'pc');
+    }
+    const wanted = this.platform === 'touch' && !this.paused && !this.titleScreenOpen &&
+      !this.isDead && !this.isModalOpen();
+    if (wanted === this._touchControlsShown) return;
+    this._touchControlsShown = wanted;
+    layer.classList.toggle('hidden', !wanted);
+    // Hiding the pad while a thumb is down would strand whatever it was
+    // holding, which is how you end up with a player who walks forever.
+    if (!wanted) this.releaseTouchInput();
+  }
+
+  /** Let go of every virtual key and mouse button the pad is holding. */
+  releaseTouchInput() {
+    for (const code of this._touchHeld) delete this.input.keys[code];
+    this._touchHeld.clear();
+    for (const btn of this._touchActions) {
+      if (btn && btn.classList) btn.classList.remove('is-down');
+    }
+    this._touchActions.clear();
+    this.input.mouseDown = false;
+    this.input.mouseRightDown = false;
+    this._touchAimPointer = null;
+  }
+
+  /**
+   * Press or release one virtual key.
+   *
+   * The pad writes into the same `input.keys` map the keyboard fills, so
+   * movement, wall-sliding, wall-kicks, wing flight and drop-through all work
+   * without a single line of touch-specific physics.
+   *
+   * Jump, dodge and the fishing reel are different: they only exist as edge
+   * triggers inside the keyboard handler, and a button is not a key, so those
+   * three are mirrored here. They fire once per press, for the same reason the
+   * real ones ignore OS key-repeat.
+   */
+  setTouchKey(code, down) {
+    if (!code) return;
+    if (!down) {
+      this._touchHeld.delete(code);
+      delete this.input.keys[code];
+      return;
+    }
+    this._touchHeld.add(code);
+    this.input.keys[code] = true;
+    if (code === 'Space' || code === 'KeyW' || code === 'ArrowUp') {
+      this.player.queueJump(this.sound, this.particles);
+    } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
+      this.player.dodge(this.sound, this.particles);
+    } else if (code === 'Escape') {
+      this.togglePause();
+    } else if (code === 'KeyH') {
+      this.quickHeal();
+    } else if (code === 'KeyQ') {
+      this.quickBuff();
+    } else if (code === 'KeyT') {
+      if (this.npcs) this.npcs.handleTalkKey();
+    } else if (code === 'KeyA' || code === 'KeyD') {
+      // Reels in a cast line. The keyboard raises this on keydown of the
+      // movement keys, so the pad has to as well or fishing is unreachable.
+      this.onFishingKey();
+    }
+  }
+
+  /**
+   * Press or release one virtual mouse button.
+   *
+   * Matches the real mouse exactly: left fires once on press and then auto-
+   * swings while held (the update loop re-runs handleLeftClick for as long as
+   * input.mouseDown is set); right fires once on press, as a mouse does.
+   */
+  setTouchAction(button, down) {
+    const left = button === 'left';
+    if (down) {
+      this.input.mouseDown = !!left;
+      this.input.mouseRightDown = !left;
+      if (left) this.handleLeftClick();
+      else this.handleRightClick();
+      return;
+    }
+    if (left) this.input.mouseDown = false;
+    else this.input.mouseRightDown = false;
+  }
+
+  /**
+   * A fingertip is roughly ten times less precise than a mouse, so the aim
+   * point is nudged onto a monster standing right next to it — about one tile
+   * of forgiveness. Deliberately a snap onto what is ALREADY aimed at, not an
+   * auto-aim: mining a specific block has to stay exact, and a crosshair that
+   * wanders off to the nearest zombie makes that impossible.
+   */
+  snapTouchAim() {
+    if (this.platform !== 'touch') return;
+    // Only while swinging. The whole point of the forgiveness is to make
+    // COMBAT land; snapping while a pickaxe is in hand would drag the aim off
+    // the exact tile the player was tapping at, which is the one case that has
+    // to stay pixel-precise. Ranged and magic still snap - the projectile goes
+    // where the finger points either way.
+    const held = this.inventory[this.player.selectedSlot];
+    const itemData = held ? ITEMS[held.id] : null;
+    if (!itemData || itemData.type !== 'weapon') return;
+    const aimX = this.input.mouseX + this.camera.x;
+    const aimY = this.input.mouseY + this.camera.y;
+    const SNAP = 40;   // px: just over one tile
+    let bestX = 0, bestY = 0, bestD = SNAP;
+    const consider = (target) => {
+      if (!target || target.dead) return;
+      const cx = target.x + (target.width || 0) / 2;
+      const cy = target.y + (target.height || 0) / 2;
+      const d = Math.hypot(cx - aimX, cy - aimY);
+      if (d < bestD) { bestD = d; bestX = cx; bestY = cy; }
+    };
+    for (const m of (this.monsters || [])) consider(m);
+    consider(this.boss);
+    if (bestD < SNAP) {
+      this.input.mouseX = bestX - this.camera.x;
+      this.input.mouseY = bestY - this.camera.y;
+    }
+  }
+
+  /**
+   * Wire the on-screen pad.
+   *
+   * Every button carries either `data-code` (a key to hold) or `data-action`
+   * (a mouse button), so the pad can be re-arranged in the markup without
+   * touching this method at all.
+   */
+  initTouchControls() {
+    const layer = document.getElementById('mobile-controls');
+    if (!layer) return;
+    this._mobileControls = layer;
+    const buttons = layer.querySelectorAll ? layer.querySelectorAll('.touch-btn') : [];
+    for (const btn of buttons) {
+      const code = btn.dataset ? btn.dataset.code : null;
+      const action = btn.dataset ? btn.dataset.action : null;
+      if (!code && !action) continue;
+      const press = (event) => {
+        // Audio unlock on the first action. Browsers only allow an AudioContext
+        // to be created inside a real user gesture, and on a phone the pad
+        // buttons and canvas taps ARE that gesture - there is no keydown or
+        // mousedown to unlock from, so without this the game is silent on mobile.
+        this.sound.init();
+        // preventDefault stops the browser inventing a compatibility mousedown
+        // for this touch, which would double-fire the swing the button just
+        // started.
+        if (event.preventDefault) event.preventDefault();
+        if (event.stopPropagation) event.stopPropagation();
+        // Pointer capture means sliding a thumb off the button still delivers
+        // its release here, instead of leaving the key held down for ever.
+        try { btn.setPointerCapture(event.pointerId); } catch (_) { /* not supported */ }
+        btn.classList.add('is-down');
+        this._touchActions.add(btn);
+        if (code) this.setTouchKey(code, true);
+        else this.setTouchAction(action, true);
+      };
+      const release = (event) => {
+        if (event.preventDefault) event.preventDefault();
+        if (event.stopPropagation) event.stopPropagation();
+        btn.classList.remove('is-down');
+        this._touchActions.delete(btn);
+        if (code) this.setTouchKey(code, false);
+        else this.setTouchAction(action, false);
+      };
+      btn.addEventListener('pointerdown', press);
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
+      btn.addEventListener('lostpointercapture', release);
+      // A long press must not raise the operating system's selection menu.
+      btn.addEventListener('contextmenu', (event) => event.preventDefault());
+    }
+    this.initTouchAim();
+  }
+
+  /**
+   * Tapping the world aims at it, exactly as moving a mouse there does: the tap
+   * writes `input.mouseX/Y` and holds the left button, so mining, attacking and
+   * interacting all run through the same code the desktop build uses.
+   *
+   * Bound to the game canvas rather than the window, because #ui-layer is
+   * transparent to pointers outside its panels — so a tap on empty HUD space
+   * still lands here, while a tap on a button never does.
+   */
+  initTouchAim() {
+    const canvas = this.canvas;
+    if (!canvas || !canvas.addEventListener) return;
+    const pos = (event) => {
+      const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
+      // The canvas fills the viewport, but subtracting its own origin keeps
+      // this correct inside a scaled iframe (the Streamlit embed).
+      const left = rect && isFinite(rect.left) ? rect.left : 0;
+      const top = rect && isFinite(rect.top) ? rect.top : 0;
+      this.input.mouseX = event.clientX - left;
+      this.input.mouseY = event.clientY - top;
+    };
+    const canAim = () => this.platform === 'touch' && !this.paused &&
+      !this.titleScreenOpen && !this.isDead && !this.isModalOpen();
+
+    canvas.addEventListener('pointerdown', (event) => {
+      // One aiming finger at a time: a second thumb landing on the world while
+      // the first is holding a mine must not yank the aim across the screen.
+      if (!canAim() || this._touchAimPointer !== null) return;
+      this._touchAimPointer = event.pointerId;
+      // Same reason as the pad buttons: this tap may be the first user gesture
+      // the page ever sees, and audio has to be unlocked inside it.
+      this.sound.init();
+      if (event.preventDefault) event.preventDefault();
+      try { canvas.setPointerCapture(event.pointerId); } catch (_) { /* not supported */ }
+      pos(event);
+      // Snap here too, not only in update(): this handler fires the click
+      // SYNCHRONOUSLY, so without it the very first tap of a swing would use
+      // the raw fingertip position while every later one was nudged.
+      this.snapTouchAim();
+      this.input.mouseDown = true;
+      this.handleLeftClick();
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (event.pointerId !== this._touchAimPointer) return;
+      pos(event);
+    });
+    const endAim = (event) => {
+      if (event.pointerId !== this._touchAimPointer) return;
+      this._touchAimPointer = null;
+      this.input.mouseDown = false;
+      try { canvas.releasePointerCapture(event.pointerId); } catch (_) { /* not captured */ }
+    };
+    canvas.addEventListener('pointerup', endAim);
+    canvas.addEventListener('pointercancel', endAim);
   }
 
   /**
@@ -1901,6 +2307,9 @@ class Game {
     setCheck('settings-damagetext', this.settings.damageText);
     setSel('settings-minimap', this.settings.minimap);
     setCheck('settings-tooltips', this.settings.tooltips);
+    // The control scheme lives outside this.settings, but it is still a control
+    // in this panel, so it gets synced here alongside the rest.
+    this.syncControlSchemeLabels();
     const readout = document.getElementById('settings-volume-value');
     if (readout) readout.textContent = (Number(this.settings.volume) || 0) + '%';
   }
@@ -2315,6 +2724,11 @@ class Game {
     settingsClose?.addEventListener('click', () => this.toggleSettings(false));
     document.getElementById('settings-modal')?.addEventListener('click', (event) => {
       if (event.target === event.currentTarget) this.toggleSettings(false);
+    });
+    // The control scheme is NOT a game setting: it is a fact about the device,
+    // so it persists under its own key and applies the moment it changes.
+    document.getElementById('settings-controls')?.addEventListener('change', (event) => {
+      this.setControlScheme(event.target.value);
     });
     document.getElementById('settings-quality')?.addEventListener('change', (event) => {
       this.applyQualityMode(event.target.value);
@@ -6018,6 +6432,11 @@ this.player.dodgeTime = 0;
   update(dt) {
     if (this.paused) return;
 
+    // Touch aim gets its fingertip-forgiveness nudge before anything reads the
+    // aim point, so handleLeftClick (below, and in the held-button branch near
+    // the end) always sees the nudged position.
+    if (this.platform === 'touch') this.snapTouchAim();
+
     // Announce a hotbar switch. This sits after the pause guard so the title
     // screen never flashes an item name over the menu.
     this.watchHotbarSelection();
@@ -7273,6 +7692,11 @@ this.player.dodgeTime = 0;
     const rdt = Number.isFinite(rawDelta) && rawDelta > 0 ? Math.min(1, rawDelta) : 0;
     const dt = Math.min(0.1, Math.max(0, Number.isFinite(rawDelta) ? rawDelta : 0));
     this.lastTime = currentTime;
+
+    // Recompute the pad's visibility before anything can read it: pausing,
+    // dying, opening a modal or walking into the world all change the answer,
+    // and doing it in one place means it cannot drift out of step.
+    this.refreshTouchControls();
 
     const workStart = performance.now();
     this.update(dt);

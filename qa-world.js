@@ -268,9 +268,24 @@ const spawnX = Math.floor(W.width / 2);
 check('the player starts on the flat plot',
   W.getBiomeAtX(spawnX) === 'plains' && W.surfaceHeights[spawnX] === plot.level,
   W.getBiomeAtX(spawnX) + '@' + W.surfaceHeights[spawnX] + ' vs level ' + plot.level);
-check('the starter camp stands on the plot',
-  W.getTile(spawnX - 3, plot.level - 1) === TILES.CHEST,
-  'chest at spawn');
+// The starter camp is a house, so its chest has to be INSIDE it. This used to
+// assert a hard-coded (spawnX - 3, level - 1), which is the row the floor sits
+// on - i.e. it pinned the very bug where the chest ended up underneath the
+// house. Assert the behaviour instead: the chest is on the standing row, over
+// a solid floor, with open air above it.
+const campFloorY = plot.level - 1;
+const campRoomY = plot.level - 2;
+const chestXs = [];
+for (let x = spawnX - 6; x <= spawnX + 6; x++) {
+  if (W.getTile(x, campRoomY) === TILES.CHEST) chestXs.push(x);
+}
+check('the starter chest is inside the house', chestXs.length === 1,
+  'chests on the standing row at x=' + chestXs.join(',') + ' (room row ' + campRoomY + ')');
+check('the starter chest stands on the house floor',
+  chestXs.every((x) => W.getTile(x, campFloorY) === TILES.STONE_BRICK),
+  'floor row ' + campFloorY);
+check('the starter chest has head room',
+  chestXs.every((x) => W.getTile(x, campRoomY - 1) === TILES.AIR));
 
 // ══════════════════════════════════════════════════════════════════════════
 step('3. The ten-block building set');
