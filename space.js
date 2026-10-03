@@ -103,7 +103,13 @@ World.prototype.generateSpaceArena = function() {
 
   const arenaCX = Math.floor(w / 2);
   const halfW = 56;                       // 112 tiles of duelling ground
-  const floorY = h - 26;                  // arena floor row
+  // The arena sits 52 rows above the world floor rather than 26. The world's
+  // height is fixed and shared with the overworld, so the only honest way to
+  // make the Ossuary deeper is to lift the crust and let the mine beneath it
+  // grow: the deep runs from DEEP_TOP all the way down to the world floor, so
+  // every row the crust rises is another row of rock, shaft and chamber under
+  // it. That took the mine from 16 rows to 42.
+  const floorY = h - 52;
   const left = Math.max(3, arenaCX - halfW);
   const right = Math.min(w - 4, arenaCX + halfW);
   const span = right - left;
@@ -152,7 +158,7 @@ World.prototype.generateSpaceArena = function() {
   const dLeft = 0;
   const dRight = w - 1;
   // The deep proper: rich enough to be worth the climb back down.
-  const DEEP_RICH = 12;
+  const DEEP_RICH = 22;   // rows below the crust before the ore turns genuinely rich
 
   // ---- 1. The rock body -------------------------------------------------
   for (let x = dLeft; x <= dRight; x++) {
@@ -183,8 +189,13 @@ World.prototype.generateSpaceArena = function() {
   // ---- 2. Chambers, joined by tunnels -----------------------------------
   // Somewhere to find, not a solid wall to chew through. Room edges are
   // wobbled per-tile so they are not obvious ellipses.
+  // Scaled to how much rock is actually under the crust, so the deeper arena
+  // gets a denser, more layered mine rather than the same handful of pockets
+  // marooned in more solid stone. Roughly one room per four rows of depth.
   const rooms = [];
-  for (let i = 0; i < 18; i++) {
+  const deepSpan = Math.max(4, DEEP_BOTTOM - DEEP_TOP);
+  const roomCount = Math.max(18, Math.round(deepSpan / 4));
+  for (let i = 0; i < roomCount; i++) {
     const room = {
       cx: Math.round(dLeft + 4 + rng() * Math.max(1, dRight - dLeft - 8)),
       cy: Math.round(DEEP_TOP + 3 + rng() * Math.max(2, DEEP_BOTTOM - DEEP_TOP - 6)),

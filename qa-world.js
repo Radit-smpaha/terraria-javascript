@@ -101,6 +101,11 @@ for (const f of files) {
 const g = global.game;
 const { TILES, ITEMS, RECIPES, TILE_SIZE, TILE_PROPERTIES } = global;
 if (!g) { console.log('BOOT FAIL: no game'); process.exit(1); }
+// The main menu boots the simulation paused, so update() would silently do
+// nothing. These suites drive update() directly, so start the game exactly
+// the way picking a world in the menu does.
+g.titleScreenOpen = false;
+g.paused = false;
 const W = g.world;
 const BIOME_ORDER = vm.runInContext('BIOME_ORDER', ctx);
 const PLAINS_PLOT_HALF = vm.runInContext('PLAINS_PLOT_HALF', ctx);
@@ -492,14 +497,14 @@ check('dying after a won fight wakes you at home, not in the arena',
 // ---- The rite is the only door back in, and it must not wipe a wound. ----
 check('back to the Ossuary with the arena still empty', toSpace() === true && !g.boss,
   g.boss ? 'boss present' : 'none');
-g.addItem('rite_of_bones', 2);
-const bonesAtRite = g.countItem('rite_of_bones');
+g.addItem('rite_of_waking', 2);
+const bonesAtRite = g.countItem('rite_of_waking');
 check('the rite raises a whole Sovereign', (() => {
   const ok = g.performBoneRite() === true;
-  return ok && g.countItem('rite_of_bones') === bonesAtRite - 1 &&
+  return ok && g.countItem('rite_of_waking') === bonesAtRite - 1 &&
     !!g.boss && g.boss.hp === g.boss.maxHp && g.dragonSlain === false;
 })(), 'boss=' + (g.boss ? g.boss.hp : 'none') +
-  ' bones=' + g.countItem('rite_of_bones'));
+  ' bones=' + g.countItem('rite_of_waking'));
 check('the raised Sovereign is whole',
   !!g.boss && g.boss.hp === g.boss.maxHp && g.boss.maxHp === 100000,
   g.boss ? g.boss.hp + '/' + g.boss.maxHp : 'none');
@@ -513,11 +518,11 @@ check('the wound is banked, not forgotten', g.dragonHP === bankedHP && g.boss ==
 check('a banked fight is still unfinished', g.dragonSlain === false);
 
 // Reading the rite from home is refused, and nothing about the fight moves.
-const bonesHome = g.countItem('rite_of_bones');
+const bonesHome = g.countItem('rite_of_waking');
 check('the rite is refused at home over a banked fight',
-  g.performBoneRite() === false && g.countItem('rite_of_bones') === bonesHome &&
+  g.performBoneRite() === false && g.countItem('rite_of_waking') === bonesHome &&
   g.dragonHP === bankedHP && !g.boss,
-  'bones=' + g.countItem('rite_of_bones') + ' dragonHP=' + g.dragonHP);
+  'bones=' + g.countItem('rite_of_waking') + ' dragonHP=' + g.dragonHP);
 
 // Re-entry is a tether for a wounded dragon: free, and it resumes the wound.
 const beaconsBefore = g.countItem('void_rift_beacon');
@@ -532,13 +537,13 @@ check('the resumed fight cleared the bank', g.dragonHP === null, String(g.dragon
 // rite rather than delete the wound, stand up a whole dragon and burn the bones.
 // In the arena the wound lives in the boss; moving it back into dragonHP is the
 // record surviving the arena going quiet, which is the state this guards.
-const bonesGuard = g.countItem('rite_of_bones');
+const bonesGuard = g.countItem('rite_of_waking');
 g.boss = null;                       // the window this guard exists for
 g.dragonHP = bankedHP;
 check('a rite is refused over a recorded wound',
   g.performBoneRite() === false, 'returned true');
-check('a refused rite keeps its bones', g.countItem('rite_of_bones') === bonesGuard,
-  g.countItem('rite_of_bones') + ' vs ' + bonesGuard);
+check('a refused rite keeps its bones', g.countItem('rite_of_waking') === bonesGuard,
+  g.countItem('rite_of_waking') + ' vs ' + bonesGuard);
 check('a refused rite keeps the recorded wound', g.dragonHP === bankedHP,
   'dragonHP=' + g.dragonHP + ' vs ' + bankedHP);
 check('a refused rite raises nothing', !g.boss && g.dragonSlain === false);
@@ -555,25 +560,29 @@ frames(6, { render: 2, each: immortal });
 check('finished at last', g.dragonSlain === true && g.dragonHP === null,
   'slain=' + g.dragonSlain + ' dragonHP=' + g.dragonHP);
 
-// With no kill on record and no wound, there is nothing to raise either. This
-// is the second guard: it stops a rite from conjuring a first dragon out of a
-// pile of bones that were only ever meant to replace one.
-const bonesNothing = g.countItem('rite_of_bones');
-check('a rite is refused when nothing was ever slain', (() => {
+// One rite, no second rite to gate on. With no kill on record the rite must
+// STILL work — that is precisely the first expedition's flow, and a rite that
+// refused on virgin ground would lock a fresh save out of its own boss arena.
+const bonesNothing = g.countItem('rite_of_waking');
+check('the rite reads on virgin ground too', (() => {
   g.dragonSlain = false;             // pretend the kill never happened
   g.dragonHP = null;
   g.boss = null;
-  return g.performBoneRite() === false && g.countItem('rite_of_bones') === bonesNothing && !g.boss;
-})(), 'bones=' + g.countItem('rite_of_bones'));
+  g.addItem('rite_of_waking', 1);
+  const before = g.countItem('rite_of_waking');
+  return g.performBoneRite() === true && g.countItem('rite_of_waking') === before - 1 &&
+    !!g.boss && g.boss.kind === 'dragon';
+})(), 'bones=' + bonesNothing);
+g.boss = null;
 g.dragonSlain = true;                // put the record back
 
 // The kill on record + finished bones: the rite works, spends, and yields a
 // whole Sovereign with no banked wound.
 check('the rite answers over finished bones', (() => {
-  g.addItem('rite_of_bones', 1);
-  const before = g.countItem('rite_of_bones');
+  g.addItem('rite_of_waking', 1);
+  const before = g.countItem('rite_of_waking');
   const ok = g.performBoneRite() === true;
-  return ok && g.countItem('rite_of_bones') === before - 1 &&
+  return ok && g.countItem('rite_of_waking') === before - 1 &&
     !!g.boss && g.boss.kind === 'dragon' && g.boss.hp === g.boss.maxHp &&
     g.dragonSlain === false && g.dragonHP === null;
 })(), 'boss=' + (g.boss ? g.boss.kind : 'none') + ' slain=' + g.dragonSlain);
@@ -583,9 +592,9 @@ toHome();
 check('the rite is refused at home', (() => {
   g.boss = null;
   g.dragonHP = null;
-  g.addItem('rite_of_bones', 1);
-  const before = g.countItem('rite_of_bones');
-  return g.performBoneRite() === false && g.countItem('rite_of_bones') === before && !g.boss;
+  g.addItem('rite_of_waking', 1);
+  const before = g.countItem('rite_of_waking');
+  return g.performBoneRite() === false && g.countItem('rite_of_waking') === before && !g.boss;
 })());
 
 // ══════════════════════════════════════════════════════════════════════════

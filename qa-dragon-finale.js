@@ -87,6 +87,10 @@ for (const f of files) {
   }
 }
 const g = global.game;
+// The main menu boots the simulation paused; start the game the way picking a
+// world does so update() actually ticks.
+g.titleScreenOpen = false;
+g.paused = false;
 // The victory screen is born hidden, exactly as terraria.html ships it.
 document.getElementById('victory-screen').classList.add('hidden');
 if (!g) { console.log('BOOT FAIL: no game'); process.exit(1); }

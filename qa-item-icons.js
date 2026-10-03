@@ -100,7 +100,7 @@ check('every item in the game has a non-empty icon',
 // Render each menu for real and read back what landed in the slots.
 const g = new global.Game();
 g.player.invulnerableTime = 99999;
-for (const id of ['void_star_blade', 'dragonbone', 'rite_of_bones', 'backpack_large',
+for (const id of ['void_star_blade', 'dragonbone', 'rite_of_waking', 'backpack_large',
   'slate_brick', 'healing_potion', 'copper_pickaxe', 'dragon_wings', 'obsuary_armor',
   'diamond', 'dirt', 'campfire']) {
   g.addItem(id, 1);

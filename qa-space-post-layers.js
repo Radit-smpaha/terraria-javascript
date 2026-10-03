@@ -80,6 +80,10 @@ const ctx = vm.createContext(global);
 for (const f of files) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
 
 const g = new global.Game();
+// The main menu boots the simulation paused; start the game the way picking a
+// world does so update() actually ticks.
+g.titleScreenOpen = false;
+g.paused = false;
 g.player.invulnerableTime = 99999;
 g.addItem('void_rift_beacon', 1);
 const homeX = Math.floor(g.world.width / 2);

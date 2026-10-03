@@ -205,16 +205,10 @@ const NEW_ITEMS = {
   // before you have ever killed a dragon, which is the point: the first fight
   // is something you go and perform, not something that happens to you.
   rite_of_waking: {
+    // The one and only rite in the game. Its recipe prices itself: cheap the
+    // first time, sharply more expensive after (see Game.riteOfWakingCost).
     id: 'rite_of_waking', name: 'Rite of Waking', type: 'consumable',
     dragonRite: true, icon: '🕯️', stackMax: 3
-  },
-  // What you burn to wake the Sovereign after you have already killed it. A dead
-  // dragon stays dead: the arena stops being a fight the moment it is won and
-  // becomes a quarry, and going back for another round has to be a deliberate,
-  // priced decision rather than something the world does to you on the visit.
-  rite_of_bones: {
-    id: 'rite_of_bones', name: 'Rite of Bones', type: 'consumable',
-    dragonRite: true, icon: '🦴', stackMax: 3
   },
   meteor_shard: {
     id: 'meteor_shard', name: 'Meteor Shard', type: 'material',
@@ -772,23 +766,15 @@ const RECIPES = [
   // come back from prepared. The dragon never simply appears.
   {
     result: { id: 'rite_of_waking', count: 1 },
+    // `dynamicRite` is the whole point of this entry: the price is resolved at
+    // craft time from ritesCrafted (cheap first time, expensive afterwards), so
+    // this list is only the placeholder the QA and integrity checks read.
+    dynamicRite: true,
     materials: [
-      { id: 'dragonbone', count: 15 }, { id: 'meteor_shard', count: 12 },
-      { id: 'nebula_crystal', count: 6 }, { id: 'demon_soul', count: 2 }
+      { id: 'dragonbone', count: 10 }, { id: 'meteor_shard', count: 8 },
+      { id: 'nebula_crystal', count: 4 }
     ],
     name: 'Rite of Waking (wakes the first Sovereign in the Ossuary)'
-  },
-  // Waking the Sovereign a second time costs the arena's own leftovers plus the
-  // Underworld's souls: harvesting a whole expedition of dragonbone is the price
-  // of another round with the hardest thing in the game, and the price is what
-  // makes walking away from a win the cheap, normal option.
-  {
-    result: { id: 'rite_of_bones', count: 1 },
-    materials: [
-      { id: 'dragonbone', count: 25 }, { id: 'meteor_shard', count: 10 },
-      { id: 'demon_soul', count: 4 }
-    ],
-    name: 'Rite of Bones (wakes a new Sovereign in the Ossuary)'
   },
   {
     result: { id: 'star_platform', count: 4 },
@@ -812,17 +798,11 @@ const RECIPES = [
     name: 'Voidscale Armor (43% damage reduction)'
   },
   // ---- The Sovereign's own gear ------------------------------------------------
-  // The dragon hands these over when it dies; the recipes are the backup, for a
-  // plate or a blade lost to a bad respawn. Both are priced in the trophy so
-  // nothing here is obtainable without winning the fight first.
-  {
-    result: { id: 'ossuary_armor', count: 1 },
-    materials: [
-      { id: 'dragon_trophy', count: 1 }, { id: 'dragonbone', count: 34 },
-      { id: 'nebula_crystal', count: 16 }, { id: 'meteor_shard', count: 20 }
-    ],
-    name: 'Skeletal Wyrmplate (47% damage reduction)'
-  },
+  // The Sovereign's Fang has a recipe, because a lost blade should be rebuildable
+  // from ore. The Wyrmplate and the Dragon Wings DELIBERATELY DO NOT: they are
+  // not craftable at any price. The first Sovereign is the one and only source of
+  // both — every later dragon drops the trophy, the fang and the ore, never the
+  // plate or the wings again. Losing either to a bad respawn is permanent.
   {
     result: { id: 'ossuary_blade', count: 1 },
     materials: [
@@ -843,7 +823,15 @@ const RECIPES = [
     ],
     name: 'Angel Wings (30s flight, 30s cooldown)'
   }
+  // NOTE: there is deliberately no Skeletal Wyrmplate recipe and no Dragon Wings
+  // recipe. Both come from the first Sovereign's corpse and nowhere else — see
+  // UNCRAFTABLE_RECIPE_IDS below, which the QA suite asserts against.
 ];
+
+// Recipe ids the forge must NEVER be able to produce, whatever the materials.
+// A plate or a pair of wings that can be bought with ore would not be the first
+// dragon's trophy at all.
+const UNCRAFTABLE_RECIPE_IDS = ['ossuary_armor', 'dragon_wings'];
 
 class Game {
   constructor() {
@@ -1026,10 +1014,20 @@ class Game {
     this.riftUses = 0;           // rifts opened so far — later ones tear in faster
     this.dragonHP = null;        // Sovereign's damaged HP, kept across a death/retreat
     // True once the Sovereign has been killed. A dead dragon STAYS dead: walking
-    // back into the Ossuary is a trip to a quarry, and only a Rite of Bones can
+    // back into the Ossuary is a trip to a quarry, and only a Rite of Waking can
     // raise another. This flag is what stops a cleared arena from re-arming a
     // fight the player has already won.
     this.dragonSlain = false;
+    // Rites of Waking this save has crafted. Zero = the first one is still ahead
+    // of you and it prices cheap; one or more = every further rite is priced as
+    // a deliberate, expensive return trip to the hardest fight in the game.
+    this.ritesCrafted = 0;
+    // How many Sovereigns this save has felled, ever. `dragonSlain` is NOT this
+    // counter — wakeSovereign clears it every time a new dragon is raised, so it
+    // is false during the second fight just as it is during the first. The
+    // "only the first kill drops the plate and the wings" rule needs a fact that
+    // survives being re-armed, so it gets its own counter.
+    this.dragonKills = 0;
     // The Sovereign's death show (space.js DragonFinale) and the victory
     // screen it holds back — both exist only for the seconds after the kill.
     this.dragonFinale = null;
@@ -2888,6 +2886,14 @@ class Game {
       // has to persist exactly as persistently as the banked HP does — a reload
       // must not re-arm a fight that was already won.
       dragonSlain: this.dragonSlain === true,
+      // How many Rites of Waking this save has crafted. Zero means the first one
+      // has not been made yet and it prices cheap; anything above zero prices it
+      // as a repeat. Persisted, or a reload would hand the player a fresh cheap
+      // rite every single time.
+      ritesCrafted: this.ritesCrafted || 0,
+      // How many Sovereigns this save has felled. Unlike dragonSlain this is
+      // never cleared by waking a new one, so it can gate "first kill only" loot.
+      dragonKills: this.dragonKills || 0,
       // A battle is never carried through a save: quitting or refreshing the page
       // ends the encounter (see loadGame), so there is no live boss left to write.
       // The key is kept so version-11 saves keep their exact shape.
@@ -3044,6 +3050,10 @@ class Game {
     // so it survives the reload the same way the banked HP does. Without this,
     // refreshing the page after a kill re-armed the very fight the player won.
     this.dragonSlain = save.dragonSlain === true;
+    this.ritesCrafted = Number.isFinite(save.ritesCrafted) && save.ritesCrafted > 0
+      ? Math.floor(save.ritesCrafted) : 0;
+    this.dragonKills = Number.isFinite(save.dragonKills) && save.dragonKills > 0
+      ? Math.floor(save.dragonKills) : 0;
     // A reload describes the overworld: any death show still in the air — and
     // the victory screen it was holding back — both end here.
     this.dragonFinale = null;
@@ -3344,11 +3354,13 @@ class Game {
       details.className = 'recipe-details';
 
       const name = document.createElement('h5');
-      name.textContent = r.name;
+      name.textContent = r.dynamicRite ? this.riteOfWakingName(this.ritesCrafted > 0) : r.name;
 
       const reqs = document.createElement('div');
       reqs.className = 'recipe-reqs';
-      reqs.textContent = r.materials.map(m => `${ITEMS[m.id].name}: ${this.countItem(m.id)}/${m.count}`).join(', ');
+      // Resolved through recipeMaterials so the rite card shows the cost it will
+      // actually charge right now (cheap first time, expensive afterwards).
+      reqs.textContent = this.recipeMaterials(r).map(m => `${ITEMS[m.id].name}: ${this.countItem(m.id)}/${m.count}`).join(', ');
 
       details.appendChild(name);
       details.appendChild(reqs);
@@ -3674,11 +3686,50 @@ class Game {
     this.showToast(`🎒 Moved ${ITEMS[this.inventory[targetIndex].id]?.name || this.inventory[targetIndex].id}`);
   }
 
+  // ---- THE RITE OF WAKING ------------------------------------------------
+  // There is only one rite in the game. It is deliberately cheap the FIRST time
+  // and sharply more expensive every time after: the first Sovereign is meant to
+  // be a prepared expedition, not a wall, and once you have proven you can do it
+  // the arena should cost you something real. `repeat` is true from the second
+  // craft onwards, so the displayed cost can never disagree with what
+  // canCraftRecipe/craftRecipe actually charge.
+  riteOfWakingCost(repeat) {
+    return repeat
+      ? [
+        { id: 'dragonbone', count: 34 },
+        { id: 'meteor_shard', count: 26 },
+        { id: 'nebula_crystal', count: 18 },
+        { id: 'demon_soul', count: 6 },
+        { id: 'crystal', count: 20 },
+        { id: 'life_crystal', count: 2 }
+      ]
+      : [
+        { id: 'dragonbone', count: 10 },
+        { id: 'meteor_shard', count: 8 },
+        { id: 'nebula_crystal', count: 4 }
+      ];
+  }
+
+  riteOfWakingName(repeat) {
+    return repeat
+      ? 'Rite of Waking (wakes another Sovereign — the Ossuary has been claimed)'
+      : 'Rite of Waking (wakes the first Sovereign in the Ossuary)';
+  }
+
   canCraftRecipe(recipe) {
-    for (const m of recipe.materials) {
+    // The rite is priced at craft time rather than baked into RECIPES, so the
+    // card the player is reading and the cost charged are the same list.
+    const materials = this.recipeMaterials(recipe);
+    for (const m of materials) {
       if (this.countItem(m.id) < m.count) return false;
     }
     return true;
+  }
+
+  /** The live cost of a recipe, resolving the rite's first-vs-repeat pricing. */
+  recipeMaterials(recipe) {
+    if (recipe && recipe.dynamicRite) return this.riteOfWakingCost(this.ritesCrafted > 0);
+    return recipe.materials;
   }
 
   craftRecipe(recipe) {
@@ -3686,22 +3737,26 @@ class Game {
       this.showToast('🎒 Not enough inventory space.');
       return;
     }
+    const materials = this.recipeMaterials(recipe);
     // A favourited stack is consumed by crafting just as surely as by dropping
     // it, so it blocks here too. The player is being explicit (they picked the
     // recipe and the cost is on screen), but silently eating something they
     // marked "don't throw this away" is exactly the accident a favourite is
     // meant to prevent — so ask first, and say how to undo it.
-    for (const m of recipe.materials) {
+    for (const m of materials) {
       if (this.hasFavoritedStack(m.id)) {
         const data = ITEMS[m.id];
         this.showToast(`⭐ ${data ? data.name : m.id} is favourited — unfavourite it to craft this.`);
         return;
       }
     }
-    for (const m of recipe.materials) {
+    for (const m of materials) {
       this.removeItem(m.id, m.count);
     }
     this.addItem(recipe.result.id, recipe.result.count);
+    // Counted here, not on the card: the FIRST rite is the cheap one, and this
+    // runs exactly once per craft so the next craft prices as a repeat.
+    if (recipe.dynamicRite) this.ritesCrafted = (this.ritesCrafted || 0) + 1;
     this.stats.itemsCrafted += 1;
     this.journey?.recordActivity('craft', this.player.x + this.player.width / 2, this.player.y);
     this.sound.playCraft();
@@ -4941,9 +4996,8 @@ class Game {
       return;
     }
 
-    // Rite of Bones: same reason — a consumable that has nothing to do with
-    // healing, and the only thing in the game that can start a Sovereign fight
-    // after the first one has been killed.
+    // The Rite of Waking: same reason — a consumable that has nothing to do with
+    // healing, and the only thing in the game that can start a Sovereign fight.
     if (itemData && itemData.dragonRite) {
       this.performBoneRite();
       return;
@@ -5263,12 +5317,10 @@ class Game {
    * This is the only door into the fight — the first time AND every time after.
    * The arena never re-arms itself, a beacon never summons anything, and
    * neither does a reload, a death or a return trip: the player has to stand in
-   * the Ossuary, with bones they mined, and decide they want this fight. Two
-   * rites open the same grave — the cheap Rite of Waking (mineable materials
-   * only, so the FIRST Sovereign is a prepared expedition rather than an
-   * ambush) and the expensive Rite of Bones, which is what a killed dragon's
-   * own grave pays for. Returns true when the rite was read, which is also
-   * when the bones are spent.
+   * the Ossuary, with bones they mined, and decide they want this fight. There is
+   * one rite and it opens the same grave every time — cheap for the first
+   * Sovereign, ruinous for every one after (see riteOfWakingCost). Returns true
+   * when the rite was read, which is also when the bones are spent.
    */
   performBoneRite() {
     if (!this.world.isInSpace()) {
@@ -5299,27 +5351,21 @@ class Game {
       this.showToast('🦴 The old one is not finished — its wound is still waiting. Kill it before you burn bones.');
       return false;
     }
-    // Which rite opens the grave. The Rite of Waking is the SUMMONING rite and
-    // is valid whenever the ground is empty — it is how the first Sovereign is
-    // ever raised. The Rite of Bones is the REANIMATION rite: it exists to
-    // stand a new dragon up out of one that has already fallen, so it still
-    // refuses on virgin ground and can never be used to skip the first
-    // expedition. Holding both spends the cheaper candle.
-    const rite = this.countItem('rite_of_waking') > 0 ? 'rite_of_waking'
-      : (this.dragonSlain && this.countItem('rite_of_bones') > 0) ? 'rite_of_bones' : null;
+    // Which rite opens the grave. There is only one rite in the game now, and it
+    // reads the same way the first time and every time after: burn it in the
+    // arena and a Sovereign stands up. What changes between the first rite and
+    // every later one is the price of CRAFTING it, not what it does — the first
+    // is a scouting trip, the rest are deliberately expensive.
+    const rite = this.countItem('rite_of_waking') > 0 ? 'rite_of_waking' : null;
     if (!rite) {
-      this.showToast(this.dragonSlain
-        ? '🦴 The rite needs a Rite of Bones: 25 Dragonbone, 10 Meteor Shards, 4 Demon Souls.'
-        : '🕯️ The grave is sealed. Craft a Rite of Waking (15 Dragonbone, 12 Meteor Shards, 6 Nebula Crystals, 2 Demon Souls) and right-click it here.');
+      this.showToast('🕯️ The grave is sealed. Craft a Rite of Waking and right-click it here.');
       return false;
     }
     if (!this.removeItem(rite, 1)) {
       this.showToast('🦴 The rite will not read without its bones.');
       return false;
     }
-    this.showAnnouncement(rite === 'rite_of_waking'
-      ? '🕯️ THE CANDLE CATCHES — THE GRAVE ANSWERS.'
-      : '🕯️ THE BONES BURN — BONE BY BONE, IT COMES BACK.');
+    this.showAnnouncement('🕯️ THE CANDLE CATCHES — THE GRAVE ANSWERS.');
     this.sound.playBossRoar?.();
     this.particles.magicSparkle(this.player.x, this.player.y, '#fbcfe8', 60);
     this.dragonHP = null;
@@ -5363,7 +5409,7 @@ class Game {
     if (Number.isFinite(this.dragonHP)) {
       this.wakeSovereign(arena);
     } else if (this.dragonSlain) {
-      this.showToast('🕳️ Quiet as a church. The Sovereign you killed stays killed — read a 🦴 Rite of Bones here to wake another.');
+      this.showToast('🕳️ Quiet as a church. The Sovereign you killed stays killed — craft a 🕯️ Rite of Waking and read it here to wake another.');
     } else {
       this.showToast('🕯️ Nothing stirs. The Sovereign is sealed under the bone-dust until a rite is read here — mine the seams and the deep, craft a Rite of Waking, and right-click it in the arena.');
     }
@@ -5469,9 +5515,12 @@ class Game {
     // base a few seconds after they have already won, and the flag is what keeps
     // every later trip quiet.
     this.dragonSlain = true;
+    // Bumped here, once per felled Sovereign, and never cleared — this is the
+    // counter the "first kill only" loot gate reads.
+    this.dragonKills = (this.dragonKills || 0) + 1;
     this.riftReturnDelay = 0;
     this.showToast('🦴 Mine the 🟠 meteor seams and bone piles before you leave — the Ossuary stays yours now.');
-    this.showToast('🕯️ The Sovereign stays dead. Craft a 🦴 Rite of Bones (25 Dragonbone, 10 Meteor Shards, 4 Demon Souls) and right-click it in the Ossuary to wake another.');
+    this.showToast('🕯️ The Sovereign stays dead. Craft another 🕯️ Rite of Waking — the price is far higher now — and read it in the Ossuary to wake another.');
   }
 
   respawnPlayer() {
@@ -6039,11 +6088,17 @@ this.player.dodgeTime = 0;
       // you fly, and the Voidscale plate itself. The forge recipe stays as a
       // backup so a lost piece can be rebuilt from the trophy.
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'void_star_blade', 1));
-      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 18, 'dragon_wings', 1));
+      // FIRST SOVEREIGN ONLY. The wings and the Wyrmplate have no recipe at
+      // all, so this first kill is their only source in the game — dragons two,
+      // three and onward are fought for the trophy, the fang and the ore, not
+      // for gear the player already owns. Read BEFORE onDragonDefeated(), which
+      // is what increments the counter.
+      const firstSovereign = this.dragonKills < 1;
+      if (defeatedDragon && firstSovereign) this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 18, 'dragon_wings', 1));
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 2, this.boss.y - 34, 'voidscale_armor', 1));
       // Its own plate and its own fang: the apex gear, scattered with the rest
       // of its skeleton. A 100,000 HP fight should not end in one item.
-      if (defeatedDragon) this.drops.push(new DropItem(this.boss.x - 30, this.boss.y - 40, 'ossuary_armor', 1));
+      if (defeatedDragon && firstSovereign) this.drops.push(new DropItem(this.boss.x - 30, this.boss.y - 40, 'ossuary_armor', 1));
       if (defeatedDragon) this.drops.push(new DropItem(this.boss.x + 28, this.boss.y - 8, 'ossuary_blade', 1));
       if (defeatedDragon) this.onDragonDefeated();
       // The final boss gets a finale: snapshot the spine while the boss object
@@ -6058,7 +6113,7 @@ this.player.dodgeTime = 0;
       const vLead = document.querySelector('#victory-screen .victory-content > p');
       if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
-        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and only a Rite of Bones read on them will bring another.';
+        if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it — and they will never fall again, because there is only one of each. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and another Rite of Waking read on them will bring another; it will cost you far more than the first.';
       } else if (defeatedDemon) {
         if (vTitle) vTitle.textContent = '🔥 THE HELLBOUND DEMON IS UNDONE!';
         if (vLead) vLead.textContent = 'The infernal king has fallen. The Underworld is finally quiet... for now.';
@@ -6826,6 +6881,7 @@ this.player.dodgeTime = 0;
 
 window.ITEMS = ITEMS;
 window.RECIPES = RECIPES;
+window.UNCRAFTABLE_RECIPE_IDS = UNCRAFTABLE_RECIPE_IDS;
 window.Game = Game;
 
 // Boot game on load or immediately if already loaded

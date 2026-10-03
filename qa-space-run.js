@@ -114,7 +114,7 @@ check('boss + wormhole classes exposed',
   typeof global.SkeletonDragonBoss === 'function' && typeof global.WormholeFX === 'function');
 const spaceItems = ['void_rift_beacon', 'nebula_crystal', 'meteor_shard',
   'dragonbone', 'dragon_trophy', 'void_star_blade', 'dragon_wings', 'voidscale_armor',
-  'rite_of_waking', 'rite_of_bones'];
+  'rite_of_waking'];
 for (const id of spaceItems) check('ITEMS.' + id, !!ITEMS[id]);
 const beaconRecipe = RECIPES.find(r => r.result && r.result.id === 'void_rift_beacon');
 check('beacon craftable', !!beaconRecipe);
@@ -132,17 +132,40 @@ check('waking rite recipe is finishable', !!wakingRecipe &&
 check('the first rite asks for no dragon trophies', !!wakingRecipe &&
   !wakingRecipe.materials.some(m => /trophy|blade|armor|wings/.test(m.id)),
   wakingRecipe ? wakingRecipe.materials.map(m => m.id).join(', ') : 'no recipe');
-const riteRecipe = RECIPES.find(r => r.result && r.result.id === 'rite_of_bones');
-check('the Rite of Bones is craftable', !!riteRecipe);
-check('rite recipe is finishable', !!riteRecipe &&
-  riteRecipe.materials.every(m => !!ITEMS[m.id]),
-  riteRecipe ? riteRecipe.materials.map(m => m.id + (ITEMS[m.id] ? '' : ' MISSING')).join(', ') : 'no recipe');
+// ---- The rite prices itself: cheap once, expensive forever after -------------
+// The first rite has to be reachable by a player who has never killed anything;
+// every rite after it has to cost a real expedition, or the Ossuary becomes a
+// farm rather than a decision. Both lists live in one place so the recipe card
+// the player is reading and the materials actually charged cannot disagree.
+check('the rite is priced dynamically', !!wakingRecipe && wakingRecipe.dynamicRite === true);
+const firstCost = g.riteOfWakingCost(false);
+const repeatCost = g.riteOfWakingCost(true);
+check('the first rite is cheap and every item in it exists',
+  firstCost.length === 3 && firstCost.every(m => !!ITEMS[m.id]),
+  firstCost.map(m => m.id + ':' + m.count).join(' '));
+check('the repeat rite costs far more, over six materials',
+  repeatCost.length === 6 && repeatCost.every(m => !!ITEMS[m.id]) &&
+  repeatCost.reduce((t, m) => t + m.count, 0) > firstCost.reduce((t, m) => t + m.count, 0) * 3,
+  repeatCost.map(m => m.id + ':' + m.count).join(' '));
+check('the repeat rite reaches into late-game stock',
+  repeatCost.some(m => m.id === 'life_crystal') && repeatCost.some(m => m.id === 'demon_soul'));
 // A consumable that heals nothing has to say what it does, or the one mechanic
 // that can restart the Sovereign is never discovered.
-const riteInfo = typeof global.describeItem === 'function' ? global.describeItem('rite_of_bones', g) : null;
+const riteInfo = typeof global.describeItem === 'function' ? global.describeItem('rite_of_waking', g) : null;
 check('the rite tooltip says where it is read',
   !!riteInfo && riteInfo.rows.some(r => /Ossuary/i.test(String(r.value))),
   riteInfo ? riteInfo.rows.map(r => r.label).join('/') : 'no tooltip');
+
+// ---- The Wyrmplate and the wings are not craftable, at any price -------------
+// The first Sovereign is the one and only source of both. If a recipe ever comes
+// back for either, the first dragon stops being a trophy and becomes a shop.
+check('the Skeletal Wyrmplate has no recipe at all',
+  !RECIPES.some(r => r.result && r.result.id === 'ossuary_armor'));
+check('the Dragon Wings have no recipe at all',
+  !RECIPES.some(r => r.result && r.result.id === 'dragon_wings'));
+check('both are on the uncraftable list',
+  Array.isArray(global.UNCRAFTABLE_RECIPE_IDS) &&
+  ['ossuary_armor', 'dragon_wings'].every(id => global.UNCRAFTABLE_RECIPE_IDS.includes(id)));
 
 // ══════════════════════════════════════════════════════════════════════════
 step('2. Beacon gating');
@@ -171,6 +194,12 @@ check('wormhole tears toward the Ossuary', !!g.wormhole && g.wormholeIntent === 
 
 // ══════════════════════════════════════════════════════════════════════════
 step('3. The crossing');
+// ---- The crossing ---------------------------------------------------------
+// The title menu boots the simulation paused, so update() is a no-op until the
+// game is actually started. Without this the wormhole never ticks and the whole
+// crossing section silently hangs on its frame budget.
+g.titleScreenOpen = false;
+g.paused = false;
 let crossed = 0;
 let minDist = Infinity;
 const weatherSnap = () => JSON.stringify(Object.fromEntries(
@@ -704,9 +733,16 @@ check('the reload leaves the player under their own sky',
 // The bug in one line: dying used to re-open the Ossuary on top of the respawn
 // site, so a player who had already won was pulled back in without asking and
 // the fight restarted whole.
+// immortal() has been topping the bar up to 5,000,000 all run, and every hit
+// that is not flagged as boss damage is ceilinged to 14% of max HP — so a bare
+// 9,999 does no lethal damage at all and the player never dies. Put a realistic
+// pool back before the scripted death, which is the only thing this check wants.
+g.player.maxHp = 100;
+g.player.hp = 100;
 g.player.invulnerableTime = 0;
-g.damagePlayer(9999, g.player.x, 'the test');
-check('death is detected after the win', g.isDead === true);
+g.damagePlayer(9999, g.player.x, 'the test', true);
+check('death is detected after the win', g.isDead === true,
+  'hp=' + g.player.hp + '/' + g.player.maxHp);
 g.respawnPlayer();
 frames(600, { render: 60 });
 check('dying after the win opens no rift', !g.wormhole && !g.wormholeIntent,
@@ -751,7 +787,7 @@ immortal();
 
 // ---- The rite: the only way back into the fight ---------------------------
 check('the rite is refused with empty hands', g.performBoneRite() === false && !g.boss);
-g.addItem('rite_of_bones', 1);
+g.addItem('rite_of_waking', 1);
 // ---- The rite cannot read over a banked fight ----------------------------
 // dragonHP holds the wound of a fight the player walked out on. Over that,
 // the old rite deleted the wound, stood a whole 88,000-HP dragon back up and
@@ -760,19 +796,19 @@ g.addItem('rite_of_bones', 1);
 const dragonHPBefore = g.dragonHP;
 g.dragonHP = 40000;
 const bankedRefused = g.performBoneRite() === false && !g.boss &&
-  g.countItem('rite_of_bones') === 1;
+  g.countItem('rite_of_waking') === 1;
 g.dragonHP = dragonHPBefore;
 check('the rite is refused over a banked fight', bankedRefused,
   'boss=' + (g.boss ? g.boss.name : 'none') +
-  ' bones=' + g.countItem('rite_of_bones'));
+  ' bones=' + g.countItem('rite_of_waking'));
 check('the rite answers in the Ossuary', g.performBoneRite() === true);
 check('a Sovereign stands where the last one fell',
   !!g.boss && g.boss.kind === 'dragon', g.boss && g.boss.kind);
 check('the new dragon is whole',
   !!g.boss && g.boss.hp === g.boss.maxHp && g.boss.maxHp === 100000,
   g.boss && (g.boss.hp + '/' + g.boss.maxHp));
-check('the bones are burned', g.countItem('rite_of_bones') === 0,
-  'left=' + g.countItem('rite_of_bones'));
+check('the bones are burned', g.countItem('rite_of_waking') === 0,
+  'left=' + g.countItem('rite_of_waking'));
 check('the arena is a fight again', g.dragonSlain === false && g.sound.isBoss === true);
 // ---- What the wind-up promises is what rises ------------------------------
 // The summon telegraph used to draw the raw phase wave (3/4/5 circles) while
@@ -822,8 +858,8 @@ check('the arena is a fight again', g.dragonSlain === false && g.sound.isBoss ==
   }
 })();
 check('a rite cannot be read over a live dragon', (() => {
-  g.addItem('rite_of_bones', 1);
-  return g.performBoneRite() === false && g.countItem('rite_of_bones') === 1;
+  g.addItem('rite_of_waking', 1);
+  return g.performBoneRite() === false && g.countItem('rite_of_waking') === 1;
 })());
 
 // ---- Body hits: the spine is a target, and it is cheaper than the skull ----
@@ -873,7 +909,7 @@ check('the rite is refused at home', (() => {
   g.boss = null;
   g.sound.isBoss = false;
   g.world.exitSpaceDimension();
-  return g.performBoneRite() === false && g.countItem('rite_of_bones') === 1 && !g.boss;
+  return g.performBoneRite() === false && g.countItem('rite_of_waking') === 1 && !g.boss;
 })());
 
 console.log('\n──────────────────────────────────────────');

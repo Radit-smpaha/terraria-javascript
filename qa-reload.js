@@ -84,6 +84,12 @@ function bootPage() {
   for (const f of files) {
     vm.runInContext(fs.readFileSync(f, 'utf8'), context, { filename: f });
   }
+  // The main menu boots the simulation paused; this suite drives update()
+  // directly, so start the game exactly the way picking a world does.
+  if (sandbox.game) {
+    sandbox.game.titleScreenOpen = false;
+    sandbox.game.paused = false;
+  }
   return { sandbox, g: sandbox.game, els };
 }
 
