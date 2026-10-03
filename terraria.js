@@ -1086,6 +1086,17 @@ class Game {
     const scene = document.getElementById('title-scene');
     if (!screen || !scene) return;
 
+    // Built exactly once. Returning to the title from inside a session re-shows
+    // the screen (see showTitleScreen) rather than rebuilding it: re-running this
+    // would attach a SECOND set of listeners to every menu button, and start a
+    // SECOND splash animation loop on top of the one already running.
+    if (this._titleScreenBuilt) {
+      this._titleScreenScreen = screen;
+      return;
+    }
+    this._titleScreenBuilt = true;
+    this._titleScreenScreen = screen;
+
     const context = scene.getContext('2d');
     if (!context) return;
 
@@ -1567,6 +1578,68 @@ class Game {
     // Without focus on the section itself the first keypress lands on <body>
     // and never reaches the listener above.
     try { screen.focus({ preventScroll: true }); } catch (_) { try { screen.focus(); } catch (__) {} }
+
+    // Kept so returning to the title from a session can put the menu back the
+    // way it was found, without rebuilding any of the above.
+    this._titleShowPanel = showPanel;
+    this._titleEnterWorld = enterWorld;
+  }
+
+  /**
+   * Put the title screen back on top of a live game.
+   *
+   * This is the in-session half of what booting the page does. The screen was
+   * built once at boot and its animation loop is still running, so all this has
+   * to do is un-hide it, pause the simulation underneath, and reset the panel to
+   * the top-level menu — otherwise the player lands back on whatever panel they
+   * happened to leave.
+   */
+  showTitleScreen() {
+    const screen = this._titleScreenScreen || document.getElementById('title-screen');
+    if (!screen) return false;
+    // Close anything that was open over the top, or the menu shows through a
+    // settings panel or a death screen.
+    this.togglePause(false);
+    for (const id of ['settings-modal', 'crafting-modal', 'inventory-modal',
+      'chest-modal', 'journal-modal', 'npc-modal', 'creative-modal',
+      'guide-modal', 'save-manager']) {
+      document.getElementById(id)?.classList.add('hidden');
+    }
+    document.getElementById('death-screen')?.classList.add('hidden');
+    document.getElementById('victory-screen')?.classList.add('hidden');
+
+    this.titleScreenOpen = true;
+    this.paused = true;
+    // Drop any key still held from the moment the menu was opened, or walking
+    // with W held and then resuming sends the player off in that direction.
+    this.input.keys = {};
+    this.input.mouseDown = false;
+    this.input.mouseRightDown = false;
+    // The "leaving" class was added on the way out and never taken back off, so
+    // without this the screen would fade itself straight out again.
+    screen.classList.remove('hidden', 'title-screen-leaving');
+    if (this._titleShowPanel) this._titleShowPanel('menu');
+    try { screen.focus({ preventScroll: true }); } catch (_) { /* not focusable */ }
+    return true;
+  }
+
+  /**
+   * Save the world and drop back to the main menu.
+   *
+   * Saving first is the whole point: this is the difference between "switch
+   * world from in-game" and "lose your afternoon because you closed the tab".
+   * Picking the SAME world afterwards resumes instantly with everything still
+   * live; picking a different one reloads onto that slot, which is unavoidable
+   * because the world is built once in the constructor.
+   */
+  returnToMainMenu() {
+    if (this.isDead) {
+      this.showToast('💀 Respawn before leaving — the run is not over yet.');
+      return false;
+    }
+    try { this.saveGame(true); } catch (_) { /* saveGame reports its own failure */ }
+    this.showTitleScreen();
+    return true;
   }
 
   /**
@@ -1950,6 +2023,12 @@ class Game {
         this.toggleJournal();
         return;
       }
+
+      // The main menu owns the keyboard while it is open. Its own handler, bound
+      // to the title screen, already deals with Escape; letting this one run too
+      // would flip `paused` back to false and the world would keep playing
+      // underneath a menu the player is still looking at.
+      if (this.titleScreenOpen) return;
 
       // Pause / resume takes priority over everything else, except closing Settings.
       if (e.code === 'Escape' || e.code === 'KeyP') {
@@ -2362,6 +2441,34 @@ class Game {
 
     const btnCrafting = document.getElementById('btn-crafting');
     if (btnCrafting) btnCrafting.addEventListener('click', () => this.toggleCraftingModal(true));
+
+    // ---- back to the main menu ------------------------------------------
+    // Reachable from the pause menu (ESC) and from Settings, so the player is
+    // never more than one click from switching worlds. Both paths route through
+    // returnToMainMenu(), which saves first.
+    const goToMenu = (event) => { event?.stopPropagation?.(); this.returnToMainMenu(); };
+
+    const btnMainMenu = document.getElementById('btn-mainmenu');
+    if (btnMainMenu) btnMainMenu.addEventListener('click', goToMenu);
+
+    const btnPauseResume = document.getElementById('btn-pause-resume');
+    if (btnPauseResume) btnPauseResume.addEventListener('click', () => this.togglePause(false));
+
+    const btnPauseSave = document.getElementById('btn-pause-save');
+    if (btnPauseSave) btnPauseSave.addEventListener('click', () => this.saveGame());
+
+    const btnPauseMenu = document.getElementById('btn-pause-menu');
+    if (btnPauseMenu) btnPauseMenu.addEventListener('click', goToMenu);
+
+    // Settings from the pause menu: hide the overlay first so the modal is not
+    // left stacked underneath it when the player closes settings again.
+    const btnPauseSettings = document.getElementById('btn-pause-settings');
+    if (btnPauseSettings) {
+      btnPauseSettings.addEventListener('click', () => {
+        this.togglePause(false);
+        document.getElementById('settings-modal')?.classList.remove('hidden');
+      });
+    }
 
     const btnInventory = document.getElementById('btn-inventory');
     if (btnInventory) btnInventory.addEventListener('click', () => this.toggleInventoryModal(true));

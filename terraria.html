@@ -351,6 +351,7 @@
                 <button id="btn-save" class="ui-btn" title="Save your world">💾 SAVE</button>
                 <button id="btn-load" class="ui-btn" title="Load your saved world">↻ LOAD</button>
                 <button id="btn-saves" class="ui-btn" title="Switch, rename, or delete save files">💾 SAVE FILES</button>
+                <button id="btn-mainmenu" class="ui-btn" title="Save, then return to the main menu to switch worlds">🏠 MAIN MENU</button>
                 <button id="btn-summon" class="ui-btn summon-btn" title="Summon Boss Instantly">👁️ SUMMON BOSS</button>
               </div>
             </section>
@@ -583,6 +584,9 @@
               <li><kbd>H</kbd> — Quick heal with a potion.</li>
               <li><kbd>M</kbd> — Cycle the minimap: hidden → small → medium → large.</li>
               <li><kbd>O</kbd> — Open Settings for quality, effects density, audio, saves, and quick actions.</li>
+              <li><kbd>ESC</kbd> or <kbd>P</kbd> — Pause menu: Resume, Save World, Settings, or
+                <strong>Main Menu</strong>. Main Menu saves your world and drops you back at the
+                title screen so you can switch save files without closing the game.</li>
               <li><kbd>F</kbd> — Toggle the performance readout (FPS, resolution, effect count).</li>
               <li><kbd>J</kbd> — Open the Settlement Journal (discoveries and score).</li>
               <li><kbd>Right-click</kbd> with the Fishing Rod on water — cast or reel in a line.</li>
@@ -606,6 +610,12 @@
       <div id="pause-overlay" class="pause-overlay hidden">
         <div class="pause-box">
           <h2>PAUSED</h2>
+          <div class="settings-actions pause-actions">
+            <button id="btn-pause-resume" class="ui-btn" title="Back to the game">▶ RESUME</button>
+            <button id="btn-pause-save" class="ui-btn" title="Save this world">💾 SAVE WORLD</button>
+            <button id="btn-pause-settings" class="ui-btn" title="Settings and controls">⚙️ SETTINGS</button>
+            <button id="btn-pause-menu" class="ui-btn" title="Save, then return to the main menu to switch worlds">🏠 MAIN MENU</button>
+          </div>
           <p>Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</p>
         </div>
       </div>
@@ -698,7 +708,7 @@
   <script src="juice.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=39" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=40" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>
