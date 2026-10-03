@@ -4029,19 +4029,28 @@ class Game {
     this.renderHotbarUI();
   }
 
-  addItem(id, count = 1, creative = false) {
+  /**
+   * Put up to `count` of `id` in the bag and return HOW MANY actually fit.
+   *
+   * This is the honest version of the operation. `addItem` used to answer this
+   * with a boolean while quietly adding whatever fitted and discarding the rest
+   * of the answer — so "false" meant "partly done", which is exactly the kind
+   * of thing a caller cannot see. The magnet pickup branched on that boolean and
+   * left the whole dropped stack on the floor, then re-added the part that fit
+   * on every following frame: a full bag plus one drop minted items forever.
+   *
+   * Callers that need the truth (anything where a partial result would lose or
+   * duplicate items) use this and consume exactly what came back.
+   */
+  addItemUpTo(id, count = 1, creative = false) {
     const item = ITEMS[id];
     const stackMax = item ? item.stackMax : 999;
-
-    // `creativeOnly` items (The Ban Hammer) exist to be had from the creative
-    // menu and nowhere else. Enforcing it HERE rather than by simply not
-    // wiring a recipe or drop table means every route into the bag is covered
-    // at once: crafting, mining, fishing, chest and boss loot, hotkeyed item
-    // pickup, and a hand-edited or version-skewed save that tries to restore
-    // one. Only the creative menu passes `creative = true`.
-    if (item && item.creativeOnly && !creative) return false;
+    if (item && item.creativeOnly && !creative) return 0;
 
     let remaining = count;
+    if (!Number.isFinite(remaining)) return 0;
+    remaining = Math.max(0, Math.floor(remaining));
+    if (remaining === 0) return 0;
 
     // A backpack enlarges the bag, so the room it needs has to exist before we
     // try to put it IN the bag — otherwise a full bag can never pick up the very
@@ -4049,32 +4058,38 @@ class Game {
     if (item && item.type === 'backpack') this.syncInventorySlots();
 
     // 1. Fill existing stacks without exceeding their maximum.
-    for (let i = 0; i < this.inventory.length; i++) {
+    for (let i = 0; i < this.inventory.length && remaining > 0; i++) {
       if (this.inventory[i].id === id && this.inventory[i].count < stackMax) {
         const added = Math.min(stackMax - this.inventory[i].count, remaining);
         this.inventory[i].count += added;
         remaining -= added;
-        if (remaining <= 0) {
-          this.renderHotbarUI();
-          return true;
-        }
       }
     }
 
     // 2. Fill empty slots as needed.
-    for (let i = 0; i < this.inventory.length; i++) {
+    for (let i = 0; i < this.inventory.length && remaining > 0; i++) {
       if (this.inventory[i].id === 'empty') {
         const added = Math.min(stackMax, remaining);
         this.inventory[i] = { id, count: added };
         remaining -= added;
-        if (remaining <= 0) {
-          this.renderHotbarUI();
-          return true;
-        }
       }
     }
+
     this.renderHotbarUI();
-    return remaining <= 0;
+    return count - remaining;
+  }
+
+  /** True only if the WHOLE count fitted. See addItemUpTo for the partial case. */
+  addItem(id, count = 1, creative = false) {
+    const item = ITEMS[id];
+    // `creativeOnly` items (The Ban Hammer) exist to be had from the creative
+    // menu and nowhere else. Enforcing it HERE rather than by simply not
+    // wiring a recipe or drop table means every route into the bag is covered
+    // at once: crafting, mining, fishing, chest and boss loot, hotkeyed item
+    // pickup, and a hand-edited or version-skewed save that tries to restore
+    // one. Only the creative menu passes `creative = true`.
+    if (item && item.creativeOnly && !creative) return false;
+    return this.addItemUpTo(id, count, creative) >= (Number.isFinite(count) ? count : 0);
   }
 
   canAddItem(id, count = 1) {
@@ -6606,18 +6621,28 @@ this.player.dodgeTime = 0;
         d.y += (pMidY - (d.y + 7)) * 0.15;
       }
 
-      // Pickup
+      // Pickup. addItemUpTo returns what ACTUALLY fit, and the drop is only
+      // reduced by that much — so a partly-full bag takes what it can and the
+      // rest stays on the floor, with no way to mint the difference.
       if (dist < 22 && d.pickupDelay <= 0) {
-        if (this.addItem(d.id, d.count)) {
+        const taken = this.addItemUpTo(d.id, d.count);
+        if (taken > 0) {
           if (d.id === 'wood') {
-            this.stats.woodCollected += d.count;
+            this.stats.woodCollected += taken;
             this.journey?.recordActivity('gather', d.x, d.y);
           }
           this.sound.playPickup();
           this.particles.magicSparkle(d.x, d.y, '#fef08a', 6);
-          this.showToast(`+${d.count} ${ITEMS[d.id] ? ITEMS[d.id].name : d.id}`);
-          this.drops.splice(i, 1);
-          continue;
+          this.showToast(`+${taken} ${ITEMS[d.id] ? ITEMS[d.id].name : d.id}`);
+          d.count -= taken;
+          if (d.count <= 0) {
+            this.drops.splice(i, 1);
+            continue;
+          }
+          // Still a partial pickup: freeze the magnet so the remainder does not
+          // vacuum itself the instant a slot frees up somewhere else, and give
+          // the player a moment to see what is left.
+          d.pickupDelay = 0.5;
         }
       }
 

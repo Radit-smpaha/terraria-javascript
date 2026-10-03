@@ -318,6 +318,69 @@ check('G does not collide with an existing binding',
   keyBindings.counts.KeyG === 1 && keyBindings.counts.KeyQ === 1,
   'KeyG=' + keyBindings.keyG + ' KeyQ=' + keyBindings.counts.KeyQ);
 
+step('6. A partly-full bag must never duplicate a dropped stack');
+// --------------------------------------------------------------------
+// THE BUG. addItem answered with a boolean while quietly adding whatever fit
+// and discarding the rest of the answer — so "false" quietly meant "partly
+// done". The magnet pickup branched on that boolean: on a false it left the
+// ENTIRE stack on the floor, having already banked the part that fit. Every
+// following frame it did it again. A full bag plus one dropped stack minted
+// items without limit.
+const bagTotal = (id) => g.countItem(id);
+const floorTotal = (id) => g.drops.filter(d => d.id === id).reduce((t, d) => t + d.count, 0);
+
+// The API itself: it must be able to say how much it actually took.
+check('addItemUpTo exists and reports what it took', (() => {
+  for (let i = 0; i < g.inventory.length; i++) g.inventory[i] = { id: 'empty', count: 0 };
+  g.inventory[0] = { id: 'empty', count: 0 };
+  for (let i = 1; i < g.inventory.length; i++) g.inventory[i] = { id: 'stone', count: 999 };
+  const before = bagTotal('dirt');
+  const took = g.addItemUpTo('dirt', 1500);
+  const gained = bagTotal('dirt') - before;
+  // One free slot holds 999, so 1500 cannot fit and 999 must come back.
+  return took === 999 && gained === 999;
+})(), 'took=' + (typeof g.addItemUpTo === 'function' ? 'see below' : 'MISSING'));
+
+// And the loop that used to lose items, end to end and over many frames.
+{
+  for (let i = 0; i < g.inventory.length; i++) g.inventory[i] = { id: 'empty', count: 0 };
+  for (let i = 1; i < g.inventory.length; i++) g.inventory[i] = { id: 'stone', count: 999 };
+  g.drops = [];
+  const d = new global.DropItem(
+    g.player.x + g.player.width / 2 - 7,
+    g.player.y + g.player.height / 2 - 7, 'dirt', 1500);
+  d.pickupDelay = 0;
+  g.drops.push(d);
+  for (let f = 0; f < 60; f++) g.update(1 / 60);
+  const inBag = bagTotal('dirt');
+  const onFloor = floorTotal('dirt');
+  check('a 1500-stack dropped at a nearly-full bag is conserved exactly',
+    inBag + onFloor === 1500,
+    'bag ' + inBag + ' + floor ' + onFloor + ' = ' + (inBag + onFloor) + ' (dropped 1500)');
+  check('the leftover is left on the floor for the player to manage',
+    onFloor > 0, 'floor=' + onFloor);
+  check('and the bag never exceeds its capacity',
+    inBag <= 999, 'inBag=' + inBag);
+}
+
+// The same must hold when the bag has plenty of room: everything is taken, and
+// nothing is left behind.
+{
+  for (let i = 0; i < g.inventory.length; i++) g.inventory[i] = { id: 'empty', count: 0 };
+  g.drops = [];
+  const d = new global.DropItem(
+    g.player.x + g.player.width / 2 - 7,
+    g.player.y + g.player.height / 2 - 7, 'gold_ore', 12);
+  d.pickupDelay = 0;
+  g.drops.push(d);
+  for (let f = 0; f < 20; f++) g.update(1 / 60);
+  check('with room in the bag the whole stack is picked up',
+    bagTotal('gold_ore') === 12 && floorTotal('gold_ore') === 0,
+    'bag=' + bagTotal('gold_ore') + ' floor=' + floorTotal('gold_ore'));
+  for (let i = 0; i < g.inventory.length; i++) g.inventory[i] = { id: 'empty', count: 0 };
+  g.drops = [];
+}
+
 console.log('\n' + '─'.repeat(62));
 console.log(failures
   ? '✖ ' + failures + ' CHECK(S) FAILED'
