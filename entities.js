@@ -1257,6 +1257,20 @@ class Player {
 
 // Per-type traits: display name, knockback resistance (0..1) and whether the
 // night can promote the monster into a tougher pink-named elite.
+// ---- Ground-monster movement tuning ---------------------------------------
+// These govern how a walker turns, hops and gives up. They are named because
+// the behaviour they produce is a report people file ("mobs freeze on the
+// surface", "mobs flip left and right really fast"), and the numbers are the
+// fix for exactly that.
+const TURN_COOLDOWN = 0.35;  // min seconds between re-aims at the player
+const HOP_COOLDOWN = 0.45;    // min seconds between obstacle hops
+const DETOUR_TIME = 1.1;      // committed travel the wrong way after giving up
+const SENSE_RADIUS = 700;     // how far a walker still bothers with the player
+// Wildlife. The floor matters: below roughly half a pixel per frame a sheep
+// is indistinguishable from scenery.
+const CRITTER_MIN_SPEED = 0.35;
+const CRITTER_SPEED_RANGE = 0.75;
+
 const MONSTER_TRAITS = {
   zombie: { name: 'Zombie', kb: 0.10, elite: true },
   demon_eye: { name: 'Demon Eye', kb: 0.00, elite: true },
@@ -1425,6 +1439,12 @@ class Monster {
     this.isElite = false;
     this.eliteScale = 1;
     this.stuckTimer = 0;
+    this.stuckAnchorX = x;      // where the mob last made real ground
+    this.stuckStreak = 0;     // consecutive give-ups, drives detour length
+    this.hopCooldown = 0;       // seconds until it may hop again
+    this.turnCooldown = 0;      // seconds until it may re-aim at the player
+    this.detourTimer = 0;       // seconds of committed travel the wrong way
+    this.detourDir = this.facing;
     this.speedJitter = 0.9 + Math.random() * 0.2;
     this.wanderTimer = Math.random() * 2;
   }
@@ -1555,15 +1575,43 @@ class Monster {
     const dx = (player.x + player.width / 2) - (this.x + this.width / 2);
     const dy = (player.y + player.height / 2) - (this.y + this.height / 2);
     const distToPlayer = Math.hypot(dx, dy);
-    // Only turn to face the player when it can actually sense them.
-    if (distToPlayer < 700) this.facing = dx >= 0 ? 1 : -1;
+
+    // ---- Facing: only re-aim when it is worth re-aiming -------------------
+    // This used to be `if (distToPlayer < 700) this.facing = dx >= 0 ? 1 : -1`,
+    // a bare sign test on dx applied every frame. A monster standing on the
+    // player's own column has a dx of a pixel or two that jitters around zero,
+    // and the sign flipped with it — the sprite snapped left/right up to sixty
+    // times a second. Three guards now:
+    //   * a deadband, so a mob that is level with the player keeps its heading
+    //     instead of mirroring on noise;
+    //   * a turn cooldown, so even a real reversal cannot outrun the eye;
+    //   * a detour lock, so a stuck-recovery reversal actually sticks (see
+    //     below — it used to be cancelled on the very next frame).
+    if (this.detourTimer > 0) {
+      this.detourTimer = Math.max(0, this.detourTimer - dt);
+    }
+    if (this.turnCooldown > 0) {
+      this.turnCooldown = Math.max(0, this.turnCooldown - dt);
+    }
+    const aimable = distToPlayer < SENSE_RADIUS && this.detourTimer <= 0 && this.turnCooldown <= 0;
+    if (aimable && Math.abs(dx) > 6) {
+      const want = dx > 0 ? 1 : -1;
+      if (want !== this.facing) {
+        this.facing = want;
+        this.turnCooldown = TURN_COOLDOWN;
+      }
+    }
 
     if (this.isGroundType()) {
       // ---- Ground AI: chase, hop obstacles, refuse to walk into lava ----
       const speed = this.speed * this.speedJitter;
       if (Math.abs(dx) > 10) {
         // Ease into the chase so monsters do not snap between directions.
-        const desired = this.facing * speed;
+        // While locked into a detour the mob drives the way it chose, not the
+        // way the player is: that commitment is what lets it get around the
+        // thing that blocked it.
+        const drive = this.detourTimer > 0 ? this.detourDir : this.facing;
+        const desired = drive * speed;
         this.vx += (desired - this.vx) * 0.25;
       } else {
         this.vx *= 0.7;
@@ -1577,9 +1625,14 @@ class Monster {
       const bellyTileY = Math.floor((this.y + this.height * 0.5) / TILE_SIZE);
       const wallAhead = world.isSolid(frontTileX, bellyTileY) || world.isSolid(frontTileX, footTileY - 1);
 
-      // Hop over one-block steps instead of grinding into them.
-      if (wallAhead && this.vy >= 0) {
+      // Hop over one-block steps instead of grinding into them. This used to
+      // have no cooldown, so a mob pinned against a wall it could not clear
+      // was re-launched on every single grounded frame — a permanent buzz in
+      // place. Now it commits to a hop and waits for the landing.
+      if (this.hopCooldown > 0) this.hopCooldown = Math.max(0, this.hopCooldown - dt);
+      if (wallAhead && this.vy >= 0 && this.hopCooldown <= 0) {
         this.vy = -6.8 - (this.isElite ? 0.8 : 0);
+        this.hopCooldown = HOP_COOLDOWN;
       }
 
       // Do not stroll into lava or off a lethal drop while not chasing.
@@ -1593,15 +1646,42 @@ class Monster {
         this.vx *= 0.2; // ledge hesitation
       }
 
-      // Stuck detection: if we have been blocked for a while, hop and reverse.
-      this.stuckTimer = Math.abs(this.vx) < 0.09 && Math.abs(dx) > 14
-        ? this.stuckTimer + dt
-        : 0;
+      // Stuck detection, measured on REAL DISPLACEMENT rather than on vx.
+      // The chase easing refills vx every frame even when the mob is pressed
+      // flat against a wall, so a vx test under-reports a mob that is going
+      // precisely nowhere; watching where it actually ended up cannot lie.
+      this.stuckAnchorX = this.stuckAnchorX === undefined ? this.x : this.stuckAnchorX;
+      this.stuckTimer = this.stuckTimer || 0;
+      if (Math.abs(this.x - this.stuckAnchorX) > 12) {
+        // Made real ground since the last look: re-anchor and forgive.
+        this.stuckAnchorX = this.x;
+        this.stuckTimer = 0;
+      } else if (Math.abs(dx) > 14) {
+        this.stuckTimer += dt;
+      }
       if (this.stuckTimer > 1.2) {
         this.stuckTimer = 0;
+        this.stuckAnchorX = this.x;
         this.vy = -7.2;
-        this.vx = -this.facing * speed;
-        this.facing = -this.facing;
+        // Turn away AND LOCK IT. Previously this only set `facing`, which the
+        // facing rule at the top of the very next frame recomputed straight back
+        // to the player — so the escape hatch did nothing except flick the
+        // sprite once per 1.2s. The detour lock is what makes the mob actually
+        // go the other way long enough to get around.
+        //
+        // Consecutive failures escalate the detour. A mob that keeps hitting
+        // the same obstruction walks further and further from it each round
+        // instead of pacing on the spot, which is both how it eventually finds
+        // the way round and what stops a tight left-right rocking that reads as
+        // the mob "looking around at high speed".
+        this.stuckStreak = (this.stuckStreak || 0) + 1;
+        this.detourDir = -this.facing;
+        this.facing = this.detourDir;
+        this.detourTimer = DETOUR_TIME * Math.min(4, this.stuckStreak);
+        this.vx = this.detourDir * speed;
+      } else if (Math.abs(dx) <= 14) {
+        // Close enough to be considered arrived at: the chase is going well.
+        this.stuckStreak = 0;
       }
 
       this.resolveWorldPhysics(world);
@@ -1902,7 +1982,7 @@ class Critter {
     this.type = type;
     this.width = type === 'sheep' ? 26 : 18;
     this.height = type === 'sheep' ? 22 : 16;
-    this.vx = Math.random() > 0.5 ? 0.45 : -0.45;
+    this.vx = (Math.random() > 0.5 ? 1 : -1) * (CRITTER_MIN_SPEED + Math.random() * CRITTER_SPEED_RANGE);
     this.vy = 0;
     this.hp = type === 'sheep' ? 28 : 18;
     this.dead = false;
@@ -1925,16 +2005,44 @@ class Critter {
     if (playerDistance < 100) {
       this.vx = player.x < this.x ? 1.2 : -1.2;
     } else if (this.wanderTimer <= 0) {
-      this.vx = (Math.random() - 0.5) * 1.2;
+      // Pick a DIRECTION and a speed that clears the minimum, rather than
+      // `(Math.random() - 0.5) * 1.2`. That expression has a mean of zero, so
+      // roughly half of all picks landed within a few hundredths of the world
+      // floor: the critter crawled at well under a pixel a frame and simply
+      // read as a statue, and the `vx *= -1` bounce off a wall preserved that
+      // crawl instead of fixing it. A minimum speed is what makes a sheep walk.
+      const dir = Math.random() > 0.5 ? 1 : -1;
+      this.vx = dir * (CRITTER_MIN_SPEED + Math.random() * CRITTER_SPEED_RANGE);
       this.wanderTimer = 1.5 + Math.random() * 3;
     }
 
     this.vy = Math.min(8, this.vy + 0.35);
     const nextX = this.x + this.vx;
-    const footTileX = Math.floor((nextX + this.width / 2) / TILE_SIZE);
-    const footTileY = Math.floor((this.y + this.height + 2) / TILE_SIZE);
-    if (world.isSolid(footTileX, footTileY)) {
-      this.vx *= -1;
+    // THE WALL PROBE. This used to read
+    //   footTileY = floor((this.y + this.height + 2) / TILE_SIZE)
+    // — the row BELOW the feet. A critter standing on the ground has
+    // y + height sitting exactly on the tile boundary of the floor it is
+    // resting on, so `+ 2` put the probe two pixels INSIDE that floor row and
+    // isSolid() answered true every single frame, forever.
+    //
+    // The consequence was both halves of the same bug report: `vx` was flipped
+    // and `this.x = nextX` was skipped on every frame, so the animal covered no
+    // ground at all ("mobs on the surface just don't move"), while its sign
+    // changed sixty times a second — and the renderer mirrors the sprite on
+    // `vx < 0`, so it visibly snapped left and right ("look left and right at
+    // high speeds").
+    //
+    // Probe the row the animal's feet occupy from the INSIDE, one pixel above
+    // its underside. A wall in front shows up there; the floor it is standing
+    // on does not.
+    const wallTileX = Math.floor((nextX + this.width / 2) / TILE_SIZE);
+    const wallTileY = Math.floor((this.y + this.height - 2) / TILE_SIZE);
+    if (world.isSolid(wallTileX, wallTileY)) {
+      // Turn around at full walking speed. Multiplying by -1 used to keep a
+      // near-zero vx near zero, which is how a critter could wedge itself
+      // against a rock and stand there for the rest of the session.
+      this.vx = (this.vx >= 0 ? -1 : 1) * Math.max(Math.abs(this.vx), CRITTER_MIN_SPEED);
+      this.wanderTimer = Math.min(this.wanderTimer, 0.35);
     } else {
       this.x = nextX;
     }
@@ -3704,5 +3812,13 @@ window.Projectile = Projectile;
 window.Player = Player;
 window.Monster = Monster;
 window.Critter = Critter;
+// Movement tuning. Exported so the QA suite asserts the real numbers the game
+// runs on rather than a copy of the formula written into the test.
+window.TURN_COOLDOWN = TURN_COOLDOWN;
+window.HOP_COOLDOWN = HOP_COOLDOWN;
+window.DETOUR_TIME = DETOUR_TIME;
+window.SENSE_RADIUS = SENSE_RADIUS;
+window.CRITTER_MIN_SPEED = CRITTER_MIN_SPEED;
+window.CRITTER_SPEED_RANGE = CRITTER_SPEED_RANGE;
 window.ForestGuardianBoss = ForestGuardianBoss;
 window.CursedKnightBoss = CursedKnightBoss;

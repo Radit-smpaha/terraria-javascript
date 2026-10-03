@@ -5862,6 +5862,18 @@ this.player.dodgeTime = 0;
     for (let i = this.critters.length - 1; i >= 0; i--) {
       const critter = this.critters[i];
       critter.update(dt, this.player, this.world);
+      // Wildlife used to have no distance cull at all — only dying removed one
+      // — so sheep spawned on a long walk accumulated for the whole session and
+      // went on being simulated across the map. Retire anything well out of
+      // play, the same way monsters are retired.
+      const critterDist = Math.hypot(
+        (critter.x + critter.width / 2) - (this.player.x + this.player.width / 2),
+        (critter.y + critter.height / 2) - (this.player.y + this.player.height / 2)
+      );
+      if (critterDist > 2200) {
+        this.critters.splice(i, 1);
+        continue;
+      }
       if (critter.dead) {
         if (critter.type === 'sheep') {
           this.drops.push(new DropItem(critter.x, critter.y, 'wool', 2));
