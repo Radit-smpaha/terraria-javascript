@@ -875,6 +875,9 @@ class Game {
       lowQuality: false
     };
     this.settings = this.loadSettings();
+    // Applied before the first frame so the HUD never paints at the wrong size
+    // and then jump. #ui-layer only - the main menu keeps its own size.
+    this.applyUiScale();
     this.showFps = this.settings.showFps;
     this.autosaveInterval = this.settings.autosave;
     this.applyQualityMode(this.settings.quality, false);
@@ -2032,20 +2035,122 @@ class Game {
       // the raw fingertip position while every later one was nudged.
       this.snapTouchAim();
       this.input.mouseDown = true;
-      this.handleLeftClick();
+      // Tap = "do the right thing for what I am holding, right here".
+      // Previously every tap swung the left button, so placing a block needed a
+      // tap to aim PLUS a press of the use button - and because the aim could
+      // freeze (see the lostpointercapture note below) that second step kept
+      // dropping the block at the same old spot.
+      this.handleTouchTap();
     });
     canvas.addEventListener('pointermove', (event) => {
       if (event.pointerId !== this._touchAimPointer) return;
       pos(event);
     });
     const endAim = (event) => {
-      if (event.pointerId !== this._touchAimPointer) return;
+      // lostpointercapture fires WITHOUT a pointerup when the browser takes the
+      // gesture over (scroll, pinch, system edge-swipe) or the element goes
+      // away. Without listening for it the pointer id stayed set for the rest
+      // of the session, every later tap was rejected by the guard above, and
+      // the aim was frozen on one tile - which is exactly the "I can only
+      // place blocks in one direction" bug.
+      if (event && event.pointerId !== undefined && event.pointerId !== this._touchAimPointer) return;
       this._touchAimPointer = null;
       this.input.mouseDown = false;
-      try { canvas.releasePointerCapture(event.pointerId); } catch (_) { /* not captured */ }
+      if (event) {
+        try { canvas.releasePointerCapture(event.pointerId); } catch (_) { /* not captured */ }
+      }
     };
     canvas.addEventListener('pointerup', endAim);
     canvas.addEventListener('pointercancel', endAim);
+    canvas.addEventListener('lostpointercapture', endAim);
+    // Belt and braces: a backgrounded tab never delivers pointerup, so make
+    // certain the aim is live again when the player comes back.
+    window.addEventListener('blur', () => endAim(null));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') endAim(null);
+    });
+  }
+
+  /**
+   * Where the thumb is pointing, and whether that tap would actually do
+   * something.
+   *
+   * This mirrors the placement rules exactly (same range, same "is it air"
+   * test, same "would it suffocate me" test) rather than inventing its own, so
+   * a green reticle always means the tap places a block and a red one always
+   * means it will not. That honesty is the whole point: it turns "why did
+   * nothing happen" into a visible answer.
+   */
+  renderTouchReticle(ctx) {
+    const tileX = Math.floor((this.input.mouseX + this.camera.x) / TILE_SIZE);
+    const tileY = Math.floor((this.input.mouseY + this.camera.y) / TILE_SIZE);
+    if (!Number.isFinite(tileX) || !Number.isFinite(tileY)) return;
+    // Only bother while the target is somewhere the player could plausibly
+    // reach, so the reticle never sits uselessly on the far side of the map.
+    const pTileX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
+    const pTileY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
+    const inRange = Math.hypot(tileX - pTileX, tileY - pTileY) <= 7.0;
+    if (!inRange) return;
+
+    const held = this.inventory[this.player.selectedSlot];
+    const itemData = held ? ITEMS[held.id] : null;
+    const placing = !!itemData && itemData.type === 'tile';
+    let ok = this.world.getTile(tileX, tileY) === TILES.AIR;
+    if (ok && placing && TILE_PROPERTIES[itemData.tile] &&
+        TILE_PROPERTIES[itemData.tile].solid && !TILE_PROPERTIES[itemData.tile].isPlatform) {
+      const pLeft = Math.floor(this.player.x / TILE_SIZE);
+      const pRight = Math.floor((this.player.x + this.player.width) / TILE_SIZE);
+      const pTop = Math.floor(this.player.y / TILE_SIZE);
+      const pBot = Math.floor((this.player.y + this.player.height) / TILE_SIZE);
+      if (tileX >= pLeft && tileX <= pRight && tileY >= pTop && tileY <= pBot) ok = false;
+    }
+
+    const colour = ok ? '#4ade80' : '#f87171';
+    const x = tileX * TILE_SIZE;
+    const y = tileY * TILE_SIZE;
+    ctx.save();
+    // Outline the whole tile plus corner ticks: legible against any background
+    // without hiding what is underneath.
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+    ctx.globalAlpha = 0.9;
+    const t = 5;
+    ctx.beginPath();
+    for (const [cx, cy, dx, dy] of [
+      [x, y, 1, 1], [x + TILE_SIZE, y, -1, 1],
+      [x, y + TILE_SIZE, 1, -1], [x + TILE_SIZE, y + TILE_SIZE, -1, -1]
+    ]) {
+      ctx.moveTo(cx + dx * t, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + dy * t);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Act on the world where the finger is, using whatever is in hand.
+   *
+   * A tap has to do the obvious thing for the selected item, or the pad feels
+   * broken: with a block in hand the player expects the block to appear under
+   * their fingertip, not to swing a pickaxe at it. Routing by item type keeps
+   * every existing code path intact - nothing here re-implements placement,
+   * mining or drinking, it only decides which of them a tap means.
+   */
+  handleTouchTap() {
+    const held = this.inventory[this.player.selectedSlot];
+    const itemData = held ? ITEMS[held.id] : null;
+    // Blocks and consumables are "use" actions (place / drink / cast the rod);
+    // everything else is "swing" (mine, attack, interact, talk).
+    const isUse = !!itemData && (itemData.type === 'tile' || itemData.type === 'consumable');
+    if (isUse) {
+      this.input.mouseRightDown = true;
+      this.handleRightClick();
+      this.input.mouseRightDown = false;
+    } else {
+      this.handleLeftClick();
+    }
   }
 
   /**
@@ -2144,7 +2249,11 @@ class Game {
       // Display
       damageText: true, minimap: 'medium',
       // Interface
-      tooltips: true
+      tooltips: true,
+      // How large the in-game HUD is drawn. 'normal' is the original size;
+      // the player can shrink it to free up room on a phone or enlarge it to
+      // read it comfortably. The main menu is deliberately NOT affected.
+      uiScale: 'normal'
     };
     try {
       const raw = localStorage.getItem('terracraft-settings');
@@ -2167,8 +2276,27 @@ class Game {
       defaults.damageText = saved.damageText !== false;
       if (['hidden', 'small', 'medium', 'large'].includes(saved.minimap)) defaults.minimap = saved.minimap;
       defaults.tooltips = saved.tooltips !== false;
+      if (['small', 'normal', 'large'].includes(saved.uiScale)) defaults.uiScale = saved.uiScale;
     } catch (_) {}
     return defaults;
+  }
+
+  /**
+   * Put the chosen HUD size into force.
+   *
+   * One class on <body> drives everything, so this is a single toggle rather
+   * than a pile of inline sizes. Scoped to #ui-layer on purpose: the title
+   * screen is a sibling of that element, which is how "resize the HUD" stays
+   * from also resizing the main menu the player was told to leave alone.
+   */
+  applyUiScale() {
+    const scale = ['small', 'normal', 'large'].includes(this.settings.uiScale)
+      ? this.settings.uiScale : 'normal';
+    if (document.body) {
+      document.body.classList.toggle('ui-small', scale === 'small');
+      document.body.classList.toggle('ui-large', scale === 'large');
+    }
+    return scale;
   }
 
   saveSettings() {
@@ -2307,6 +2435,7 @@ class Game {
     setCheck('settings-damagetext', this.settings.damageText);
     setSel('settings-minimap', this.settings.minimap);
     setCheck('settings-tooltips', this.settings.tooltips);
+    setSel('settings-ui-scale', this.settings.uiScale);
     // The control scheme lives outside this.settings, but it is still a control
     // in this panel, so it gets synced here alongside the rest.
     this.syncControlSchemeLabels();
@@ -2729,6 +2858,12 @@ class Game {
     // so it persists under its own key and applies the moment it changes.
     document.getElementById('settings-controls')?.addEventListener('change', (event) => {
       this.setControlScheme(event.target.value);
+    });
+    document.getElementById('settings-ui-scale')?.addEventListener('change', (event) => {
+      this.settings.uiScale = event.target.value;
+      this.applyUiScale();
+      this.saveSettings();
+      this.showToast('🔍 HUD size: ' + this.settings.uiScale);
     });
     document.getElementById('settings-quality')?.addEventListener('change', (event) => {
       this.applyQualityMode(event.target.value);
@@ -7550,6 +7685,14 @@ this.player.dodgeTime = 0;
     // 9b. The Sovereign's death show draws over the debris so the shockwaves
     // and the soul pillar read against it.
     if (this.dragonFinale) this.dragonFinale.render(ctx, this.camera);
+
+    // 9c. Touch aim reticle. Without a visible cursor a thumb player has no
+    // idea where the next tap will land, which is what made placement feel
+    // random. Drawn in world space so it sits exactly on the target tile.
+    if (this.platform === 'touch' && !this.paused && !this.titleScreenOpen &&
+        !this.isDead && !this.isModalOpen()) {
+      this.renderTouchReticle(ctx);
+    }
 
     // 10. Foreground weather (close-up rain streaks + lightning flash)
     if (this.weather && !this.world.isInSpace()) this.weather.render(this, ctx, this.camera, 'front');

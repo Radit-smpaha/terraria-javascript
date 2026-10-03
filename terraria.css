@@ -2628,14 +2628,14 @@ body.controls-touch .mobile-controls:not(.hidden) { display: block; }
 .touch-move .touch-dir { width: 62px; height: 62px; font-size: 30px; }
 .touch-alt {
   left: var(--touch-edge);
-  bottom: calc(var(--touch-edge) + 62px + var(--touch-gap));
+  bottom: calc(var(--touch-edge-b) + 62px + var(--touch-gap));
 }
 .touch-drop { width: 48px; height: 48px; font-size: 22px; opacity: .85; }
 
 /* Small utility column above the movement pad: pause, heal, buff, talk. */
 .touch-utility {
   left: var(--touch-edge);
-  bottom: calc(var(--touch-edge) + 62px + 48px + var(--touch-gap) * 3 + 12px);
+  bottom: calc(var(--touch-edge-b) + 62px + 48px + var(--touch-gap) * 3 + 12px);
   display: grid;
   grid-template-columns: repeat(2, 46px);
   gap: 8px;
@@ -2663,11 +2663,17 @@ body.controls-touch .mobile-controls:not(.hidden) { display: block; }
 .touch-use { grid-area: use; width: 54px; height: 54px; font-size: 24px; }
 .touch-dodge { grid-area: dodge; width: 54px; height: 54px; font-size: 24px; }
 
-/* Narrow phones: the pad has to give way before the world does. */
+/* Narrow phones: the pad has to give way before the world does. The safe-area
+   floors are kept (just lowered) so a notched phone still clears the home bar. */
 @media (max-width: 420px) {
-  .mobile-controls { --touch-edge: 8px; --touch-gap: 7px; }
+  .mobile-controls {
+    --touch-edge: max(8px, env(safe-area-inset-left, 0px));
+    --touch-edge-b: max(8px, env(safe-area-inset-bottom, 0px));
+    --touch-edge-r: max(8px, env(safe-area-inset-right, 0px));
+    --touch-gap: 7px;
+  }
   .touch-move .touch-dir { width: 54px; height: 54px; font-size: 26px; }
-  .touch-alt { bottom: calc(var(--touch-edge) + 54px + var(--touch-gap)); }
+  .touch-alt { bottom: calc(var(--touch-edge-b) + 54px + var(--touch-gap)); }
 }
 
 /* ============================================================
@@ -2765,7 +2771,7 @@ body.controls-touch .hotbar-slot:hover { border-color: #475569; background: #1e2
   .touch-utility {
     grid-template-columns: repeat(2, 40px);
     gap: 6px;
-    bottom: calc(var(--touch-edge) + 54px + 42px + var(--touch-gap) * 3 + 10px);
+    bottom: calc(var(--touch-edge-b) + 54px + 42px + var(--touch-gap) * 3 + 10px);
   }
   .touch-small { width: 40px; height: 40px; font-size: 17px; }
   .touch-attack { width: 60px; height: 60px; font-size: 26px; }
@@ -2793,3 +2799,100 @@ body:not(.controls-touch) .mobile-controls { display: none; }
   .platform-icon { font-size: 26px; }
   .platform-copy strong { font-size: 24px; }
 }
+
+/* ============================================================
+   HUD SIZE (Settings -> Display -> HUD size)
+   One variable scales the whole in-game interface. `zoom` is used rather than
+   transform:scale because it rescales LAYOUT as well as pixels, so anchored
+   panels stay anchored and - crucially - hit-testing follows the visual size,
+   which transform would break for every touch button.
+
+   The width/height division cancels the zoom back out, so #ui-layer still
+   covers exactly the viewport instead of overflowing by the zoom factor.
+
+   Scoped to #ui-layer only. #title-screen is a SIBLING of it, which is what
+   keeps the main menu at full size no matter what the player picks here.
+   ============================================================ */
+body.ui-small { --ui-zoom: 0.85; }
+body.ui-large { --ui-zoom: 1.18; }
+#ui-layer {
+  zoom: var(--ui-zoom, 1);
+  width: calc(100% / var(--ui-zoom, 1));
+  height: calc(100% / var(--ui-zoom, 1));
+}
+/* A large HUD must not fight the thumb pad for the bottom of the screen. */
+body.ui-large.controls-touch .bottom-panel { bottom: 84px !important; }
+
+/* ============================================================
+   THE TOUCH PAD, REDRAWN
+   Same eleven buttons and the same markup - this is purely a coat of paint.
+   Three things it fixes:
+     1. Safe-area insets, so buttons clear a notch or a home indicator.
+     2. Readable contrast: the old rgba(8,15,28,.55) disc vanished against a
+        night sky or a white snowfield.
+     3. A pressed state that is obvious at a glance without changing size, so
+        the thumb can stay where it is.
+   ============================================================ */
+.mobile-controls {
+  --touch-edge: max(14px, env(safe-area-inset-left, 0px));
+  --touch-edge-b: max(14px, env(safe-area-inset-bottom, 0px));
+  --touch-edge-r: max(14px, env(safe-area-inset-right, 0px));
+  --touch-ring: rgba(226, 232, 240, .34);
+  --touch-fill: rgba(9, 14, 26, .62);
+}
+.touch-move { left: var(--touch-edge); bottom: var(--touch-edge-b); }
+.touch-act { right: var(--touch-edge-r); bottom: var(--touch-edge-b); }
+
+.touch-btn {
+  /* Two layers: an opaque-ish core for contrast, plus a soft outer glow so
+     the button reads as a physical control floating over the world. */
+  background:
+    radial-gradient(circle at 50% 30%, rgba(148, 163, 184, .22), transparent 62%),
+    var(--touch-fill);
+  border: 2px solid var(--touch-ring);
+  /* The backdrop blur is what makes it read as "glass" rather than "flat
+     circle", and it degrades to a plain fill where unsupported. */
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #f1f5f9;
+  font: 28px/1 'VT323', system-ui, sans-serif;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, .85);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, .55),
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    inset 0 -2px 6px rgba(0, 0, 0, .35);
+  transition: transform 90ms ease, background 90ms ease,
+              border-color 90ms ease, box-shadow 90ms ease;
+}
+/* Pressed: shrink slightly AND light up. A size change alone is easy to miss
+   under a thumb, so the colour does the real work here. */
+.touch-btn:active,
+.touch-btn.is-down {
+  transform: scale(.9);
+  border-color: #facc15;
+  color: #fffbeb;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(253, 224, 71, .5), transparent 65%),
+    rgba(250, 204, 21, .3);
+  box-shadow:
+    0 0 0 3px rgba(250, 204, 21, .35),
+    0 4px 14px rgba(0, 0, 0, .5);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .9);
+}
+/* The primary action (attack/mine) is the one that gets held down most, so it
+   is the only one that stays permanently tinted. */
+.touch-attack {
+  border-color: rgba(250, 204, 21, .6);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, .55),
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    0 0 18px rgba(250, 204, 21, .18);
+}
+#touch-pause { border-color: rgba(148, 163, 184, .6); }
+
+/* The utility column clears the home indicator on notched phones. */
+.touch-utility {
+  left: var(--touch-edge);
+  bottom: calc(var(--touch-edge-b) + 62px + 48px + var(--touch-gap) * 3 + 12px);
+}
+

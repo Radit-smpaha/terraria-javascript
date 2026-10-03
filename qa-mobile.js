@@ -156,6 +156,43 @@ check('aim snap gated to weapons only',
 check('escape guard while the question is up',
   /if \(this\.titlePanel === 'platform'\) \{[\s\S]{0,80}event\.preventDefault\(\);/.test(js));
 
+/* ---------- tap routing + frozen aim (the "only one direction" bug) ---------- */
+check('a world tap routes by held item', /handleTouchTap\(\) \{[\s\S]*?itemData\.type === 'tile' \|\| itemData\.type === 'consumable'/.test(js));
+check('a tap with a block places it', /if \(isUse\) \{[\s\S]{0,120}this\.handleRightClick\(\);/.test(js));
+check('a tap with a tool still swings', /if \(isUse\) \{[\s\S]{0,220}else \{\s*this\.handleLeftClick\(\);/.test(js));
+check('the aim listens for lostpointercapture',
+  /canvas\.addEventListener\('lostpointercapture', endAim\);/.test(js),
+  'a dropped capture here is what froze the aim on one tile');
+check('pointercancel is handled', /canvas\.addEventListener\('pointercancel', endAim\);/.test(js));
+check('losing focus releases the aim', /window\.addEventListener\('blur', \(\) => endAim\(null\)\);/.test(js));
+check('a hidden tab releases the aim',
+  /document\.addEventListener\('visibilitychange'[\s\S]{0,140}endAim\(null\);/.test(js));
+check('an aim reticle is drawn', /renderTouchReticle\(ctx\)/.test(js));
+check('the reticle mirrors the 7 tile range', /Math\.hypot\(tileX - pTileX, tileY - pTileY\) <= 7\.0/.test(js));
+
+/* ---------- HUD size setting ---------- */
+check('the settings panel offers a HUD size', /id="settings-ui-scale"/.test(html));
+check('uiScale is a real setting', /uiScale: 'normal'/.test(js));
+check('uiScale is validated on load', /if \(\['small', 'normal', 'large'\]\.includes\(saved\.uiScale\)\)/.test(js));
+check('the HUD size select is wired', /getElementById\('settings-ui-scale'\)\?\.addEventListener\('change'/.test(js));
+check('the HUD size is applied at boot', /this\.applyUiScale\(\);\s*\n\s*this\.showFps/.test(js));
+check('small scales the hud down', /body\.ui-small \{ --ui-zoom: 0\.85; \}/.test(css));
+check('large scales the hud up', /body\.ui-large \{ --ui-zoom: 1\.18; \}/.test(css));
+// zoom (not transform) is required, or touch hit-testing breaks on every button.
+check('the hud scales with zoom, not transform',
+  /#ui-layer \{\s*\n\s*zoom: var\(--ui-zoom, 1\);/.test(css));
+check('the zoom is cancelled so it does not overflow',
+  /width: calc\(100% \/ var\(--ui-zoom, 1\)\)/.test(css));
+// The main menu must be untouched by the HUD size setting.
+check('the hud size never touches the main menu', !/body\.ui-(small|large)[^{]*\.title-/.test(css));
+
+/* ---------- redesigned pad ---------- */
+check('the pad clears notches and home bars',
+  /env\(safe-area-inset-bottom/.test(css) && /env\(safe-area-inset-left/.test(css));
+check('pad buttons have a glass backdrop', /backdrop-filter: blur\(6px\)/.test(css));
+check('the pressed state lights up', /\.touch-btn\.is-down \{[\s\S]*?rgba\(250, 204, 21, \.3\)/.test(css));
+check('the primary action stays tinted', /\.touch-attack \{[\s\S]*?border-color: rgba\(250, 204, 21, \.6\)/.test(css));
+
 console.log('');
 console.log(failed ? 'MOBILE QA FAILED: ' + failed + ' check(s)' : 'MOBILE QA PASSED: all checks green');
 process.exit(failed ? 1 : 0);

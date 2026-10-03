@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=28">
+  <link rel="stylesheet" href="terraria.css?v=29">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -352,6 +352,14 @@
                 <span><strong>Item name readouts</strong><small>Hover tooltips and the name above the hotbar</small></span>
                 <input id="settings-tooltips" type="checkbox" checked>
               </label>
+              <label class="settings-row">
+                <span><strong>HUD size</strong><small>Scales the in-game interface only — the main menu is untouched</small></span>
+                <select id="settings-ui-scale">
+                  <option value="small">Small</option>
+                  <option value="normal">Normal</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
             </section>
             <section class="settings-section">
               <h4>CONTROLS</h4>
@@ -628,12 +636,19 @@
                 <kbd>⤓</kbd> — drop through a platform. <kbd>💨</kbd> — dodge roll.</li>
               <li><kbd>⛏️</kbd> — attack, mine or interact, held down to keep swinging. <kbd>✋</kbd> — place the
                 block in your hand, drink a potion, cast the rod.</li>
-              <li><strong>Tap the world to aim.</strong> Your fingertip is far less precise than a mouse, so if you
-                tap near a monster the aim snaps onto it — mining stays exact, combat stays forgiving.</li>
+              <li><strong>Tap the world to act on it.</strong> Whatever you are holding decides what a tap does:
+                a block appears under your fingertip, a pickaxe mines, a sword swings, a potion gets drunk. The
+                crosshair shows where the next tap lands — <strong style="color:#4ade80">green</strong> means it
+                will work, <strong style="color:#f87171">red</strong> means it is too far away or already
+                occupied. You can place above, below and beside you, not just in one spot.</li>
+              <li>A fingertip is far less precise than a mouse, so when you are holding a <strong>weapon</strong>
+                and tap near a monster the aim snaps onto it — combat gets forgiving. Mining stays exact.</li>
               <li><kbd>⏸</kbd> opens the pause menu (Resume, Save World, Settings, Main Menu). <kbd>❤</kbd> quick-heals,
                 <kbd>🧪</kbd> drinks the best buff potion, <kbd>💬</kbd> talks to a nearby villager.</li>
               <li>The HUD is drawn smaller in this mode so the controls have room to sit; the main menu is left at
-                full size.</li>
+                full size. You can also set the HUD size yourself under
+                <strong>Settings → Display → HUD size</strong> (Small / Normal / Large) — that one is yours on
+                any device and never touches the main menu either.</li>
             </ul>
             <h4>PERFORMANCE</h4>
             <ul>
@@ -821,7 +836,7 @@
   <script src="juice.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=41" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=42" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>

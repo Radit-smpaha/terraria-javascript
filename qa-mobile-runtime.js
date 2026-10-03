@@ -101,7 +101,36 @@ function matches(el, sel) {
 global.window = global;
 global.innerWidth = 1280; global.innerHeight = 720;
 global.devicePixelRatio = 1;
-global.addEventListener = () => {};
+// Minimal Web Audio stub. Without it every tap logs a full "AudioCtx is not a
+// constructor" stack trace, which buries the actual check results.
+function audioParam(v = 0) {
+  return { value: v, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} };
+}
+global.AudioContext = function AudioContext() {
+  const node = () => ({
+    connect() {}, disconnect() {},
+    gain: audioParam(1), frequency: audioParam(440), detune: audioParam(0),
+    type: 'sine', start() {}, stop() {},
+    buffer: null, playbackRate: audioParam(1), loop: false,
+    pan: audioParam(0), Q: audioParam(1)
+  });
+  return {
+    currentTime: 0, state: 'running', sampleRate: 44100, destination: node(),
+    createGain: node, createOscillator: node, createBiquadFilter: node,
+    createBufferSource: node, createStereoPanner: node, createDelay: node,
+    createBuffer: () => ({ getChannelData: () => new Float32Array(1) }),
+    createPeriodicWave: () => ({}), createConvolver: () => node(),
+    createDynamicsCompressor: node, resume() {}, close() {}
+  };
+};
+global.webkitAudioContext = global.AudioContext;
+
+// Listeners are RECORDED, not discarded: the frozen-aim bug lived in a handler
+// that was never attached, and a no-op stub would have hidden that.
+const winHandlers = {};
+const docHandlers = {};
+global.addEventListener = (t, f) => { (winHandlers[t] || (winHandlers[t] = [])).push(f); };
+global.document.addEventListener = (t, f) => { (docHandlers[t] || (docHandlers[t] = [])).push(f); };
 global.performance = { now: () => 1000 };
 global.requestAnimationFrame = () => 0;
 global.localStorage = {
@@ -296,6 +325,94 @@ check('pc aim is never snapped', g.input.mouseX === 1005);
 /* ---------- 10. a bad stored value falls back to asking ---------- */
 store.set('terracraft-controls', 'nonsense');
 check('a corrupt stored answer is ignored', g.loadControlScheme() === null);
+
+/* ---------- 11. tap-to-place works in EVERY direction ----------
+   The reported bug: blocks only ever landed in one spot. Root cause was a
+   pointer capture that could be dropped without a pointerup, leaving the aim
+   latched so every later tap was rejected. Both halves are checked here. */
+g.setControlScheme('touch');
+g.titleScreenOpen = false; g.paused = false; g.isDead = false;
+for (let i = 0; i < 9; i++) g.inventory[i] = { id: 'dirt', count: 99 };
+g.player.selectedSlot = 0;
+
+const screenOf = (wx, wy) => [wx + g.camera.x, wy + g.camera.y];
+const px = Math.floor((g.player.x + 9) / 24);
+const py = Math.floor((g.player.y + 18) / 24);
+// A real tap goes through the pointer handler, so the "one finger at a time"
+// guard is exercised rather than bypassed.
+const tapAt = (sx, sy, id) => {
+  g.canvas._h.pointerdown({ pointerId: id, clientX: sx, clientY: sy, preventDefault() {} });
+  if (g.canvas._h.pointerup) g.canvas._h.pointerup({ pointerId: id });
+};
+
+const directions = [
+  ['above', px, py - 3],
+  ['below', px, py + 5],
+  ['to the left of', px - 4, py],
+  ['to the right of', px + 4, py]
+];
+for (const [label, tx, ty] of directions) {
+  g.world.setTile(tx, ty, 0);
+  g.world.setTile(tx, ty - 1, 0);       // headroom
+  const before = g.stats.blocksPlaced;
+  const [sx, sy] = screenOf(tx * 24 + 12, ty * 24 + 12);
+  tapAt(Math.round(sx), Math.round(sy), 20);
+  check('a tap places a block ' + label + ' the player',
+    g.world.getTile(tx, ty) === global.TILES.DIRT && g.stats.blocksPlaced === before + 1,
+    'tile=' + g.world.getTile(tx, ty) + ' delta=' + (g.stats.blocksPlaced - before));
+}
+
+// And the frozen-aim half: every way a capture can end abnormally must leave
+// the aim usable again.
+const recoveryProbe = (label, trigger) => {
+  const tx = px - 4, ty = py;
+  g.world.setTile(tx, ty, 0);
+  g.world.setTile(tx, ty - 1, 0);
+  g._touchAimPointer = 4242;                    // a capture that never released
+  trigger();
+  const [sx, sy] = screenOf(tx * 24 + 12, ty * 24 + 12);
+  tapAt(Math.round(sx), Math.round(sy), 21);
+  check('aim recovers after ' + label, g.world.getTile(tx, ty) === global.TILES.DIRT,
+    'tile=' + g.world.getTile(tx, ty) + ' pointer=' + g._touchAimPointer);
+};
+recoveryProbe('lostpointercapture', () =>
+  g.canvas._h.lostpointercapture({ pointerId: 4242 }));
+recoveryProbe('pointercancel', () =>
+  g.canvas._h.pointercancel({ pointerId: 4242 }));
+recoveryProbe('window blur', () => {
+  g._touchAimPointer = 4242;
+  for (const fn of (winHandlers.blur || [])) fn();
+});
+recoveryProbe('the tab being hidden', () => {
+  g._touchAimPointer = 4242;
+  global.document.visibilityState = 'hidden';
+  for (const fn of (docHandlers.visibilitychange || [])) fn();
+});
+
+/* ---------- 12. the HUD size setting ---------- */
+check('the ui scale setting exists in the panel', /id="settings-ui-scale"/.test(
+  require('fs').readFileSync(require('path').join(__dirname, 'terraria.html'), 'utf8')));
+
+g.settings.uiScale = 'small';
+g.applyUiScale();
+check('small sets ui-small', document.body.classList.contains('ui-small'));
+check('small does not set ui-large', !document.body.classList.contains('ui-large'));
+g.settings.uiScale = 'large';
+g.applyUiScale();
+check('large sets ui-large', document.body.classList.contains('ui-large'));
+check('large drops ui-small', !document.body.classList.contains('ui-small'));
+g.settings.uiScale = 'nonsense';
+check('a bogus value falls back to no class',
+  g.applyUiScale() === 'normal' && !document.body.classList.contains('ui-small') &&
+  !document.body.classList.contains('ui-large'));
+g.settings.uiScale = 'normal';
+g.applyUiScale();
+
+// It must persist through the same guarded save path as every other setting.
+store.set('terracraft-settings', JSON.stringify({ uiScale: 'large' }));
+check('a saved hud size is restored', g.loadSettings().uiScale === 'large');
+store.set('terracraft-settings', JSON.stringify({ uiScale: 'evil' }));
+check('a corrupt hud size is rejected', g.loadSettings().uiScale === 'normal');
 
 console.log('');
 console.log(failed ? 'MOBILE RUNTIME QA FAILED: ' + failed + ' check(s)' : 'MOBILE RUNTIME QA PASSED: all checks green');
