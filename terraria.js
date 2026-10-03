@@ -848,7 +848,7 @@ class Game {
 
     this.sound = new SoundSystem();
     this.particles = new ParticleSystem();
-    this.world = new World(440, 175);
+    this.world = new World(440, 175, this.worldSeed());
     this.weather = new WeatherSystem(this.world);
 
     // ---- Retro pixel presentation ----
@@ -2031,6 +2031,15 @@ class Game {
         this.quickBuff();
       }
 
+      // G throws the selected stack on the floor — Minecraft's Q.
+      //
+      // Shift drops ONE item, exactly like Minecraft: handy for feeding one
+      // ore to a furnace or nudging a stack out from under a wall.
+      if (e.code === 'KeyG' && !e.repeat) {
+        e.preventDefault();
+        this.dropSelectedStack(e.shiftKey ? 1 : Infinity);
+      }
+
       // F toggles the performance HUD: FPS, resolution and particle load.
       if (e.code === 'KeyF' && !e.repeat) {
         this.showFps = !this.showFps;
@@ -2472,6 +2481,37 @@ class Game {
   }
 
   slotKey(slot) { return `terracraft-world-slot-${slot}`; }
+
+  /**
+   * The world seed for the slot this session is on.
+   *
+   * Slot 1 is the original world and is always seed 0: that is what guarantees
+   * it never changes. Generating it needs no RNG at all — the unseeded path is
+   * simply the world the game has always made.
+   *
+   * Slots 2 and 3 roll a fresh random seed, ONCE, and remember it in
+   * localStorage. Rolling it per page load would be wrong: the terrain is saved
+   * as tiles, so a re-roll would never actually change the world a player is
+   * already in, and the first load before a save existed would disagree with
+   * every load after it. Pinning the seed per slot is what makes the world a
+   * stable fact about that save file rather than a lottery on refresh.
+   */
+  worldSeed() {
+    const slot = Number(localStorage.getItem('terracraft-active-save') || 1);
+    if (!(slot >= 2 && slot <= 3)) return 0;   // slot 1 and anything odd: original
+    const key = `terracraft-world-seed-${slot}`;
+    try {
+      const stored = Number(localStorage.getItem(key));
+      if (Number.isFinite(stored) && stored !== 0) return Math.floor(stored);
+      // 1..0x7fffffff, and never 0 — 0 is reserved as "the original world".
+      const rolled = 1 + Math.floor(Math.random() * 0x7ffffffe);
+      localStorage.setItem(key, String(rolled));
+      return rolled;
+    } catch (_) {
+      // No localStorage: fall back to an unseeded world rather than throwing.
+      return 0;
+    }
+  }
 
   // ============================================================
   // BAG SIZE — the base 40 slots, plus whatever the best backpack adds
@@ -3775,12 +3815,62 @@ class Game {
     delBtn.textContent = fav ? '🗑 DELETE (locked)' : '🗑 DELETE';
   }
 
+  /**
+   * Throw the selected hotbar stack on the floor, the way Minecraft's Q does.
+   *
+   * `amount` is how many to drop; Infinity drops the whole stack. Shift+G drops
+   * a single item, which is the part people actually use — feeding one ore to a
+   * furnace, or nudging a stack out from behind something.
+   *
+   * This routes through dropInventoryStack so there is exactly ONE definition
+   * of "throwing something on the floor". That matters: the favourite guard,
+   * the throw velocity, the pickup delay and the toast all live there, and a
+   * second copy of any of them is a second place for them to be wrong.
+   */
+  dropSelectedStack(amount = Infinity) {
+    const index = this.player.selectedSlot;
+    const slot = this.inventory[index];
+    if (!slot || slot.id === 'empty' || slot.count <= 0) return false;
+
+    // One item out of a stack, or the whole thing.
+    const wholeStack = amount >= slot.count;
+    const dropIndex = wholeStack ? index : this.spillOneToOverflowSlot(index, amount);
+    if (dropIndex === null || dropIndex === undefined) return false;
+
+    const dropped = this.dropInventoryStack(dropIndex);
+    return dropped;
+  }
+
+  /**
+   * Move `count` items off the front of a stack into a free slot, so the existing
+   * single-slot drop can throw "one of these". Returns the index of the new
+   * stack, or null if the bag has nowhere to put it — in which case the drop is
+   * refused rather than silently eating items.
+   */
+  spillOneToOverflowSlot(index, count) {
+    const src = this.inventory[index];
+    const take = Math.max(1, Math.min(count, src.count));
+    if (take >= src.count) return index;
+    const item = ITEMS[src.id];
+    const stackMax = item ? item.stackMax : 999;
+    const free = this.inventory.findIndex((s, i) =>
+      i !== index && (!s || s.id === 'empty' || s.count <= 0));
+    if (free === -1) {
+      this.showToast('🎒 No free slot to drop one into.');
+      return null;
+    }
+    this.inventory[free] = { id: src.id, count: Math.min(take, stackMax) };
+    src.count -= this.inventory[free].count;
+    return free;
+  }
+
   dropInventoryStack(index) {
     const slot = this.inventory[index];
-    if (!slot || slot.id === 'empty' || slot.count <= 0) return;
+    if (!slot || slot.id === 'empty' || slot.count <= 0) return false;
     // A favourited stack cannot be thrown on the floor. This is the guard the
-    // drag-out path lands in, so it covers every way of dropping from the bag.
-    if (!this.guardFavorite(slot, 'drop it')) return;
+    // drag-out path lands in, so it covers every way of dropping from the bag —
+    // and the G key as well, since that routes through here too.
+    if (!this.guardFavorite(slot, 'drop it')) return false;
     const drop = new DropItem(
       this.player.x + this.player.width / 2,
       this.player.y,
@@ -3800,6 +3890,7 @@ class Game {
     this.renderInventoryGrid();
     this.updateHotbarUI();
     this.showToast(`Dropped ${ITEMS[slot.id]?.name || slot.id}.`);
+    return true;
   }
 
   handleInventorySlotClick(index) {

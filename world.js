@@ -140,9 +140,20 @@ const TILE_PROPERTIES = {
 const BIOME_ORDER = ['snow', 'forest', 'plains', 'savanna', 'swamp'];
 
 class World {
-  constructor(width = 300, height = 140) {
+  // `seed` 0 means "the original world": every generation roll falls through to
+  // Math.random and every terrain phase offset is zero, so the landscape is
+  // bit-for-bit what it always was. Save slot 1 always passes 0, which is how
+  // that world is guaranteed never to change under the player.
+  //
+  // Any other seed is a different world: a seeded PRNG drives every roll, and a
+  // per-seed phase offset is added to the sine fields that shape the surface,
+  // so the land itself is a different shape and not merely a different scatter
+  // of ore on the same hills.
+  constructor(width = 300, height = 140, seed = 0) {
     this.width = width;
     this.height = height;
+    this.seed = Number.isFinite(seed) ? Math.floor(seed) : 0;
+    this._rngState = ((this.seed | 0) * 0x9E3779B1) >>> 0;
     this.pixelWidth = width * TILE_SIZE;
     this.pixelHeight = height * TILE_SIZE;
     this.tiles = new Uint8Array(width * height);
@@ -176,6 +187,39 @@ class World {
     this.generateTerrain();
     this.generateSecretDungeon();
     this.seedRainbowOre(68);
+  }
+
+  /**
+   * One seeded random draw in [0,1). Seed 0 delegates to Math.random, so the
+   * original world keeps the exact sequence it always had — same hills, same
+   * ore, same trees, every time, forever.
+   */
+  rand() {
+    if (this.seed === 0) return Math.random();
+    // mulberry32: tiny, fast, and good enough for terrain scatter.
+    this._rngState = (this._rngState + 0x6D2B79F5) >>> 0;
+    let t = this._rngState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  /**
+   * Phase offsets for the terrain sine fields. Seed 0 gives all zeros, which
+   * reproduces the original landform exactly; any other seed shifts the waves
+   * so the hills, valleys and biome relief land somewhere else entirely.
+   */
+  terrainPhase() {
+    if (this.seed === 0) return { a: 0, b: 0, c: 0, d: 0 };
+    // Derived from the seed, not from a live RNG: the same seed must always
+    // produce the same shape even if generation order ever changes.
+    const mix = (salt) => {
+      let h = Math.imul((this.seed | 0) ^ salt, 0x27d4eb2d) >>> 0;
+      h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b) >>> 0;
+      h ^= h >>> 13;
+      return (h >>> 0) / 4294967296;
+    };
+    return { a: mix(1) * 6.283, b: mix(2) * 6.283, c: mix(3) * 6.283, d: mix(4) * 6.283 };
   }
 
   getTile(x, y) {
@@ -247,13 +291,13 @@ class World {
 
   // Per-biome surface relief: dunes roll, swamp sags into pools, snow is craggy,
   // plains are deliberately almost level — the flat one you can build on.
-  biomeRelief(biome, x) {
+  biomeRelief(biome, x, ph = { a: 0, b: 0, c: 0, d: 0 }) {
     switch (biome) {
-      case 'snow': return Math.sin(x * 0.11) * 4 + Math.sin(x * 0.31) * 1.5;
-      case 'forest': return Math.sin(x * 0.06) * 6 + Math.sin(x * 0.21) * 1.5;
-      case 'plains': return Math.sin(x * 0.022 + 0.7) * 1.8 + Math.sin(x * 0.08) * 0.5;
-      case 'savanna': return Math.sin(x * 0.045 + 1.3) * 4 + Math.sin(x * 0.13) * 1.2;
-      case 'swamp': return Math.sin(x * 0.05 + 2.6) * 3 - 2 + Math.sin(x * 0.4) * 0.8;
+      case 'snow': return Math.sin(x * 0.11 + ph.d) * 4 + Math.sin(x * 0.31) * 1.5;
+      case 'forest': return Math.sin(x * 0.06 + ph.a) * 6 + Math.sin(x * 0.21) * 1.5;
+      case 'plains': return Math.sin(x * 0.022 + 0.7 + ph.b) * 1.8 + Math.sin(x * 0.08) * 0.5;
+      case 'savanna': return Math.sin(x * 0.045 + 1.3 + ph.c) * 4 + Math.sin(x * 0.13) * 1.2;
+      case 'swamp': return Math.sin(x * 0.05 + 2.6 + ph.d) * 3 - 2 + Math.sin(x * 0.4) * 0.8;
       default: return 0;
     }
   }
@@ -270,14 +314,17 @@ class World {
     // Fractal base relief + per-biome relief blended across borders,
     // so each biome rolls differently but melts into its neighbor.
     const baseSurface = 50;
+    // Seed 0 returns all-zero phases, so this world generates exactly as it
+    // always has. Other seeds shift the waves and the land is a new shape.
+    const ph = this.terrainPhase();
 
     // Generate surface profile
     for (let x = 0; x < this.width; x++) {
       const mix = this.biomeMix(x);
       const biome = mix.b ? (mix.t < 0.5 ? mix.a : mix.b) : mix.a;
-      const base = Math.sin(x * 0.03) * 12 + Math.sin(x * 0.08) * 5 + Math.sin(x * 0.18) * 2;
-      const reliefA = this.biomeRelief(mix.a, x);
-      const reliefB = mix.b ? this.biomeRelief(mix.b, x) : reliefA;
+      const base = Math.sin(x * 0.03 + ph.a) * 12 + Math.sin(x * 0.08 + ph.b) * 5 + Math.sin(x * 0.18 + ph.c) * 2;
+      const reliefA = this.biomeRelief(mix.a, x, ph);
+      const reliefB = mix.b ? this.biomeRelief(mix.b, x, ph) : reliefA;
       const relief = reliefA + ((reliefB - reliefA) * (mix.b ? mix.t : 0));
       // Same blend for how much of the base hills a biome keeps, so the plains
       // flattening ramps in over the border instead of snapping to level.
@@ -301,9 +348,9 @@ class World {
           this.walls[idx] = TILES.DIRT;
         } else if (y < surfaceY + 6) {
           // Sprinkle biome stone accents through the dirt band.
-          if (biome === 'forest' && Math.random() < 0.06) this.tiles[idx] = TILES.MOSSY_STONE;
-          else if (biome === 'snow' && Math.random() < 0.09) this.tiles[idx] = TILES.FROSTBRICK;
-          else if (biome === 'savanna' && Math.random() < 0.10) this.tiles[idx] = TILES.SANDSTONE;
+          if (biome === 'forest' && this.rand() < 0.06) this.tiles[idx] = TILES.MOSSY_STONE;
+          else if (biome === 'snow' && this.rand() < 0.09) this.tiles[idx] = TILES.FROSTBRICK;
+          else if (biome === 'savanna' && this.rand() < 0.10) this.tiles[idx] = TILES.SANDSTONE;
           else this.tiles[idx] = dirtTile;
           this.walls[idx] = biome === 'swamp' ? TILES.MUD : biome === 'savanna' ? TILES.SAND : TILES.DIRT;
         } else {
@@ -314,7 +361,7 @@ class World {
             this.tiles[idx] = TILES.AIR;
           } else {
             // Ore generation (savanna hides extra gold, snow hides crystal pockets)
-            const oreRoll = Math.random();
+            const oreRoll = this.rand();
             if (oreRoll < 0.035) {
               this.tiles[idx] = TILES.IRON_ORE;
             } else if (oreRoll < 0.05 && y > surfaceY + 15) {
@@ -339,10 +386,10 @@ class World {
       if (this.getBiomeAtX(x) !== 'swamp') continue;
       const sy = this.surfaceHeights[x];
       const flat = Math.abs(this.surfaceHeights[x - 2] - sy) <= 1 && Math.abs(this.surfaceHeights[x + 2] - sy) <= 1;
-      if (flat && Math.random() < 0.35) {
+      if (flat && this.rand() < 0.35) {
         this.setTile(x, sy, TILES.WATER);
         this.setTile(x, sy + 1, TILES.MUD);
-        if (Math.random() < 0.4) this.setTile(x, sy - 1, TILES.LILY);
+        if (this.rand() < 0.4) this.setTile(x, sy - 1, TILES.LILY);
       }
     }
 
@@ -354,7 +401,7 @@ class World {
     this.carvePlainsBuildPlot();
 
     // Grow lush Forest Trees!
-    for (let x = 10; x < this.width - 10; x += Math.floor(Math.random() * 5 + 4)) {
+    for (let x = 10; x < this.width - 10; x += Math.floor(this.rand() * 5 + 4)) {
       const groundY = this.surfaceHeights[x];
       const biome = this.getBiomeAtX(x);
       if (this.getTile(x, groundY) !== TILES.AIR) {
@@ -362,7 +409,7 @@ class World {
         // meant to be open sky, not a cave of leaves.
         if (this.isInPlainsBuildPlot(x, 4)) continue;
         if (biome === 'forest') this.growTree(x, groundY - 1);
-        if (biome === 'plains' && Math.random() < 0.30) this.growTree(x, groundY - 1);
+        if (biome === 'plains' && this.rand() < 0.30) this.growTree(x, groundY - 1);
         if (biome === 'snow') this.growSnowPine(x, groundY - 1);
         if (biome === 'savanna') this.growAcacia(x, groundY - 1);
         if (biome === 'swamp') this.growMangrove(x, groundY - 1);
@@ -587,9 +634,9 @@ class World {
     let placed = 0;
     let guard = 0;
     while (placed < veins && guard++ < 8000) {
-      const x = 6 + Math.floor(Math.random() * (this.width - 12));
+      const x = 6 + Math.floor(this.rand() * (this.width - 12));
       const surf = this.surfaceHeights[x];
-      const depth = 34 + Math.floor(Math.random() * Math.max(24, this.height - surf - 46));
+      const depth = 34 + Math.floor(this.rand() * Math.max(24, this.height - surf - 46));
       const y = surf + depth;
       if (y >= this.height - 5 || y <= surf + 20) continue;
       const t = this.getTile(x, y);
@@ -597,10 +644,10 @@ class World {
       this.setTile(x, y, TILES.RAINBOW_ORE);
       placed++;
       // Companion ores make each find a small vein, not a lone speck.
-      const veinSize = Math.floor(Math.random() * 3);
+      const veinSize = Math.floor(this.rand() * 3);
       for (let i = 0; i < veinSize; i++) {
-        const vx = x + (Math.random() < 0.5 ? -1 : 1) * (Math.random() < 0.7 ? 1 : 0);
-        const vy = y + (Math.random() < 0.5 ? 0 : 1);
+        const vx = x + (this.rand() < 0.5 ? -1 : 1) * (this.rand() < 0.7 ? 1 : 0);
+        const vy = y + (this.rand() < 0.5 ? 0 : 1);
         const t2 = this.getTile(vx, vy);
         if (t2 === TILES.STONE || t2 === TILES.MOSSY_STONE) {
           this.setTile(vx, vy, TILES.RAINBOW_ORE);
@@ -726,22 +773,22 @@ class World {
 
   generateUndergroundFeatures() {
     // Veins are deliberately limited so rare resources remain meaningful.
-    const diamondVeins = 7 + Math.floor(Math.random() * 4);
+    const diamondVeins = 7 + Math.floor(this.rand() * 4);
     for (let vein = 0; vein < diamondVeins; vein++) {
-      this.generateOreVein(TILES.DIAMOND_ORE, 4 + Math.floor(Math.random() * 4), 28);
+      this.generateOreVein(TILES.DIAMOND_ORE, 4 + Math.floor(this.rand() * 4), 28);
     }
 
-    const crystalVeins = 5 + Math.floor(Math.random() * 4);
+    const crystalVeins = 5 + Math.floor(this.rand() * 4);
     for (let vein = 0; vein < crystalVeins; vein++) {
-      this.generateOreVein(TILES.CRYSTAL, 4 + Math.floor(Math.random() * 4), 18);
+      this.generateOreVein(TILES.CRYSTAL, 4 + Math.floor(this.rand() * 4), 18);
     }
 
     // Larger underground chambers break up the narrow starter caves.
     for (let chamber = 0; chamber < 12; chamber++) {
-      const centerX = 10 + Math.floor(Math.random() * (this.width - 20));
-      const centerY = this.surfaceHeights[centerX] + 30 + Math.floor(Math.random() * 55);
-      const radiusX = 5 + Math.floor(Math.random() * 5);
-      const radiusY = 3 + Math.floor(Math.random() * 4);
+      const centerX = 10 + Math.floor(this.rand() * (this.width - 20));
+      const centerY = this.surfaceHeights[centerX] + 30 + Math.floor(this.rand() * 55);
+      const radiusX = 5 + Math.floor(this.rand() * 5);
+      const radiusY = 3 + Math.floor(this.rand() * 4);
       this.landmarks.push({ x: centerX, y: centerY, type: 'cavern' });
 
       for (let y = centerY - radiusY; y <= centerY + radiusY; y++) {
@@ -761,9 +808,9 @@ class World {
 
     // Deep lava pools sit at the bottom of larger cave spaces.
     for (let pool = 0; pool < 10; pool++) {
-      const centerX = 12 + Math.floor(Math.random() * (this.width - 24));
-      const centerY = this.surfaceHeights[centerX] + 34 + Math.floor(Math.random() * 28);
-      const radius = 2 + Math.floor(Math.random() * 4);
+      const centerX = 12 + Math.floor(this.rand() * (this.width - 24));
+      const centerY = this.surfaceHeights[centerX] + 34 + Math.floor(this.rand() * 28);
+      const radius = 2 + Math.floor(this.rand() * 4);
       this.landmarks.push({ x: centerX, y: centerY, type: 'lava_pool' });
       for (let x = centerX - radius; x <= centerX + radius; x++) {
         this.setTile(x, centerY, TILES.LAVA);
@@ -774,10 +821,10 @@ class World {
 
     // A second deep layer makes the lower half of the world worth reaching.
     for (let chamber = 0; chamber < 8; chamber++) {
-      const centerX = 10 + Math.floor(Math.random() * (this.width - 20));
-      const centerY = this.surfaceHeights[centerX] + 68 + Math.floor(Math.random() * 22);
-      const radiusX = 6 + Math.floor(Math.random() * 5);
-      const radiusY = 4 + Math.floor(Math.random() * 3);
+      const centerX = 10 + Math.floor(this.rand() * (this.width - 20));
+      const centerY = this.surfaceHeights[centerX] + 68 + Math.floor(this.rand() * 22);
+      const radiusX = 6 + Math.floor(this.rand() * 5);
+      const radiusY = 4 + Math.floor(this.rand() * 3);
       this.landmarks.push({ x: centerX, y: centerY, type: 'deep_cavern' });
       for (let y = centerY - radiusY; y <= centerY + radiusY; y++) {
         for (let x = centerX - radiusX; x <= centerX + radiusX; x++) {
@@ -792,8 +839,8 @@ class World {
 
     // Carved mineshafts create navigable underground routes and chest rewards.
     for (let shaft = 0; shaft < 8; shaft++) {
-      const centerX = 18 + Math.floor(Math.random() * (this.width - 36));
-      const centerY = this.surfaceHeights[centerX] + 22 + Math.floor(Math.random() * 18);
+      const centerX = 18 + Math.floor(this.rand() * (this.width - 36));
+      const centerY = this.surfaceHeights[centerX] + 22 + Math.floor(this.rand() * 18);
       this.landmarks.push({ x: centerX, y: centerY, type: 'mineshaft' });
       for (let x = centerX - 8; x <= centerX + 8; x++) {
         this.setTile(x, centerY - 1, TILES.AIR);
@@ -810,15 +857,15 @@ class World {
   }
 
   generateOreVein(tile, length, depthOffset) {
-    const centerX = 10 + Math.floor(Math.random() * (this.width - 20));
+    const centerX = 10 + Math.floor(this.rand() * (this.width - 20));
     const minimumY = this.surfaceHeights[centerX] + depthOffset;
     let veinX = centerX;
-    let veinY = minimumY + Math.floor(Math.random() * Math.max(1, this.height - minimumY - 8));
+    let veinY = minimumY + Math.floor(this.rand() * Math.max(1, this.height - minimumY - 8));
 
     // Find a solid starting cell so every vein is made of actual ore blocks.
     for (let attempt = 0; attempt < 12 && this.getTile(veinX, veinY) !== TILES.STONE; attempt++) {
-      veinX = centerX + Math.floor(Math.random() * 7) - 3;
-      veinY = minimumY + Math.floor(Math.random() * Math.max(1, this.height - minimumY - 8));
+      veinX = centerX + Math.floor(this.rand() * 7) - 3;
+      veinY = minimumY + Math.floor(this.rand() * Math.max(1, this.height - minimumY - 8));
     }
 
     for (let segment = 0; segment < length; segment++) {
@@ -826,7 +873,7 @@ class World {
       this.setTile(veinX, veinY, tile);
 
       const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-      directions.sort(() => Math.random() - 0.5);
+      directions.sort(() => this.rand() - 0.5);
       const next = directions.find(([dx, dy]) => {
         const nextTile = this.getTile(veinX + dx, veinY + dy);
         return nextTile === TILES.STONE || nextTile === TILES.AIR;
@@ -845,7 +892,7 @@ class World {
       const sy = this.surfaceHeights[x];
       if (this.getTile(x, sy - 1) !== TILES.AIR) continue;
       const ground = this.getTile(x, sy);
-      const roll = Math.random();
+      const roll = this.rand();
       if (biome === 'forest' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
         if (roll < 0.16) this.setTile(x, sy - 1, TILES.FLOWER);
         else if (roll < 0.42) this.setTile(x, sy - 1, TILES.TALL_GRASS);
@@ -854,7 +901,7 @@ class World {
         else if (roll < 0.22) this.setTile(x, sy - 1, TILES.ICICLE);
       } else if (biome === 'savanna' && (ground === TILES.SAND || ground === TILES.SANDSTONE)) {
         if (roll < 0.12) {
-          const h = 2 + Math.floor(Math.random() * 3);
+          const h = 2 + Math.floor(this.rand() * 3);
           for (let i = 1; i <= h; i++) this.setTile(x, sy - i, TILES.CACTUS);
         } else if (roll < 0.30) this.setTile(x, sy - 1, TILES.TALL_GRASS);
       } else if (biome === 'plains' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
@@ -871,8 +918,8 @@ class World {
   }
 
   growTree(baseX, baseY) {
-    const giant = Math.random() < 0.12; // occasional ancient forest giant
-    const height = giant ? Math.floor(Math.random() * 4 + 12) : Math.floor(Math.random() * 6 + 7);
+    const giant = this.rand() < 0.12; // occasional ancient forest giant
+    const height = giant ? Math.floor(this.rand() * 4 + 12) : Math.floor(this.rand() * 6 + 7);
     // Trunk (giants get a 2-wide trunk)
     for (let i = 0; i < height; i++) {
       this.setTile(baseX, baseY - i, TILES.WOOD);
@@ -881,14 +928,14 @@ class World {
     // Roots flare at the base
     this.setTile(baseX - 1, baseY, TILES.WOOD);
     this.setTile(baseX + (giant ? 2 : 1), baseY, TILES.WOOD);
-    if (Math.random() < 0.5) this.setTile(baseX - 2, baseY, TILES.WOOD);
+    if (this.rand() < 0.5) this.setTile(baseX - 2, baseY, TILES.WOOD);
     // Tapered crown foliage keeps neighboring trees from becoming one flat canopy.
     const topY = baseY - height;
     const crownWidths = giant ? [2, 3, 4, 4, 3, 2, 1] : [1, 2, 3, 3, 2, 1];
     for (let row = 0; row < crownWidths.length; row++) {
       const width = crownWidths[row];
       for (let ox = -width; ox <= width; ox++) {
-        if (Math.abs(ox) === width && row > 0 && Math.random() < 0.3) continue;
+        if (Math.abs(ox) === width && row > 0 && this.rand() < 0.3) continue;
         if (this.getTile(baseX + ox, topY + row) === TILES.AIR) {
           this.setTile(baseX + ox, topY + row, TILES.LEAVES);
         }
@@ -897,7 +944,7 @@ class World {
     // Hanging vines on giants + a possible beehive glow spot
     if (giant) {
       for (const vx of [-2, 3]) {
-        const len = 2 + Math.floor(Math.random() * 3);
+        const len = 2 + Math.floor(this.rand() * 3);
         for (let i = 1; i <= len; i++) {
           if (this.getTile(baseX + vx, topY + 2 + i) === TILES.AIR) this.setTile(baseX + vx, topY + 2 + i, TILES.TALL_GRASS);
         }
@@ -911,17 +958,17 @@ class World {
     for (let row = 0; row < 7; row++) {
       const width = Math.min(3, Math.floor(row / 2) + 1);
       for (let offset = -width; offset <= width; offset++) {
-        if (Math.abs(offset) !== width || Math.random() > 0.2) {
+        if (Math.abs(offset) !== width || this.rand() > 0.2) {
           if (this.getTile(baseX + offset, baseY - 3 - row) === TILES.AIR) {
             // Snow-dusted tips on the outer ring.
-            const tip = Math.abs(offset) === width && Math.random() < 0.6;
+            const tip = Math.abs(offset) === width && this.rand() < 0.6;
             this.setTile(baseX + offset, baseY - 3 - row, tip ? TILES.SNOW : TILES.SNOW_PINE_LEAVES);
           }
         }
       }
     }
     // Icicles drip from a random low bough.
-    const ix = baseX + (Math.random() < 0.5 ? -2 : 2);
+    const ix = baseX + (this.rand() < 0.5 ? -2 : 2);
     if (this.getTile(ix, baseY - 3) === TILES.AIR) this.setTile(ix, baseY - 3, TILES.ICICLE);
     // Snowdrift at the roots.
     if (this.getTile(baseX - 1, baseY) === TILES.SNOW) this.setTile(baseX - 1, baseY - 1, TILES.SNOWBUSH);
@@ -929,14 +976,14 @@ class World {
 
   growAcacia(baseX, baseY) {
     // Wind-sculpted acacia: leaning trunk, flat umbrella canopy, dry brush below.
-    const lean = Math.random() < 0.5 ? -1 : 1;
+    const lean = this.rand() < 0.5 ? -1 : 1;
     for (let i = 0; i < 6; i++) {
       const lx = baseX + (i > 2 ? lean * Math.floor((i - 2) / 2) : 0);
       this.setTile(lx, baseY - i, TILES.WOOD);
     }
     const topX = baseX + lean;
     for (let offset = -4; offset <= 4; offset++) {
-      if (Math.abs(offset) < 4 || Math.random() > 0.35) {
+      if (Math.abs(offset) < 4 || this.rand() > 0.35) {
         if (this.getTile(topX + offset, baseY - 7) === TILES.AIR) this.setTile(topX + offset, baseY - 7, TILES.ACACIA_LEAVES);
         if (Math.abs(offset) < 3 && this.getTile(topX + offset, baseY - 6) === TILES.AIR) this.setTile(topX + offset, baseY - 6, TILES.ACACIA_LEAVES);
       }
@@ -945,11 +992,11 @@ class World {
     this.setTile(topX - 4, baseY - 6, TILES.ACACIA_LEAVES);
     this.setTile(topX + 4, baseY - 6, TILES.ACACIA_LEAVES);
     // A cactus sometimes keeps the acacia company.
-    if (Math.random() < 0.3) {
+    if (this.rand() < 0.3) {
       const cx = baseX + lean * 3;
       if (this.getTile(cx, baseY - 1) === TILES.AIR) {
         this.setTile(cx, baseY - 1, TILES.CACTUS);
-        if (this.getTile(cx, baseY - 2) === TILES.AIR && Math.random() < 0.6) this.setTile(cx, baseY - 2, TILES.CACTUS);
+        if (this.getTile(cx, baseY - 2) === TILES.AIR && this.rand() < 0.6) this.setTile(cx, baseY - 2, TILES.CACTUS);
       }
     }
   }
@@ -963,7 +1010,7 @@ class World {
     for (let i = 0; i < 7; i++) this.setTile(baseX, baseY - i, TILES.WOOD);
     for (let offset = -4; offset <= 4; offset++) {
       for (let row = 0; row < 3; row++) {
-        if (Math.abs(offset) + row < 6 && (Math.abs(offset) < 2 || Math.random() > 0.25)) {
+        if (Math.abs(offset) + row < 6 && (Math.abs(offset) < 2 || this.rand() > 0.25)) {
           if (this.getTile(baseX + offset, baseY - 7 - row) === TILES.AIR) {
             this.setTile(baseX + offset, baseY - 7 - row, TILES.MANGROVE_LEAVES);
           }
@@ -972,13 +1019,13 @@ class World {
     }
     // Hanging moss strands.
     for (const mx of [-3, 0, 3]) {
-      if (this.getTile(baseX + mx, baseY - 6) === TILES.AIR && Math.random() < 0.7) {
+      if (this.getTile(baseX + mx, baseY - 6) === TILES.AIR && this.rand() < 0.7) {
         this.setTile(baseX + mx, baseY - 6, TILES.TALL_GRASS);
       }
     }
     // Lily pads at the foot of the tree.
     for (const lx of [-3, 3]) {
-      if (this.getTile(baseX + lx, baseY - 1) === TILES.AIR && Math.random() < 0.6) {
+      if (this.getTile(baseX + lx, baseY - 1) === TILES.AIR && this.rand() < 0.6) {
         this.setTile(baseX + lx, baseY - 1, TILES.LILY);
       }
     }
