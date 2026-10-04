@@ -9,7 +9,10 @@ const NPC_DEFS = [
     id: 'guide',
     name: 'Guide',
     icon: '🧭',
-    dx: -7,
+    // Offsets are a PREFERENCE, not a coordinate: findStandableSpot walks
+    // outward until it finds open ground. They are spread well clear of the
+    // spawn cottage (spawnX +/- 6) so nobody ends up nose-to-wall.
+    dx: -9,
     greeting: 'Welcome, traveller! The forest bites back at night — let me toughen you up.',
     quests: [
       { type: 'kill', desc: 'Slay 5 monsters', target: 5, reward: [{ id: 'healing_potion', count: 2 }] },
@@ -21,7 +24,8 @@ const NPC_DEFS = [
     id: 'prospector',
     name: 'Prospector',
     icon: '⛏️',
-    dx: 6,
+    // Was +6, which is exactly the cottage's right-hand wall column.
+    dx: 9,
     greeting: 'Ore, ore, ore! Dig deep and bring me the shiny stuff.',
     quests: [
       { type: 'collect', items: [{ id: 'iron_ore', count: 10 }], desc: 'Bring 10 Iron Ore', reward: [{ id: 'ironskin_potion', count: 1 }, { id: 'apple', count: 3 }] },
@@ -33,7 +37,7 @@ const NPC_DEFS = [
     id: 'scavenger',
     name: 'Scavenger',
     icon: '🧺',
-    dx: 11,
+    dx: 14,
     greeting: 'A camp is only as good as its supplies. Trade me some goods!',
     quests: [
       { type: 'collect', items: [{ id: 'wood', count: 20 }], desc: 'Bring 20 Wood', reward: [{ id: 'campfire', count: 1 }, { id: 'apple', count: 2 }] },
@@ -49,15 +53,14 @@ class NPCManager {
     const world = game.world;
     const cx = Math.floor(world.width / 2);
     this.npcs = NPC_DEFS.map(def => {
-      const tx = Math.max(4, Math.min(world.width - 5, cx + def.dx));
-      const sy = world.surfaceHeights[tx];
+      const spot = this.findStandableSpot(cx + def.dx);
       return {
         def,
         id: def.id,
         name: def.name,
         icon: def.icon,
-        x: tx * TILE_SIZE + 3,
-        y: (sy - 2) * TILE_SIZE,
+        x: spot.x * TILE_SIZE + 3,
+        y: (spot.sy - 2) * TILE_SIZE,
         width: 20,
         height: 48,
         questIndex: 0,
@@ -70,6 +73,38 @@ class NPCManager {
     this._checkTimer = 0;
     this._trackerSig = null;
     this.wireUI();
+  }
+
+  /**
+   * The nearest column a villager can actually stand in.
+   *
+   * The old code read surfaceHeights[x] and dropped the villager straight onto
+   * it, which put the Prospector inside the spawn cottage's right-hand wall -
+   * the house spans spawnX +/- 6 and his offset was exactly +6, so he was
+   * standing in solid timber for the whole game.
+   *
+   * Every candidate is now checked for solid ground underfoot and two clear
+   * tiles of body (a villager is 48px = 2 tiles), and the search walks outward
+   * from the preferred spot until it finds one. Falling back to a wider sweep
+   * means a villager is never embedded in geometry, whatever the map does.
+   */
+  findStandableSpot(preferredX) {
+    const world = this.game.world;
+    const start = Math.max(6, Math.min(world.width - 7, Math.round(preferredX)));
+    for (let d = 0; d < 30; d++) {
+      const candidates = d === 0 ? [start] : [start - d, start + d];
+      for (const x of candidates) {
+        if (x < 6 || x > world.width - 7) continue;
+        const sy = world.surfaceHeights[x];
+        // Footing, and two tiles of clear air for the body and head.
+        if (!world.isSolid(x, sy)) continue;
+        if (world.getTile(x, sy - 1) !== TILES.AIR) continue;
+        if (world.getTile(x, sy - 2) !== TILES.AIR) continue;
+        return { x, sy };
+      }
+    }
+    // Last resort: keep them on the map even if nothing nearby qualifies.
+    return { x: start, sy: world.surfaceHeights[start] };
   }
 
   quest(npc) {

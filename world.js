@@ -433,16 +433,27 @@ class World {
     const groundY = this.surfaceHeights[spawnX];
     const roomY = groundY - 2;          // the row a standing player occupies
 
-    this.buildHouseShell(spawnX, groundY, 6, 6, TILES.WOOD, TILES.WOOD_STAIRS);
+    this.buildHouseShell(spawnX, groundY, 6, 6, TILES.WOOD, TILES.WOOD_STAIRS, {
+      trim: TILES.PLANKS, floor: TILES.PLANKS, base: TILES.COBBLESTONE, roofCourses: 3
+    });
 
-    // Columns spawnX - 1 .. spawnX + 1 are the doorway and its framing, so the
-    // furnishings go in the clear interior either side of it and never block
-    // the way in or out.
+    // Columns spawnX - 1 .. spawnX + 1 are the doorway and its jambs, so the
+    // furnishings go in the clear interior either side of it and never block the
+    // way in or out. All of it sits on `roomY`, which is the row a standing
+    // player occupies - one above the floor.
     this.setTile(spawnX - 5, roomY, TILES.TORCH);
     this.setTile(spawnX + 5, roomY, TILES.TORCH);
     this.setTile(spawnX - 2, roomY, TILES.CAMPFIRE);
     this.setTile(spawnX - 4, roomY, TILES.CHEST);
     this.setTile(spawnX + 3, roomY, TILES.BED);
+    // A bookshelf against the back wall, so the room reads as lived in.
+    this.setTile(spawnX + 4, roomY - 2, TILES.BOOKSHELF);
+
+    // A two-tile porch step outside the door. Purely cosmetic, but it is what
+    // makes the entrance look built rather than cut.
+    this.setTile(spawnX, groundY - 1, TILES.STONE_BRICK);
+    this.setTile(spawnX, groundY, TILES.STONE_BRICK);
+
     this.landmarks.push({ x: spawnX, y: groundY - 6, type: 'spawn_camp' });
 
     this.generateLandmarks();
@@ -693,38 +704,102 @@ class World {
     }
   }
 
-  buildHouseShell(centerX, groundY, halfWidth, height, wallTile, roofTile) {
+  /**
+   * A house you would actually want to live in.
+   *
+   * `groundY` is the row of the SOLID GROUND; the house is measured up from
+   * there, so the floor is groundY - 1 and the row a player stands in is
+   * groundY - 2. Furnishings belong on that standing row.
+   *
+   * `style` is optional and picks the trim materials, so a forest cottage, a
+   * stone outpost and a snow lodge read as different buildings rather than the
+   * same box recoloured.
+   */
+  buildHouseShell(centerX, groundY, halfWidth, height, wallTile, roofTile, style = {}) {
+    const trim = style.trim ?? TILES.PLANKS;
+    const floorTile = style.floor ?? TILES.PLANKS;
+    const baseTile = style.base ?? TILES.COBBLESTONE;
+    const sillTile = style.sill ?? trim;
+
     const left = centerX - halfWidth;
     const right = centerX + halfWidth;
-    const top = groundY - height;
+    const floorY = groundY - 1;          // you walk on this
+    const wallBottom = floorY - 1;       // the row the door opens onto
+    const wallTop = wallBottom - (height - 1);
 
-    this.paintStoneInterior(left + 1, right - 1, top + 1, groundY - 2);
-    for (let y = top; y <= groundY - 2; y++) {
+    // Hollow it out first. paintStoneInterior clears the air AND paints the
+    // interior wall, which is what stops the sky showing through the back.
+    this.paintStoneInterior(left + 1, right - 1, wallTop + 1, wallBottom);
+
+    // ---- Foundation ----------------------------------------------------
+    // A stone plinth one course proud of the walls. Without it the building
+    // reads as sitting straight on the grass, which is what made the old houses
+    // look like cardboard boxes dropped on a field.
+    for (let x = left - 1; x <= right + 1; x++) this.setTile(x, groundY, baseTile);
+
+    // ---- Floor ---------------------------------------------------------
+    for (let x = left; x <= right; x++) this.setTile(x, floorY, floorTile);
+
+    // ---- Walls ---------------------------------------------------------
+    for (let y = wallTop; y <= wallBottom; y++) {
       this.setTile(left, y, wallTile);
       this.setTile(right, y, wallTile);
     }
-    for (let x = left; x <= right; x++) {
-      this.setTile(x, groundY - 1, TILES.STONE_BRICK);
+    // Corner posts in the trim material give the box an edge and a bit of
+    // carpentry, instead of two flat runs of the same colour.
+    for (const x of [left, right]) {
+      this.setTile(x, wallTop, trim);
+      this.setTile(x, wallBottom, trim);
     }
+    // A horizontal trim rail just under the eaves ties the two walls together.
+    for (let x = left; x <= right; x++) this.setTile(x, wallTop, trim);
 
-    // Layered roof creates a readable silhouette instead of a flat cap.
-    for (let row = 0; row < 3; row++) {
-      const roofHalfWidth = Math.max(1, halfWidth - row);
-      for (let x = centerX - roofHalfWidth; x <= centerX + roofHalfWidth; x++) {
-        this.setTile(x, top - row, roofTile);
+    // ---- Roof ----------------------------------------------------------
+    // A pitched roof: each course steps in by a tile and overhangs the walls by
+    // one, which gives the stepped triangle that actually reads as a roof. The
+    // old version drew three identical slabs centred on the building, so it
+    // looked like a stack of shelves.
+    const courses = style.roofCourses ?? 3;
+    for (let i = 0; i < courses; i++) {
+      const y = wallTop - 1 - i;
+      const x0 = left - 1 + i;
+      const x1 = right + 1 - i;
+      for (let x = x0; x <= x1; x++) this.setTile(x, y, roofTile);
+      // Sloped eaves on the bottom course.
+      if (i === 0) {
+        this.setTile(x0, y, TILES.WOOD_STAIRS);
+        this.setTile(x1, y, TILES.WOOD_STAIRS);
       }
     }
+    // A short ridge cap so the apex is a roof line, not one lonely tile.
+    const ridgeY = wallTop - courses;
+    this.setTile(centerX, ridgeY, roofTile);
+    this.setTile(centerX + 1, ridgeY, roofTile);
 
-    // Door, timber framing, and two windows make the front legible at game scale.
-    this.setTile(centerX, groundY - 2, TILES.AIR);
-    this.setTile(centerX - 1, groundY - 2, TILES.WOOD);
-    this.setTile(centerX + 1, groundY - 2, TILES.WOOD);
+    // ---- Door ----------------------------------------------------------
+    // TWO tiles tall. The player is 36px and a tile is 24px, so the old
+    // one-tile opening was physically too short to walk through - you had to
+    // jump in and out of your own house.
+    this.setTile(centerX, wallBottom, TILES.AIR);
+    this.setTile(centerX, wallBottom - 1, TILES.AIR);
+    // Jambs either side of the opening.
+    this.setTile(centerX - 1, wallBottom, trim);
+    this.setTile(centerX + 1, wallBottom, trim);
+    // Lintel over the opening.
+    this.setTile(centerX, wallBottom - 2, trim);
+
+    // ---- Windows -------------------------------------------------------
+    // Two panes with a sill and a lintel, plus a lantern inside so the room is
+    // lit rather than merely glazed.
     if (halfWidth >= 4) {
-      this.setTile(left + 2, top + 2, TILES.GLASS);
-      this.setTile(right - 2, top + 2, TILES.GLASS);
+      const winY = wallTop + 2;
+      for (const wx of [left + 2, right - 2]) {
+        this.setTile(wx, winY, TILES.GLASS);
+        this.setTile(wx, winY - 1, sillTile);      // sill below
+        this.setTile(wx, winY + 1, wallTile);      // lintel above
+      }
+      this.setTile(centerX + (halfWidth >= 6 ? 2 : 1), wallTop + 1, TILES.LANTERN);
     }
-    this.setTile(right - 1, top - 1, TILES.STONE_BRICK);
-    this.setTile(right - 1, top - 2, TILES.STONE_BRICK);
   }
 
   generateLandmarks() {
@@ -754,7 +829,9 @@ class World {
     for (const cabinX of cabinXs) {
       const groundY = this.surfaceHeights[cabinX];
       this.landmarks.push({ x: cabinX, y: groundY - 4, type: 'cabin' });
-      this.buildHouseShell(cabinX, groundY, 5, 6, TILES.WOOD, TILES.WOOD_STAIRS);
+      this.buildHouseShell(cabinX, groundY, 5, 6, TILES.WOOD, TILES.WOOD_STAIRS, {
+        trim: TILES.PLANKS, floor: TILES.PLANKS, base: TILES.COBBLESTONE, roofCourses: 3
+      });
       // Standing row is groundY - 2 (the floor is groundY - 1). Columns
       // cabinX - 1 .. cabinX + 1 are the doorway and its posts, so the chest and
       // the fire go either side of the entrance instead of plugging it.
@@ -771,8 +848,12 @@ class World {
   buildSnowLodge(centerX) {
     const groundY = this.surfaceHeights[centerX];
     this.landmarks.push({ x: centerX, y: groundY - 5, type: 'snow_lodge' });
-    this.buildHouseShell(centerX, groundY, 5, 6, TILES.SNOW, TILES.SNOW);
-    // Both on the standing row: groundY - 1 is the stone floor itself, so a
+    // Pale timber inside and out, an ice floor you can see is ice, and a low
+    // roof so the whole thing reads as a shelter rather than a shed.
+    this.buildHouseShell(centerX, groundY, 5, 6, TILES.SNOW, TILES.SNOW, {
+      trim: TILES.ICE_BLOCK, floor: TILES.PLANKS, base: TILES.COBBLESTONE, roofCourses: 2
+    });
+    // Both on the standing row: groundY - 1 is the floor itself, so a
     // furnishing placed there is buried in the boards.
     this.setTile(centerX + 3, groundY - 2, TILES.CHEST);
     this.setTile(centerX - 3, groundY - 2, TILES.CAMPFIRE);
@@ -781,14 +862,23 @@ class World {
   buildSavannaOutpost(centerX) {
     const groundY = this.surfaceHeights[centerX];
     this.landmarks.push({ x: centerX, y: groundY - 6, type: 'savanna_outpost' });
-    this.buildHouseShell(centerX, groundY, 5, 7, TILES.STONE_BRICK, TILES.SAND);
+    // Fortified: brick walls, sandstone courses, a tall flat roof and a lantern
+    // over the door. This one is meant to look like it was built to be held.
+    this.buildHouseShell(centerX, groundY, 5, 7, TILES.BRICK_BLOCK, TILES.SANDSTONE_BRICK, {
+      trim: TILES.SANDSTONE_BRICK, floor: TILES.STONE_BRICK, base: TILES.COBBLESTONE, roofCourses: 2
+    });
     this.setTile(centerX + 3, groundY - 2, TILES.CHEST);
+    this.setTile(centerX - 3, groundY - 2, TILES.LANTERN);
   }
 
   buildSwampHut(centerX) {
     const groundY = this.surfaceHeights[centerX];
     this.landmarks.push({ x: centerX, y: groundY - 5, type: 'swamp_hut' });
-    this.buildHouseShell(centerX, groundY, 5, 6, TILES.MUD, TILES.MANGROVE_LEAVES);
+    // Wattle walls, a thatch roof and a mossy stone base - squat and organic,
+    // the opposite corner of the palette to the savanna outpost.
+    this.buildHouseShell(centerX, groundY, 5, 6, TILES.MUD, TILES.THATCH, {
+      trim: TILES.BAMBOO, floor: TILES.PLANKS, base: TILES.MOSSY_STONE, roofCourses: 3
+    });
     this.setTile(centerX + 3, groundY - 2, TILES.CHEST);
   }
 

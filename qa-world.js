@@ -219,7 +219,15 @@ check('the plot is the promised width',
 let offLevel = 0, wrongSurface = 0, holed = 0;
 for (let x = plot.x0; x <= plot.x1; x++) {
   if (W.surfaceHeights[x] !== plot.level) offLevel++;
-  if (W.getTile(x, plot.level) !== TILES.GRASS) wrongSurface++;
+  // The house footprint is deliberately PAVED: buildHouseShell lays a stone
+  // foundation course across the ground row under and around the cottage, and
+  // the porch step sits in the doorway column. Those columns must not be
+  // grass. Everything outside the footprint must be.
+  const paved = Math.abs(x - Math.floor(W.width / 2)) <= 8;
+  const surf = W.getTile(x, plot.level);
+  if (surf !== TILES.GRASS && !(paved && (surf === TILES.COBBLESTONE || surf === TILES.STONE_BRICK))) {
+    wrongSurface++;
+  }
   // The row under the grass must be something you can build on, not air.
   if (W.getTile(x, plot.level + 1) === TILES.AIR) holed++;
 }
@@ -282,7 +290,7 @@ for (let x = spawnX - 6; x <= spawnX + 6; x++) {
 check('the starter chest is inside the house', chestXs.length === 1,
   'chests on the standing row at x=' + chestXs.join(',') + ' (room row ' + campRoomY + ')');
 check('the starter chest stands on the house floor',
-  chestXs.every((x) => W.getTile(x, campFloorY) === TILES.STONE_BRICK),
+  chestXs.every((x) => W.isSolid(x, campFloorY)),
   'floor row ' + campFloorY);
 check('the starter chest has head room',
   chestXs.every((x) => W.getTile(x, campRoomY - 1) === TILES.AIR));
