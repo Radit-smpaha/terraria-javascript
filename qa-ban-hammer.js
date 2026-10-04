@@ -352,6 +352,46 @@ check('findOpenSpawn exists', typeof g.findOpenSpawn === 'function');
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════
+step('8. A boss skill projectile is NOT trash-capped');
+// Report: "the Skeleton Dragon's skills only do 4 damage — it's too easy."
+// Root cause: the hostile-projectile hit branch called damagePlayer() without
+// isBoss, so a 60-92 damage boss shard was clipped to the trash ceiling
+// (~14) BEFORE armour, and the best plate then shredded what was left.
+// Asserted through the REAL runtime path — spawn -> g.update() -> the hit
+// branch -> trashDamageCeiling -> Player.takeDamage — with a negative
+// CONTROL: the same raw damage from an UNFLAGGED hostile projectile must
+// still be capped, so this cannot pass if the fromBoss flag is ignored.
+g.titleScreenOpen = false;
+g.paused = false;
+g.monsters.length = 0;
+g.boss = null;
+g.equipArmor('ossuary_armor'); // best plate in the game: armour cannot explain the gap
+const skillRaw = 92; // phase-3 bone volley shard
+const skillCap = g.trashDamageCeiling(skillRaw, false);
+function hostileShotLoss(dmg, fromBoss) {
+  g.player.hp = g.player.maxHp;
+  g.player.invulnerableTime = 0;
+  const p = new global.Projectile(
+    g.player.x + g.player.width / 2, g.player.y + g.player.height / 2,
+    0, 0, 'bone_shard', dmg, true, 4.4, 70);
+  if (fromBoss) p.fromBoss = true;
+  g.projectiles.push(p);
+  const before = g.player.hp;
+  g.update(1 / 60);
+  return before - g.player.hp;
+}
+const skillLoss = hostileShotLoss(skillRaw, true);
+check('a flagged boss skill lands at full force (' + skillLoss + ' of raw ' + skillRaw + ')',
+  skillLoss > skillCap, 'trash cap would be ' + skillCap);
+const controlLoss = hostileShotLoss(skillRaw, false);
+check('...an unflagged hostile shot is STILL capped (' + controlLoss + ' <= ' + skillCap + ')',
+  controlLoss > 0 && controlLoss <= skillCap, controlLoss + ' HP');
+check('the gap is real: boss skills out-hit trash shots (' + skillLoss + ' vs ' + controlLoss + ')',
+  skillLoss > controlLoss, skillLoss + ' vs ' + controlLoss);
+g.projectiles.length = 0;
+
 console.log('\n' + (failures === 0
   ? 'BAN HAMMER QA: all checks passed'
   : 'BAN HAMMER QA: ' + failures + ' FAILED'));

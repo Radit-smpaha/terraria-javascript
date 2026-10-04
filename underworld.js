@@ -517,7 +517,9 @@ class DemonBoss {
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + this.animT * 0.13 * (i % 2 ? 1 : -1) + spin;
       const speed = 4.6 + this.phase * 0.7;
-      projectiles.push(new Projectile(cx, cy, Math.cos(a) * speed, Math.sin(a) * speed, 'boss_laser', damage, true, 5.2, 90));
+      const orb = new Projectile(cx, cy, Math.cos(a) * speed, Math.sin(a) * speed, 'boss_laser', damage, true, 5.2, 90);
+      orb.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+      projectiles.push(orb);
     }
     soundSystem?.playBossLaser(); particleSystem?.magicSparkle(cx, cy, '#fb923c', 26);
   }
@@ -551,7 +553,9 @@ class DemonBoss {
       const damage = this.phase === 3 ? 40 : 32;
       for (const offset of [0, Math.PI]) {
         const a = this.sweepAngle + offset;
-        projectiles.push(new Projectile(cx, cy, Math.cos(a) * 6.2, Math.sin(a) * 6.2, 'boss_laser', damage, true, 2.6, 80));
+        const beam = new Projectile(cx, cy, Math.cos(a) * 6.2, Math.sin(a) * 6.2, 'boss_laser', damage, true, 2.6, 80);
+        beam.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(beam);
       }
       if (particleSystem && Math.random() < 0.5) particleSystem.magicSparkle(cx, cy, '#fb7185', 3);
     }
@@ -659,7 +663,9 @@ class DemonBoss {
       const damage = 34 + this.phase * 10;
       for (let i = 0; i < count; i++) {
         const x = player.x - 260 + i * (520 / Math.max(1, count - 1));
-        projectiles.push(new Projectile(x, player.y - 360, 0, 5.5 + this.phase * 0.7, 'boss_laser', damage, true, 4.8, 80));
+        const bolt = new Projectile(x, player.y - 360, 0, 5.5 + this.phase * 0.7, 'boss_laser', damage, true, 4.8, 80);
+        bolt.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(bolt);
       }
       soundSystem?.playBossLaser();
     } else if (attack === 'blink') {

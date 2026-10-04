@@ -2196,12 +2196,14 @@ class ForestGuardianBoss {
   spawnRing(cx, cy, projectiles, count, speed, type, damage) {
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.12;
-      projectiles.push(new Projectile(
+      const orb = new Projectile(
         cx, cy,
         Math.cos(angle) * speed,
         Math.sin(angle) * speed,
         type, damage, true, 4.5, 90
-      ));
+      );
+      orb.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+      projectiles.push(orb);
     }
   }
 
@@ -2236,7 +2238,7 @@ class ForestGuardianBoss {
         const angle = Math.atan2(dy, dx);
         const pSpeed = (this.phase === 1 ? 6.5 : 8.5) * boost;
         const pType = this.phase === 1 ? 'boss_laser' : 'boss_thorn';
-        projectiles.push(new Projectile(
+        const shot = new Projectile(
           cx, cy,
           Math.cos(angle) * pSpeed,
           Math.sin(angle) * pSpeed,
@@ -2245,7 +2247,9 @@ class ForestGuardianBoss {
           true,
           4.0,
           100
-        ));
+        );
+        shot.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(shot);
       }
 
       if (this.stateTimer <= 0) {
@@ -2356,14 +2360,16 @@ class ForestGuardianBoss {
         for (let i = 0; i < shards; i++) {
           const dir = i % 2 === 0 ? 1 : -1;
           const spread = 1 + Math.floor(i / 2) * 0.22;
-          projectiles.push(new Projectile(
+          const thorn = new Projectile(
             cx, this.y + this.height - 12,
             dir * (3.0 + spread) * boost,
             -(2.4 + spread * 0.5),
             'boss_thorn',
             this.phase === 1 ? 16 : 22,
             true, 3.0, 80
-          ));
+          );
+          thorn.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+          projectiles.push(thorn);
         }
         this.vy = -4;
         this.attackState = 'hover';
@@ -2930,6 +2936,7 @@ class CursedKnightBoss {
               Math.cos(a) * spd, Math.sin(a) * spd,
               'knight_blade', this.phase === 2 ? 26 : 20, true, 3.6, 70
             );
+            bl.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
             // Fans of clones so the volley reads as a wall of swords.
             bl.bladePhase = Math.random() * Math.PI * 2;
             bl.bladeBig = this.phase === 2;
@@ -3111,11 +3118,13 @@ class CursedKnightBoss {
       const count = 12;
       for (let i = 0; i < count; i++) {
         const a = (i / count) * Math.PI * 2 - Math.PI / 2;
-        projectiles.push(new Projectile(
+        const novaBlade = new Projectile(
           cx, groundY - 8,
           Math.cos(a) * 5.6, Math.sin(a) * 5.6 - 1,
           'knight_blade', 24, true, 3.2, 70
-        ));
+        );
+        novaBlade.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(novaBlade);
       }
     }
   }

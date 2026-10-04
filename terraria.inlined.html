@@ -11024,12 +11024,14 @@ class ForestGuardianBoss {
   spawnRing(cx, cy, projectiles, count, speed, type, damage) {
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.12;
-      projectiles.push(new Projectile(
+      const orb = new Projectile(
         cx, cy,
         Math.cos(angle) * speed,
         Math.sin(angle) * speed,
         type, damage, true, 4.5, 90
-      ));
+      );
+      orb.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+      projectiles.push(orb);
     }
   }
 
@@ -11064,7 +11066,7 @@ class ForestGuardianBoss {
         const angle = Math.atan2(dy, dx);
         const pSpeed = (this.phase === 1 ? 6.5 : 8.5) * boost;
         const pType = this.phase === 1 ? 'boss_laser' : 'boss_thorn';
-        projectiles.push(new Projectile(
+        const shot = new Projectile(
           cx, cy,
           Math.cos(angle) * pSpeed,
           Math.sin(angle) * pSpeed,
@@ -11073,7 +11075,9 @@ class ForestGuardianBoss {
           true,
           4.0,
           100
-        ));
+        );
+        shot.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(shot);
       }
 
       if (this.stateTimer <= 0) {
@@ -11184,14 +11188,16 @@ class ForestGuardianBoss {
         for (let i = 0; i < shards; i++) {
           const dir = i % 2 === 0 ? 1 : -1;
           const spread = 1 + Math.floor(i / 2) * 0.22;
-          projectiles.push(new Projectile(
+          const thorn = new Projectile(
             cx, this.y + this.height - 12,
             dir * (3.0 + spread) * boost,
             -(2.4 + spread * 0.5),
             'boss_thorn',
             this.phase === 1 ? 16 : 22,
             true, 3.0, 80
-          ));
+          );
+          thorn.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+          projectiles.push(thorn);
         }
         this.vy = -4;
         this.attackState = 'hover';
@@ -11758,6 +11764,7 @@ class CursedKnightBoss {
               Math.cos(a) * spd, Math.sin(a) * spd,
               'knight_blade', this.phase === 2 ? 26 : 20, true, 3.6, 70
             );
+            bl.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
             // Fans of clones so the volley reads as a wall of swords.
             bl.bladePhase = Math.random() * Math.PI * 2;
             bl.bladeBig = this.phase === 2;
@@ -11939,11 +11946,13 @@ class CursedKnightBoss {
       const count = 12;
       for (let i = 0; i < count; i++) {
         const a = (i / count) * Math.PI * 2 - Math.PI / 2;
-        projectiles.push(new Projectile(
+        const novaBlade = new Projectile(
           cx, groundY - 8,
           Math.cos(a) * 5.6, Math.sin(a) * 5.6 - 1,
           'knight_blade', 24, true, 3.2, 70
-        ));
+        );
+        novaBlade.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(novaBlade);
       }
     }
   }
@@ -13173,7 +13182,9 @@ class DemonBoss {
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + this.animT * 0.13 * (i % 2 ? 1 : -1) + spin;
       const speed = 4.6 + this.phase * 0.7;
-      projectiles.push(new Projectile(cx, cy, Math.cos(a) * speed, Math.sin(a) * speed, 'boss_laser', damage, true, 5.2, 90));
+      const orb = new Projectile(cx, cy, Math.cos(a) * speed, Math.sin(a) * speed, 'boss_laser', damage, true, 5.2, 90);
+      orb.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+      projectiles.push(orb);
     }
     soundSystem?.playBossLaser(); particleSystem?.magicSparkle(cx, cy, '#fb923c', 26);
   }
@@ -13207,7 +13218,9 @@ class DemonBoss {
       const damage = this.phase === 3 ? 40 : 32;
       for (const offset of [0, Math.PI]) {
         const a = this.sweepAngle + offset;
-        projectiles.push(new Projectile(cx, cy, Math.cos(a) * 6.2, Math.sin(a) * 6.2, 'boss_laser', damage, true, 2.6, 80));
+        const beam = new Projectile(cx, cy, Math.cos(a) * 6.2, Math.sin(a) * 6.2, 'boss_laser', damage, true, 2.6, 80);
+        beam.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(beam);
       }
       if (particleSystem && Math.random() < 0.5) particleSystem.magicSparkle(cx, cy, '#fb7185', 3);
     }
@@ -13315,7 +13328,9 @@ class DemonBoss {
       const damage = 34 + this.phase * 10;
       for (let i = 0; i < count; i++) {
         const x = player.x - 260 + i * (520 / Math.max(1, count - 1));
-        projectiles.push(new Projectile(x, player.y - 360, 0, 5.5 + this.phase * 0.7, 'boss_laser', damage, true, 4.8, 80));
+        const bolt = new Projectile(x, player.y - 360, 0, 5.5 + this.phase * 0.7, 'boss_laser', damage, true, 4.8, 80);
+        bolt.fromBoss = true; // boss skill — bypasses the trash ceiling on hit
+        projectiles.push(bolt);
       }
       soundSystem?.playBossLaser();
     } else if (attack === 'blink') {
@@ -14964,6 +14979,9 @@ Projectile.prototype.render = function(ctx, camera) {
 function spawnSpaceProjectile(list, x, y, vx, vy, type, damage, life, lightRadius, lightColor) {
   const p = new Projectile(x, y, vx, vy, type, damage, true, life, lightRadius);
   p.lightColor = lightColor;
+  // Everything fired in the Ossuary is the Sovereign's (or its archers'):
+  // boss content, so the skill damage skips the trash ceiling on hit.
+  p.fromBoss = true;
   list.push(p);
   return p;
 }
@@ -25827,7 +25845,13 @@ this.player.dodgeTime = 0;
         const pMidY = this.player.y + this.player.height / 2;
         if (Math.hypot(p.x - pMidX, p.y - pMidY) < 18) {
           p.dead = true;
-          this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.');
+          // Boss skill shots carry `fromBoss` (set at every hostile spawn site)
+          // and must sail past the trash ceiling — see trashDamageCeiling.
+          // "The dragon's skills only do 4 damage" was this line defaulting to
+          // isBoss=false: a 60-92 shard got capped to ~14, then armour
+          // finished it. An unflagged hostile projectile is still a trash
+          // ranged hit and stays capped.
+          this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.', p.fromBoss === true);
         }
       } else {
         // Hits monsters

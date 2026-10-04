@@ -1489,6 +1489,9 @@ Projectile.prototype.render = function(ctx, camera) {
 function spawnSpaceProjectile(list, x, y, vx, vy, type, damage, life, lightRadius, lightColor) {
   const p = new Projectile(x, y, vx, vy, type, damage, true, life, lightRadius);
   p.lightColor = lightColor;
+  // Everything fired in the Ossuary is the Sovereign's (or its archers'):
+  // boss content, so the skill damage skips the trash ceiling on hit.
+  p.fromBoss = true;
   list.push(p);
   return p;
 }

@@ -7208,7 +7208,13 @@ this.player.dodgeTime = 0;
         const pMidY = this.player.y + this.player.height / 2;
         if (Math.hypot(p.x - pMidX, p.y - pMidY) < 18) {
           p.dead = true;
-          this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.');
+          // Boss skill shots carry `fromBoss` (set at every hostile spawn site)
+          // and must sail past the trash ceiling — see trashDamageCeiling.
+          // "The dragon's skills only do 4 damage" was this line defaulting to
+          // isBoss=false: a 60-92 shard got capped to ~14, then armour
+          // finished it. An unflagged hostile projectile is still a trash
+          // ranged hit and stays capped.
+          this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.', p.fromBoss === true);
         }
       } else {
         // Hits monsters
