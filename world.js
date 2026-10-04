@@ -965,6 +965,33 @@ class World {
       }
       this.setTile(centerX + 5, centerY - 1, TILES.CHEST);
     }
+
+    // Buried vaults: a sealed brick room under the stone, holding a chest and a
+    // torch. Unlike the mineshafts they are never connected to a cave, so the
+    // only way in is to dig - the reward for following a hunch downwards.
+    const vaultCount = 3 + Math.floor(this.rand() * 3);
+    for (let vault = 0; vault < vaultCount; vault++) {
+      const centerX = 12 + Math.floor(this.rand() * (this.width - 24));
+      // 26..59 tiles down, but never so deep that the floor row leaves the map.
+      const floorY = Math.min(
+        this.surfaceHeights[centerX] + 26 + Math.floor(this.rand() * 34),
+        this.height - 6
+      );
+      this.landmarks.push({ x: centerX, y: floorY - 2, type: 'vault' });
+
+      // A one-tile-thick brick shell with a 7x3 room inside it. The room's
+      // back wall is brick too, so the inside reads as built the moment you
+      // break through, instead of a hole in the dark.
+      for (let y = floorY - 4; y <= floorY; y++) {
+        for (let x = centerX - 4; x <= centerX + 4; x++) {
+          const inside = Math.abs(x - centerX) <= 3 && y > floorY - 4 && y < floorY;
+          this.setTile(x, y, inside ? TILES.AIR : TILES.STONE_BRICK);
+          this.walls[y * this.width + x] = inside ? TILES.STONE_BRICK : TILES.STONE;
+        }
+      }
+      this.setTile(centerX, floorY - 1, TILES.CHEST);
+      this.setTile(centerX - 3, floorY - 1, TILES.TORCH);
+    }
   }
 
   generateOreVein(tile, length, depthOffset) {

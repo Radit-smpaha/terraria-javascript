@@ -250,6 +250,40 @@ check('reopening does not re-roll the loot',
   (g1.chestsOpened || 0) === openedBefore + 1);
 g1.closeChestUI();
 
+// ---- Loot scales with depth ------------------------------------------------
+// rollChestLoot takes an injectable rng, so these are exact, not statistical.
+const depthChest = (depth, rng) => {
+  const x = 30; // any in-map column; the surface grade does not matter
+  return g1.rollChestLoot(x, g1.world.surfaceHeights[x] + depth, rng);
+};
+const fixed = (v) => () => v;
+check('a surface chest still rolls two stacks from the shallow table',
+  (() => { const l = depthChest(0, fixed(0)); return l.length === 2 && l[0].id === 'iron_ore'; })(),
+  JSON.stringify(depthChest(0, fixed(0))));
+check('a chest 25 tiles down rolls a third stack',
+  depthChest(25, fixed(0)).length === 3,
+  JSON.stringify(depthChest(25, fixed(0))));
+check('a chest 40+ tiles down rolls four stacks off the deep table',
+  (() => { const l = depthChest(45, fixed(0)); return l.length === 4 && l[0].id === 'diamond'; })(),
+  JSON.stringify(depthChest(45, fixed(0))));
+check('a chest above the surface is depth 0, never negative',
+  depthChest(-5, fixed(0)).length === 2);
+check('every id either table can roll is a real item',
+  [0, 0.2, 0.4, 0.6, 0.8, 0.99].every(f =>
+    depthChest(0, fixed(f)).concat(depthChest(45, fixed(f)))
+      .every(e => ITEMS[e.id] && e.count > 0)),
+  JSON.stringify(depthChest(45, fixed(0.5))));
+check('the deep table never rolls the surface-only items',
+  [0, 0.2, 0.4, 0.6, 0.8, 0.99].every(f =>
+    depthChest(45, fixed(f)).every(e => !['wool', 'apple', 'arrow', 'healing_potion'].includes(e.id))));
+check('a real buried vault rolls the richer table',
+  (() => {
+    const v = g1.world.landmarks.find(l => l.type === 'vault');
+    if (!v) return false;
+    // The chest tile sits on the vault's floor: landmark y + 1.
+    return g1.rollChestLoot(v.x, v.y + 1).length >= 3;
+  })());
+
 // ---- Breaking a chest spills its contents ----------------------------------
 const pSlots = g1.getChestSlots(placeX, placeY);
 pSlots[0] = { id: 'stone', count: 12 };

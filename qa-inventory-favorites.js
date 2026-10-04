@@ -99,18 +99,19 @@ freshBag();
 // ══════════════════════════════════════════════════════════════════════════
 step('1. The API and the UI exist');
 for (const fn of ['isFavorited', 'hasFavoritedStack', 'selectInventorySlot',
-  'toggleSelectedFavorite', 'deleteSelectedSlot', 'clearSlotSelection', 'renderSlotManager']) {
+  'toggleSelectedFavorite', 'deleteSelectedSlot', 'clearSlotSelection', 'renderSlotManager', 'sortInventory']) {
   check('Game.' + fn + ' exists', typeof g[fn] === 'function');
 }
 check('the selection starts empty', g.selectedSlotIndex === null, g.selectedSlotIndex);
 
 const html = fs.readFileSync('terraria.html', 'utf8');
-for (const id of ['slot-fav-btn', 'slot-delete-btn', 'slot-clear-btn', 'slot-selected-label']) {
+for (const id of ['slot-fav-btn', 'slot-delete-btn', 'slot-clear-btn', 'slot-sort-btn', 'slot-selected-label']) {
   check('terraria.html has #' + id, html.includes('id="' + id + '"'));
 }
 const css = fs.readFileSync('terraria.css', 'utf8');
 check('terraria.css styles .favorited', css.includes('.inv-slot.favorited'));
 check('terraria.css styles the star badge', css.includes('.slot-star'));
+check('terraria.css styles the sort button', css.includes('.slot-btn-sort'));
 
 // ══════════════════════════════════════════════════════════════════════════
 step('2. Selecting a slot');
@@ -229,6 +230,53 @@ const src = fs.readFileSync('particles.js', 'utf8');
 check('it draws a slab behind the word', /fillRect/.test(src));
 check('it jitters the ghosts every frame', /jitter/.test(src));
 check('it has a white-hot core pass', /255,190,190/.test(src));
+
+// ══════════════════════════════════════════════════════════════════════════
+step('9. The Sort button tidies the bag without losing anything');
+const ITEMS = global.ITEMS;
+const put = (i, id, count, fav) => { g.inventory[i] = { id, count, ...(fav ? { fav: true } : {}) }; };
+const bagCount = () => g.inventory.reduce((n, s) => n + (s && s.id !== 'empty' ? s.count : 0), 0);
+
+freshBag();
+put(3, 'stone', 12);            // tile
+put(0, 'iron_ore', 4, true);    // material, favourited
+put(7, 'copper_pickaxe', 1);    // tool
+put(2, 'apple', 6);             // consumable
+put(5, 'iron_ore', 3);          // same id as slot 0: the sort must merge them
+g.selectedSlotIndex = 3;
+const before = bagCount();
+check('sortInventory reports success', g.sortInventory() === true);
+check('kind order, then name: tool, consumable, tile, material',
+  g.inventory.slice(0, 4).map(s => s.id).join(',') === 'copper_pickaxe,apple,stone,iron_ore',
+  g.inventory.slice(0, 5).map(s => s.id + 'x' + s.count).join(' '));
+check('the split stack merged into one',
+  g.inventory.filter(s => s.id === 'iron_ore').length === 1 &&
+  g.inventory.find(s => s.id === 'iron_ore').count === 7,
+  JSON.stringify(g.inventory.filter(s => s.id === 'iron_ore')));
+check('nothing was created or destroyed', bagCount() === before,
+  before + ' -> ' + bagCount());
+check('the merged stack is still favourited',
+  g.inventory.find(s => s.id === 'iron_ore').fav === true);
+check('sorting clears the slot selection', g.selectedSlotIndex === null);
+check('every stack respects its stackMax', g.inventory.every(s =>
+  s.id === 'empty' || s.count <= Math.max(1, (ITEMS[s.id] && ITEMS[s.id].stackMax) || 1)));
+check('the empties all sit at the end', (() => {
+  const firstEmpty = g.inventory.findIndex(s => s.id === 'empty');
+  return firstEmpty < 0 || g.inventory.slice(firstEmpty).every(s => s.id === 'empty');
+})());
+
+// A merge that overflows one stack splits at stackMax instead (apples cap at 30).
+freshBag();
+put(0, 'apple', 20);
+put(1, 'apple', 25);
+g.sortInventory();
+check('an overflowing merge splits at stackMax',
+  g.inventory.filter(s => s.id === 'apple').map(s => s.count).join(',') === '30,15',
+  JSON.stringify(g.inventory.filter(s => s.id === 'apple')));
+
+// Sorting an empty bag is refused, not a crash.
+freshBag();
+check('an empty bag sorts to false without throwing', g.sortInventory() === false);
 
 console.log('\n' + (failures === 0
   ? 'INVENTORY FAVORITES QA: all checks passed'

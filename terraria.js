@@ -3099,6 +3099,8 @@ class Game {
     if (slotDel) slotDel.addEventListener('click', () => this.deleteSelectedSlot());
     const slotClr = document.getElementById('slot-clear-btn');
     if (slotClr) slotClr.addEventListener('click', () => this.clearSlotSelection());
+    const slotSort = document.getElementById('slot-sort-btn');
+    if (slotSort) slotSort.addEventListener('click', () => this.sortInventory());
     document.getElementById('crafting-modal')?.addEventListener('click', (event) => {
       if (event.target === event.currentTarget) this.toggleCraftingModal(false);
     });
@@ -3339,11 +3341,40 @@ class Game {
   }
 
   /**
+   * Roll the contents of a sealed world chest. Depth pays: a chest at the
+   * surface seeds the two stacks it always did, one more than twenty tiles
+   * down seeds a third, and one more than forty tiles down seeds four draws
+   * off the deep table — crystal, hellstone, obsidian and diamonds instead of
+   * apples and wool. `rng` is injectable so QA can force a table instead of
+   * waiting on luck; the game itself always uses Math.random.
+   */
+  rollChestLoot(tileX, tileY, rng = Math.random) {
+    const surface = this.world.surfaceHeights[tileX] || 0;
+    const depth = Math.max(0, tileY - surface);
+    const shallowTable = [
+      ['iron_ore', 4], ['gold_ore', 2], ['wool', 3], ['healing_potion', 2], ['arrow', 15], ['apple', 3]
+    ];
+    const deepTable = [
+      ['diamond', 2], ['crystal', 3], ['hellstone', 3], ['obsidian_block', 8],
+      ['fallen_star', 2], ['gold_ore', 6], ['iron_ore', 8]
+    ];
+    const table = depth >= 40 ? deepTable : shallowTable;
+    const rolls = depth >= 40 ? 4 : depth >= 20 ? 3 : 2;
+    const loot = [];
+    for (let i = 0; i < rolls; i++) {
+      const entry = table[Math.floor(rng() * table.length)];
+      loot.push({ id: entry[0], count: entry[1] });
+    }
+    return loot;
+  }
+
+  /**
    * Open the storage panel for one chest. A world chest that has never been
-   * opened is unsealed here: the old one-shot loot roll is seeded INTO the
-   * chest slots (the player then takes what they want), and the first-chest
-   * bookkeeping still fires. A chest the player placed pre-registered an empty
-   * grid on placement, so crafted chests never roll free treasure.
+   * opened is unsealed here: its loot is rolled (see rollChestLoot, which
+   * scales with how deep the chest sits) and seeded INTO the chest slots so
+   * the player takes what they want, and the first-chest bookkeeping still
+   * fires. A chest the player placed pre-registered an empty grid on
+   * placement, so crafted chests never roll free treasure.
    */
   openChestUI(tileX, tileY) {
     const key = `${tileX},${tileY}`;
@@ -3351,13 +3382,8 @@ class Game {
     if (!this.chestStorage[key]) {
       if (wasClosed) {
         const slots = this.makeEmptyChestSlots();
-        const lootTable = [
-          ['iron_ore', 4], ['gold_ore', 2], ['wool', 3], ['healing_potion', 2], ['arrow', 15], ['apple', 3]
-        ];
-        const first = lootTable[Math.floor(Math.random() * lootTable.length)];
-        const bonus = lootTable[Math.floor(Math.random() * lootTable.length)];
-        slots[0] = { id: first[0], count: first[1] };
-        slots[1] = { id: bonus[0], count: bonus[1] };
+        const loot = this.rollChestLoot(tileX, tileY);
+        for (let i = 0; i < loot.length; i++) slots[i] = loot[i];
         this.chestStorage[key] = slots;
         this.chestsOpened = (this.chestsOpened || 0) + 1;
         this.journey?.recordActivity('treasure', tileX * TILE_SIZE + 12, tileY * TILE_SIZE);
@@ -4409,6 +4435,69 @@ class Game {
     this.selectedSlotIndex = null;
     this.renderSlotManager();
     this.renderInventoryGrid();
+  }
+
+  /**
+   * The Sort button: tidy the whole bag in one press. Identical stacks merge
+   * first (up to each item's stackMax), then everything is ordered by kind and
+   * name, with the empty slots collected at the end. A merged stack stays
+   * favourited when any part of it was, so sorting can never strip the delete
+   * guard - and the selection is cleared, because the slot it pointed at is
+   * about to hold something else.
+   */
+  sortInventory() {
+    const total = this.inventory.length;
+    const list = [];
+    const merged = new Map();
+    for (const slot of this.inventory) {
+      if (!slot || slot.id === 'empty' || !(slot.count > 0)) continue;
+      const data = ITEMS[slot.id];
+      if (!data) {
+        // An id the registry does not know survives untouched rather than
+        // being silently deleted by a tidying pass.
+        list.push({ id: slot.id, count: slot.count, fav: slot.fav === true });
+        continue;
+      }
+      let heap = merged.get(slot.id);
+      if (!heap) {
+        heap = { id: slot.id, count: 0, fav: false, stackMax: Math.max(1, data.stackMax || 1) };
+        merged.set(slot.id, heap);
+      }
+      heap.count += slot.count;
+      heap.fav = heap.fav || slot.fav === true;
+    }
+    if (!list.length && !merged.size) {
+      this.showToast('🎒 Nothing to sort.');
+      return false;
+    }
+    // Merging only ever frees slots, so this can never overflow the bag.
+    for (const heap of merged.values()) {
+      let rest = heap.count;
+      while (rest > 0) {
+        const take = Math.min(heap.stackMax, rest);
+        list.push({ id: heap.id, count: take, fav: heap.fav });
+        rest -= take;
+      }
+    }
+    const rank = { weapon: 0, tool: 1, armor: 2, ammo: 3, consumable: 4, tile: 5, material: 6 };
+    const rankOf = (id) => {
+      const data = ITEMS[id];
+      return data && Number.isFinite(rank[data.type]) ? rank[data.type] : 9;
+    };
+    const nameOf = (id) => (ITEMS[id] && ITEMS[id].name) || id;
+    list.sort((a, b) => {
+      const ra = rankOf(a.id);
+      const rb = rankOf(b.id);
+      if (ra !== rb) return ra - rb;
+      return nameOf(a.id).localeCompare(nameOf(b.id));
+    });
+    for (let i = 0; i < total; i++) this.inventory[i] = list[i] || { id: 'empty', count: 0 };
+    this.selectedSlotIndex = null;
+    this.renderSlotManager();
+    this.renderInventoryGrid();
+    this.renderHotbarUI();
+    this.showToast('🎒 Bag sorted.');
+    return true;
   }
 
   /** Toggle the favourite flag on the selected slot. */

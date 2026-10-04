@@ -90,6 +90,12 @@ const MARKERS = [
   ['terraria.html', 'slot-delete-btn', 'the delete button'],
   ['terraria.css', '.inv-slot.favorited', 'the favourited slot styling'],
   ['terraria.css', '.slot-star', 'the gold star badge on a favourited slot'],
+  ['terraria.js', 'sortInventory', 'the inventory Sort button'],
+  ['terraria.html', 'slot-sort-btn', 'the Sort button markup'],
+  ['terraria.css', '.slot-btn-sort', 'the Sort button styling'],
+  // ---- Buried vaults + depth-scaled chest loot ------------------------------
+  ['world.js', "type: 'vault'", 'buried vaults in the underground'],
+  ['terraria.js', 'rollChestLoot', 'depth-scaled chest loot (a deep table at 40+ tiles down)'],
   ['space.js', 'nearestHitTarget', 'body hits, and the 8% tax they pay'],
   ['space.js', 'bodyDamageScale', 'the skull still hurts more than the spine'],
   ['space.js', 'blocksDragon', 'the dragon no longer wedges in arena rock'],
