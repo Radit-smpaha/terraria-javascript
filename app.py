@@ -24,6 +24,7 @@ GAME_SCRIPTS = [
     "juice.js",
     "npcs.js",
     "journey.js",
+    "multiplayer.js",
     "terraria.js",
 ]
 GITHUB_FALLBACK = "https://radit-smpaha.github.io/terraria-javascript/terraria.html"
@@ -137,6 +138,7 @@ def build_inline_html() -> str | None:
             "juice.js": "GameFeel",
             "npcs.js": "NPCManager",
             "journey.js": "JourneySystem",
+            "multiplayer.js": "Multiplayer",
             "terraria.js": "Game",
         }
         for name, token in probes.items():

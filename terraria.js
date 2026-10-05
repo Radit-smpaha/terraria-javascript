@@ -944,6 +944,9 @@ class Game {
     this.npcs = typeof NPCManager !== 'undefined' ? new NPCManager(this) : null;
     // Persistent journey goals, explorer ranks, biome discoveries and streaks.
     this.journey = typeof JourneySystem !== 'undefined' ? new JourneySystem(this) : null;
+    // Multiplayer session (see multiplayer.js). 'none' until the player hosts
+    // or joins from the title screen; every hook below is a no-op while idle.
+    this.mp = typeof Multiplayer !== 'undefined' ? new Multiplayer(this) : null;
     this.paused = false;
     // Armed from the player's chosen interval so the first autosave happens a
     // full interval from boot, not 90s regardless of their setting.
@@ -1132,6 +1135,7 @@ class Game {
     const menu = document.getElementById('title-menu');
     const worlds = document.getElementById('title-worlds');
     const credits = document.getElementById('title-credits');
+    const mpPanel = document.getElementById('title-multiplayer-panel');
     // The platform question, which owns the very first thing the screen shows.
     const platform = document.getElementById('title-platform');
     this.titleScreenOpen = true;
@@ -1559,16 +1563,20 @@ class Game {
       if (worlds) worlds.hidden = name !== 'worlds';
       credits.hidden = name !== 'credits';
       if (platform) platform.hidden = name !== 'platform';
+      if (mpPanel) mpPanel.hidden = name !== 'multiplayer';
       if (name === 'worlds') this.renderTitleWorlds(pickWorld);
+      if (name === 'multiplayer') { this.initMultiplayerPanel(); this.syncMultiplayerPanel(); }
       // Hand focus to whatever is now on top, so keyboard players are never
       // stranded on a button that just disappeared.
       const target = name === 'worlds'
         ? document.querySelector('#title-world-list .title-world-card')
         : name === 'credits'
           ? document.getElementById('title-credits-back')
-          : name === 'platform'
-            ? document.getElementById('title-platform-pc')
-            : document.getElementById('title-singleplayer');
+          : name === 'multiplayer'
+            ? (document.getElementById('mp-name') || document.getElementById('title-multiplayer-back'))
+            : name === 'platform'
+              ? document.getElementById('title-platform-pc')
+              : document.getElementById('title-singleplayer');
       if (target && target.focus) {
         try { target.focus({ preventScroll: true }); } catch (_) { target.focus(); }
       }
@@ -1607,9 +1615,11 @@ class Game {
     });
 
     document.getElementById('title-singleplayer')?.addEventListener('click', () => showPanel('worlds'));
+    document.getElementById('title-multiplayer')?.addEventListener('click', () => showPanel('multiplayer'));
     document.getElementById('title-credits-button')?.addEventListener('click', () => showPanel('credits'));
     document.getElementById('title-worlds-back')?.addEventListener('click', () => showPanel('menu'));
     document.getElementById('title-credits-back')?.addEventListener('click', () => showPanel('menu'));
+    this.initMultiplayerPanel();
 
     // The menu owns the keyboard. stopPropagation keeps every one of these
     // keypresses away from the game's own handlers running underneath, and a
@@ -1716,6 +1726,12 @@ class Game {
     if (this.isDead) {
       this.showToast('💀 Respawn before leaving — the run is not over yet.');
       return false;
+    }
+    // A hosted world cannot be hosted from the menu (the simulation pauses
+    // there), so leaving ends the session. Guests are told and fall back to
+    // single-player on the copy of the world they were just playing.
+    if (this.mp && this.mp.isHost) {
+      this.mp.disconnect('The host returned to the main menu.');
     }
     try { this.saveGame(true); } catch (_) { /* saveGame reports its own failure */ }
     this.showTitleScreen();
@@ -2239,6 +2255,95 @@ class Game {
     return false;
   }
 
+  // ============================================================
+  // MULTIPLAYER PANEL (see multiplayer.js for the session itself)
+  // ============================================================
+
+  /**
+   * Wire the title-screen multiplayer panel exactly once. Every listener is
+   * built here rather than in a template so the panel can be re-shown without
+   * attaching a second set (the same rule the world list follows).
+   */
+  initMultiplayerPanel() {
+    if (this._mpPanelBuilt) return;
+    this._mpPanelBuilt = true;
+    const name = document.getElementById('mp-name');
+    const room = document.getElementById('mp-room');
+    const server = document.getElementById('mp-server');
+    const status = document.getElementById('mp-status');
+    const setStatus = (text) => { if (status) status.textContent = text; };
+    try {
+      const savedName = localStorage.getItem('terracraft-mp-name');
+      if (name && !name.value && savedName) name.value = savedName;
+    } catch (_) { /* storage blocked */ }
+    if (name) {
+      name.addEventListener('change', () => {
+        try { localStorage.setItem('terracraft-mp-name', name.value); } catch (_) { /* storage blocked */ }
+      });
+    }
+    // Default room is the same string on both sides, so two tabs can play with
+    // one click each. A server address is only needed across machines: on
+    // this computer, the bundled server already speaks the /mp relay.
+    if (room && !room.value) room.value = 'COOP';
+    if (server && !server.value) {
+      // Feature-detected: the QA harnesses boot the game without a location,
+      // and a missing one must not take the whole panel down.
+      const here = typeof location !== 'undefined' ? location : null;
+      const host = here ? here.hostname : '';
+      const local = ['localhost', '127.0.0.1', '::1', ''].includes(host);
+      server.value = here && local ? `ws://${host}:${here.port || 8000}/mp` : '';
+    }
+    document.getElementById('mp-host-btn')?.addEventListener('click', () => {
+      if (!this.mp || this.mp.active) return;
+      const result = this.mp.startHost(room?.value || '', server?.value || '', name?.value || 'Host');
+      if (!result.ok) { setStatus(result.error); return; }
+      // Hosting always walks straight into the world being shared; the room
+      // stays alive on the title screen too, so guests can join either way.
+      this.enterFromMultiplayer();
+    });
+    document.getElementById('mp-join-btn')?.addEventListener('click', () => {
+      if (!this.mp || this.mp.active) return;
+      const result = this.mp.startJoin(room?.value || '', server?.value || '',
+        name?.value || 'Player', () => this.enterFromMultiplayer());
+      if (!result.ok) { setStatus(result.error); return; }
+      setStatus('Looking for the host…');
+    });
+    document.getElementById('title-multiplayer-back')?.addEventListener('click', () => {
+      if (this._titleShowPanel) this._titleShowPanel('menu');
+    });
+  }
+
+  /** Keep the panel's status line honest (room code, guest count, failures). */
+  syncMultiplayerPanel() {
+    const el = document.getElementById('mp-status');
+    if (!el) return;
+    const mp = this.mp;
+    if (!mp) { el.textContent = ''; return; }
+    if (mp.status === 'error' || mp.status === 'closed') {
+      el.textContent = mp.statusDetail || 'Disconnected.';
+      return;
+    }
+    if (mp.isHost) {
+      el.textContent = `Hosting room ${mp.room} — waiting for players (${mp.peers.size}/3 guests).`;
+      return;
+    }
+    if (mp.isClient && mp.status === 'connecting') {
+      el.textContent = mp.statusDetail || 'Looking for the host…';
+      return;
+    }
+    if (!mp.active) el.textContent = 'Host a world, or join a friend’s.';
+  }
+
+  /** Leave the menu into a session — the same path as picking a world. */
+  enterFromMultiplayer() {
+    if (this._titleEnterWorld) {
+      this._titleEnterWorld();
+      return;
+    }
+    this.titleScreenOpen = false;
+    this.paused = false;
+  }
+
   loadSettings() {
     const defaults = {
       quality: 'auto', effects: 'full', glow: 'full', showFps: false, autosave: 90,
@@ -2567,6 +2672,15 @@ class Game {
       // would flip `paused` back to false and the world would keep playing
       // underneath a menu the player is still looking at.
       if (this.titleScreenOpen) return;
+
+      // Enter opens multiplayer chat. The handler above already ignores
+      // keystrokes that land in a text field, so the chat box owns the keyboard
+      // from the moment it takes focus.
+      if (e.code === 'Enter' && this.mp && this.mp.active && !e.repeat) {
+        e.preventDefault();
+        this.mp.openChat();
+        return;
+      }
 
       // Pause / resume takes priority over everything else, except closing Settings.
       if (e.code === 'Escape' || e.code === 'KeyP') {
@@ -3338,6 +3452,10 @@ class Game {
       }
     }
     delete this.chestStorage[key];
+    // The chest itself is gone as far as the world is concerned — drop the
+    // grid in every other session too, or the next chest placed at those
+    // coordinates would inherit this one's leftovers.
+    this.mp?.chestDeleted(tileX, tileY);
   }
 
   /**
@@ -3380,7 +3498,13 @@ class Game {
     const key = `${tileX},${tileY}`;
     const wasClosed = this.world.getTile(tileX, tileY) === TILES.CHEST;
     if (!this.chestStorage[key]) {
-      if (wasClosed) {
+      if (this.mp && this.mp.isClient) {
+        // Sealed-chest loot is rolled by the HOST, so two players can never
+        // open two different treasures out of one chest. The panel shows
+        // empty for the few milliseconds it takes the real grid to arrive.
+        this.chestStorage[key] = this.makeEmptyChestSlots();
+        this.mp.requestChest(tileX, tileY);
+      } else if (wasClosed) {
         const slots = this.makeEmptyChestSlots();
         const loot = this.rollChestLoot(tileX, tileY);
         for (let i = 0; i < loot.length; i++) slots[i] = loot[i];
@@ -3465,6 +3589,9 @@ class Game {
       }
       invGrid.appendChild(div);
     }
+    // The chest's 18 slots just changed. Single-player this is a no-op; in a
+    // session the new grid is broadcast (host) or sent to the host (guest).
+    this.mp?.chestChanged();
   }
 
   /**
@@ -3724,6 +3851,13 @@ class Game {
   }
 
   saveGame(silent = false) {
+    // A guest never writes the world: the host owns the save, and on the
+    // BroadcastChannel transport both tabs share one localStorage slot — a
+    // guest autosave would overwrite the real world with a copy.
+    if (this.mp && this.mp.isClient) {
+      if (!silent) this.showToast('💾 The host saves this world — guests do not write it.');
+      return;
+    }
     let preferredName = `World ${this.saveKey.slice(-1)}`;
     try { preferredName = JSON.parse(localStorage.getItem(this.saveKey) || '{}').name || preferredName; } catch (_) {}
     // Autosave does not care that you are mid-fight, and the save file must
@@ -4968,8 +5102,14 @@ class Game {
   /**
    * Route every hit on the player through here so the vignette, screen shake
    * and death cause are always consistent.
+   *
+   * `sourceY` is optional and only used by multiplayer: a source point that
+   * includes its height lets the host decide WHICH character the hit belongs
+   * to (its own player or a guest standing closer to whatever swung). Hit
+   * points with no source (lava, starvation) always stay on the host.
    */
-  damagePlayer(amount, sourceX, cause, isBoss = false) {
+  damagePlayer(amount, sourceX, cause, isBoss = false, sourceY = null) {
+    if (this.mp && this.mp.routeDamage(amount, sourceX, sourceY, cause, isBoss)) return 0;
     const capped = this.trashDamageCeiling(amount, isBoss);
     const taken = this.player.takeDamage(capped, this.sound, this.particles, sourceX);
     if (taken <= 0) return 0;
@@ -5528,6 +5668,12 @@ class Game {
       if (d && !d.gateDefeated) {
         if (this.boss && !this.boss.dead) { this.showToast('⚠️ Finish your current battle first.'); return true; }
         if (!this.monsters.some(m => m.dungeonGatekeeper && !m.dead)) {
+          if (this.mp && this.mp.isClient) {
+            // The host owns the warden; it arrives down the snapshot lane.
+            this.mp.requestGate(tileX, tileY);
+            this.showToast('Defeat the Hollow Warden to break the oath-seal.');
+            return true;
+          }
           const gate = new Monster(tileX * TILE_SIZE, (tileY - 1) * TILE_SIZE - 2, 'cave_spider');
           gate.makeElite();
           gate.hp = gate.maxHp = 850;
@@ -5750,6 +5896,8 @@ class Game {
           kbDir: mMidX >= pMidX ? 1 : -1,
           kbForce: 3.4
         }) || 0;
+        // Report the swing to the host (no-op unless this machine is a guest).
+        this.mp?.sendMobHit(m, roll.damage, roll.crit);
         if (dealt > 0) {
           totalDealt += dealt;
           hitAnything = true;
@@ -5759,7 +5907,9 @@ class Game {
           if (itemData.hitsAll) this.particles.addBanStamp(mMidX, mMidY);
           // Hellstone Greatblade: 40% of landed hits inflict poison. Rolled per
           // target, so one swing can poison a whole group independently.
-          if (itemData.poisonChance && Math.random() < itemData.poisonChance) {
+          // Guests skip it: status on shared mobs is host-owned.
+          if (itemData.poisonChance && !(this.mp && this.mp.isClient) &&
+              Math.random() < itemData.poisonChance) {
             m.applyPoison(itemData.poisonDuration, itemData.poisonDps, this.particles);
             this.stats.poisonProcs = (this.stats.poisonProcs || 0) + 1;
           }
@@ -5786,10 +5936,10 @@ class Game {
         }
         if (struck) {
           const roll = this.rollDamage(itemData.damage, itemData);
-          const dealt = this.boss.takeDamage(
-            typeof this.boss.scaleDamageFor === 'function'
-              ? this.boss.scaleDamageFor(struck, roll.damage) : roll.damage,
-            this.sound, this.particles, roll.crit) || 0;
+          const scaled = typeof this.boss.scaleDamageFor === 'function'
+            ? this.boss.scaleDamageFor(struck, roll.damage) : roll.damage;
+          const dealt = this.boss.takeDamage(scaled, this.sound, this.particles, roll.crit) || 0;
+          this.mp?.sendBossHit(scaled, roll.crit);
           if (dealt > 0) {
             totalDealt += dealt;
             hitAnything = true;
@@ -5797,8 +5947,10 @@ class Game {
             if (itemData.hitsAll) this.particles.addBanStamp(struck.x, struck.y);
             // Bosses take the same 40% venom proc. UnderworldMonster extends
             // Monster and inherits applyPoison; DemonBoss is standalone, so the
-            // capability is feature-detected rather than assumed.
-            if (itemData.poisonChance && typeof this.boss.applyPoison === 'function' &&
+            // capability is feature-detected rather than assumed. Guests skip
+            // it: status on shared bosses is host-owned.
+            if (itemData.poisonChance && !(this.mp && this.mp.isClient) &&
+                typeof this.boss.applyPoison === 'function' &&
                 Math.random() < itemData.poisonChance) {
               this.boss.applyPoison(itemData.poisonDuration, itemData.poisonDps, this.particles);
               this.stats.poisonProcs = (this.stats.poisonProcs || 0) + 1;
@@ -6078,6 +6230,13 @@ class Game {
   }
 
   summonBoss(awakened = false) {
+    // Guests ask the host instead: the boss, its AI and its loot bag are all
+    // host-owned, and the 10Hz snapshot carries it to the guest's screen.
+    if (this.mp && this.mp.isClient) {
+      this.showToast('📡 The summon went to the host.');
+      this.mp.requestBossSummon();
+      return;
+    }
     if (this.boss && !this.boss.dead) {
       this.showToast('⚠️ The Guardian is already here!');
       return;
@@ -6103,6 +6262,12 @@ class Game {
   }
 
   summonDemonBoss() {
+    // Same rule as summonBoss: a guest asks, the host raises it.
+    if (this.mp && this.mp.isClient) {
+      this.showToast('📡 The altar rang — the host owns the fight.');
+      this.mp.requestBossSummon('demon');
+      return false;
+    }
     if (this.boss && !this.boss.dead) {
       this.showToast('⚠️ The Hellbound Demon already hunts you!');
       return false;
@@ -6157,6 +6322,12 @@ class Game {
 
   /** Wake the Cursed Knight by clicking the statue pedestal in the secret dungeon. */
   summonCursedKnight() {
+    // Guests cannot raise the Knight either; the host's copy is the real one.
+    if (this.mp && this.mp.isClient) {
+      this.showToast('📡 The statue stirred — the host owns the fight.');
+      this.mp.requestBossSummon('knight');
+      return false;
+    }
     const d = this.world.dungeon;
     if (!d) return;
     if (this.boss && !this.boss.dead) {
@@ -6287,6 +6458,11 @@ class Game {
    * spent. A refused beacon is never consumed.
    */
   useVoidRiftBeacon() {
+    // The Ossuary is host-only during a session: guests keep the overworld
+    // while the host is away (see multiplayer.js _setDim).
+    if (this.mp && this.mp.denyForClient('🌀 Only the host can tear a rift open — guests stay in the overworld.')) {
+      return false;
+    }
     if (this.world.isInSpace()) {
       this.showToast('🌀 You are already in the Ossuary. Walk into the 🕳️ Rift Gate on the west wall to go home.');
       return false;
@@ -6346,6 +6522,10 @@ class Game {
    * when the rite was read, which is also when the bones are spent.
    */
   performBoneRite() {
+    // Same reason as the beacon: the arena belongs to the host mid-session.
+    if (this.mp && this.mp.denyForClient('🦴 Only the host may read the Rite of Waking during a session.')) {
+      return false;
+    }
     if (!this.world.isInSpace()) {
       this.showToast('🦴 The rite has to be read where the bones are. Tear the Ossuary open first.');
       return false;
@@ -6452,6 +6632,14 @@ class Game {
    */
   wakeSovereign(arena, resumeHP = this.dragonHP) {
     if (!arena) return null;
+    // Guests cannot raise the Sovereign: the arena is host-owned during a
+    // session, and both callers are already gated for guests. Belt and braces,
+    // because a client-side Sovereign would be a second, invisible simulation.
+    if (this.mp && this.mp.isClient) {
+      this.showToast('📡 The bones burn for the host.');
+      this.mp.requestBossSummon('dragon');
+      return null;
+    }
     this.boss = new SkeletonDragonBoss(arena.cx * TILE_SIZE, (arena.floorY - 16) * TILE_SIZE, this);
     if (Number.isFinite(resumeHP)) {
       this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, resumeHP));
@@ -6654,6 +6842,9 @@ this.player.dodgeTime = 0;
   }
 
   update(dt) {
+    // Networking runs before the pause guard: a hosted room must keep its
+    // heartbeat and welcome handshake alive while the title screen is up.
+    if (this.mp) this.mp.tick(dt);
     if (this.paused) return;
 
     // Touch aim gets its fingertip-forgiveness nudge before anything reads the
@@ -6921,7 +7112,7 @@ this.player.dodgeTime = 0;
     // Daytime surface stays peaceful (only underground + night spawn).
     // Daytime biome wildlife (wolves, hyenas...) look scary but never spawn
     // by day — they are night-only encounters.
-    if (this.spawnTimer >= 7.0) {
+    if (!this.mp?.isClient && this.spawnTimer >= 7.0) {
       this.spawnTimer = 0;
       const night = this.world.isNight();
       if (this.monsters.length < (isUnderworld ? 10 : night ? 6 : 2)) {
@@ -6999,6 +7190,10 @@ this.player.dodgeTime = 0;
     for (let i = this.monsters.length - 1; i >= 0; i--) {
       const m = this.monsters[i];
 
+      // Guests never simulate: position, hp and death arrive as 10Hz host
+      // snapshots (multiplayer.js _onMobSnapshot) and the host owns the AI.
+      if (this.mp && this.mp.isClient) continue;
+
       // Despawn anything that has wandered far out of play.
       const farFromPlayer = Math.hypot(
         (m.x + m.width / 2) - (this.player.x + this.player.width / 2),
@@ -7009,7 +7204,12 @@ this.player.dodgeTime = 0;
         continue;
       }
 
-      m.update(dt, this.player, this.world);
+      // AI chases whoever is actually nearest — in a session that can be a
+      // guest's character, not only the host's.
+      const aiTarget = (this.mp && this.mp.isHost
+        ? this.mp.nearestChaseTarget(m.x + m.width / 2, m.y + m.height / 2)
+        : null) || this.player;
+      m.update(dt, aiTarget, this.world);
 
       // Hellfire Venom (Hellstone Greatblade): damage over time, credited to
       // stats so poison kills are attributed the same way as direct hits.
@@ -7018,22 +7218,41 @@ this.player.dodgeTime = 0;
         if (venom > 0) this.stats.damageDealt += venom;
       }
 
-      // Monster touches player
+      // Monster touches player — or, in a session, whichever character is
+      // standing inside it. Host-only: guests receive their hits as 'ph'.
       const pMidX = this.player.x + this.player.width / 2;
       const pMidY = this.player.y + this.player.height / 2;
       const mMidX = m.x + m.width / 2;
       const mMidY = m.y + m.height / 2;
-
-      if (Math.abs(pMidX - mMidX) < (this.player.width + m.width) / 2 &&
-          Math.abs(pMidY - mMidY) < (this.player.height + m.height) / 2) {
-        if (!m.touchCooldown || m.touchCooldown <= 0) {
-          this.damagePlayer(m.damage, mMidX, `${m.displayName} tore you apart.`);
+      const touchingHost = Math.abs(pMidX - mMidX) < (this.player.width + m.width) / 2 &&
+          Math.abs(pMidY - mMidY) < (this.player.height + m.height) / 2;
+      if (!m.touchCooldown || m.touchCooldown <= 0) {
+        if (touchingHost) {
+          this.damagePlayer(m.damage, mMidX, `${m.displayName} tore you apart.`, false, mMidY);
           m.touchCooldown = 1.0; // one hit per second max per monster
+        } else if (this.mp && this.mp.isHost) {
+          const victim = this.mp.peerTouchingBox(
+            mMidX - m.width / 2, mMidY - m.height / 2,
+            mMidX + m.width / 2, mMidY + m.height / 2);
+          if (victim) {
+            this.mp.sendPlayerHit(victim, m.damage,
+              `${m.displayName} tore you apart.`, false, mMidX, mMidY);
+            m.touchCooldown = 1.0;
+          }
         }
       }
       if (m.touchCooldown > 0) m.touchCooldown -= dt;
 
       if (m.dead) {
+        if (this.mp && this.mp.isClient) {
+          // Death and loot belong to the host: the 'kd' frame credits the
+          // kill and spawns this player's drops. Client hits are clamped to
+          // 1hp so a corpse should never actually reach this line, but splice
+          // rather than wedge the array if one does.
+          this.monsters.splice(i, 1);
+          continue;
+        }
+        const mpDropStart = this.drops.length;
         this.stats.kills += 1;
         this.journey?.recordActivity('hunt', m.x + m.width / 2, m.y);
         if (this.npcs) this.npcs.onKill(m);
@@ -7074,6 +7293,9 @@ this.player.dodgeTime = 0;
           this.drops.push(new DropItem(m.x, m.y - 8, 'life_crystal', 1));
           this.drops.push(new DropItem(m.x + 12, m.y - 4, 'fallen_star', 2));
         }
+        // Flag the loot above as host-owned and ship the kill + drop list to
+        // every guest, so each player collects their own copy of the haul.
+        this.mp?.hostMobDeath(m, mpDropStart);
       }
     }
 
@@ -7081,6 +7303,10 @@ this.player.dodgeTime = 0;
     // Keep this outside the `!dead` block below; victory rewards and bar cleanup
     // used to be unreachable because the old guard only entered living bosses.
     if (this.boss && this.boss.dead) {
+      // Index of the floor where this machine's boss bag lands. Guests spawn
+      // their own bag in this very block, so on the host these drops are
+      // marked local instead of broadcast (mp.markLocalDrops).
+      const mpBossDropStart = this.drops.length;
       const defeatedKnight = this.boss.kind === 'knight';
       const defeatedDemon = this.boss.kind === 'demon';
       const defeatedDragon = this.boss.kind === 'dragon';
@@ -7170,6 +7396,7 @@ this.player.dodgeTime = 0;
       // Non-dragon bosses curtain-drop immediately; the Sovereign's screen is
       // raised by the update loop once this.victoryDelay runs out.
       if (victoryScreen && !defeatedDragon) victoryScreen.classList.remove('hidden');
+      this.mp?.markLocalDrops(mpBossDropStart);
       this.boss = null;
     }
 
@@ -7190,13 +7417,22 @@ this.player.dodgeTime = 0;
 
     // 7. Update Boss
     if (this.boss && !this.boss.dead) {
-      this.boss.update(dt, this.player, this.projectiles, this.sound, this.particles, this.world);
+      if (!(this.mp && this.mp.isClient)) {
+        // The host drives the boss, and its AI gives chase to whichever
+        // living character is closest — guests included. Guests only
+        // interpolate a puppet (multiplayer.js updatePuppets).
+        const bossTarget = (this.mp && this.mp.isHost
+          ? this.mp.nearestChaseTarget(this.boss.x + this.boss.width / 2,
+            this.boss.y + this.boss.height / 2)
+          : null) || this.player;
+        this.boss.update(dt, bossTarget, this.projectiles, this.sound, this.particles, this.world);
 
-      // Venom on the boss too. Feature-detected because DemonBoss carries its
-      // own poison implementation while Monster/UnderworldMonster have theirs.
-      if (typeof this.boss.tickPoison === 'function' && this.boss.poisonTime > 0) {
-        const venom = this.boss.tickPoison(dt, this.particles);
-        if (venom > 0) this.stats.damageDealt += venom;
+        // Venom on the boss too. Feature-detected because DemonBoss carries its
+        // own poison implementation while Monster/UnderworldMonster have theirs.
+        if (typeof this.boss.tickPoison === 'function' && this.boss.poisonTime > 0) {
+          const venom = this.boss.tickPoison(dt, this.particles);
+          if (venom > 0) this.stats.damageDealt += venom;
+        }
       }
 
       // Arcane motes drift off every boss — cheap, constant, very cool.
@@ -7213,22 +7449,34 @@ this.player.dodgeTime = 0;
         );
       }
 
-      // Boss touch damage
-      const pMidX = this.player.x + this.player.width / 2;
-      const pMidY = this.player.y + this.player.height / 2;
-      const bMidX = this.boss.x + this.boss.width / 2;
-      const bMidY = this.boss.y + this.boss.height / 2;
-      // The Sovereign is a nineteen-piece serpent, so it is asked for its own
-      // hit test instead of trusting one circle around the head — otherwise its
-      // tail passes straight through you.
-      const touching = typeof this.boss.overlapsPlayer === 'function'
-        ? this.boss.overlapsPlayer(this.player)
-        : Math.hypot(pMidX - bMidX, pMidY - bMidY) < (this.player.width + this.boss.width) / 2;
-      if (touching) {
+      // Boss touch damage — host/SP only; guests receive their hits as 'ph'.
+      if (!(this.mp && this.mp.isClient)) {
+        const pMidX = this.player.x + this.player.width / 2;
+        const pMidY = this.player.y + this.player.height / 2;
+        const bMidX = this.boss.x + this.boss.width / 2;
+        const bMidY = this.boss.y + this.boss.height / 2;
+        // The Sovereign is a nineteen-piece serpent, so it is asked for its own
+        // hit test instead of trusting one circle around the head — otherwise its
+        // tail passes straight through you.
+        const touching = typeof this.boss.overlapsPlayer === 'function'
+          ? this.boss.overlapsPlayer(this.player)
+          : Math.hypot(pMidX - bMidX, pMidY - bMidY) < (this.player.width + this.boss.width) / 2;
         const touchDamage = this.boss.kind === 'demon' ? [45, 60, 75][this.boss.phase - 1]
           : typeof this.boss.touchDamage === 'function' ? this.boss.touchDamage()
             : this.boss.phase === 1 ? 25 : 35;
-        this.damagePlayer(touchDamage, bMidX, `${this.boss.name} crushed you.`, true);
+        if (touching) {
+          this.damagePlayer(touchDamage, bMidX, `${this.boss.name} crushed you.`, true, bMidY);
+        } else if (this.mp && this.mp.isHost) {
+          // No guest is exempt: if someone else is inside the boss, THEY wear
+          // the stomp instead of the host.
+          const victim = this.mp.peerTouchingBox(
+            bMidX - this.boss.width / 2, bMidY - this.boss.height / 2,
+            bMidX + this.boss.width / 2, bMidY + this.boss.height / 2);
+          if (victim) {
+            this.mp.sendPlayerHit(victim, touchDamage,
+              `${this.boss.name} crushed you.`, true, bMidX, bMidY);
+          }
+        }
       }
 
       // Update Boss Bar
@@ -7249,6 +7497,7 @@ this.player.dodgeTime = 0;
 
       if (this.boss.dead) {
         // Boss Defeated! Victory copy + loot differ per boss.
+        const mpBoss2DropStart = this.drops.length;
         const knightWin = this.boss.kind === 'knight';
         this.stats.bossKills += 1;
         document.getElementById('boss-panel').classList.add('hidden');
@@ -7283,6 +7532,7 @@ this.player.dodgeTime = 0;
         const victorySub = document.getElementById('victory-stats');
         if (victorySub) victorySub.textContent = this.describeRun();
         document.getElementById('victory-screen').classList.remove('hidden');
+        this.mp?.markLocalDrops(mpBoss2DropStart);
       }
     }
 
@@ -7292,18 +7542,26 @@ this.player.dodgeTime = 0;
       p.update(dt, this.world, this.particles);
 
       if (p.isHostile) {
-        // Hits player
-        const pMidX = this.player.x + this.player.width / 2;
-        const pMidY = this.player.y + this.player.height / 2;
-        if (Math.hypot(p.x - pMidX, p.y - pMidY) < 18) {
-          p.dead = true;
-          // Boss skill shots carry `fromBoss` (set at every hostile spawn site)
-          // and must sail past the trash ceiling — see trashDamageCeiling.
-          // "The dragon's skills only do 4 damage" was this line defaulting to
-          // isBoss=false: a 60-92 shard got capped to ~14, then armour
-          // finished it. An unflagged hostile projectile is still a trash
-          // ranged hit and stays capped.
-          this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.', p.fromBoss === true);
+        // Hits a player — host/SP only. Hostile shots are born from mob and
+        // boss AI, which only the host runs, so a guest's screen has none;
+        // the guest wears its hits when the host forwards them as 'ph'.
+        if (!(this.mp && this.mp.isClient)) {
+          const pMidX = this.player.x + this.player.width / 2;
+          const pMidY = this.player.y + this.player.height / 2;
+          const nearHost = Math.hypot(p.x - pMidX, p.y - pMidY) < 18;
+          const nearGuest = this.mp ? this.mp.avatarNear(p.x, p.y, 18) : false;
+          if (nearHost || nearGuest) {
+            p.dead = true;
+            // Boss skill shots carry `fromBoss` (set at every hostile spawn site)
+            // and must sail past the trash ceiling — see trashDamageCeiling.
+            // "The dragon's skills only do 4 damage" was this line defaulting to
+            // isBoss=false: a 60-92 shard got capped to ~14, then armour
+            // finished it. An unflagged hostile projectile is still a trash
+            // ranged hit and stays capped. damagePlayer routes the hit to
+            // whoever is closest to (p.x, p.y) — host or guest.
+            this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.',
+              p.fromBoss === true, p.y);
+          }
         }
       } else {
         // Hits monsters
@@ -7319,6 +7577,9 @@ this.player.dodgeTime = 0;
               kbDir: p.vx >= 0 ? 1 : -1,
               kbForce: 2.6
             }) || 0;
+            // Guests report the shot so the host can apply it for real; the
+            // helper also keeps a local corpse at 1hp until the host confirms.
+            this.mp?.sendMobHit(m, roll.damage, crit);
             if (dealt > 0) {
               this.stats.damageDealt += dealt;
               this.feel.stop(crit ? 0.075 : 0.03, 0.07);
@@ -7344,10 +7605,10 @@ this.player.dodgeTime = 0;
           if (struck) {
             p.dead = true;
             const roll = this.rollDamage(p.damage, null);
-            const dealt = this.boss.takeDamage(
-              typeof this.boss.scaleDamageFor === 'function'
-                ? this.boss.scaleDamageFor(struck, roll.damage) : roll.damage,
-              this.sound, this.particles, roll.crit) || 0;
+            const scaled = typeof this.boss.scaleDamageFor === 'function'
+              ? this.boss.scaleDamageFor(struck, roll.damage) : roll.damage;
+            const dealt = this.boss.takeDamage(scaled, this.sound, this.particles, roll.crit) || 0;
+            this.mp?.sendBossHit(scaled, roll.crit);
             if (dealt > 0) {
               this.stats.damageDealt += dealt;
               this.feel.stop(roll.crit ? 0.06 : 0.035, 0.07);
@@ -7761,6 +8022,10 @@ this.player.dodgeTime = 0;
       this.player.render(ctx, this.camera, held, this.player.activeArmor);
     }
 
+    // 8. Remote players — every other character in the session, each with a
+    // name plate and health bar (multiplayer.js renderPlayers).
+    this.mp?.renderPlayers(ctx, this.camera);
+
     // 8. Projectiles
     for (const p of this.projectiles) {
       p.render(ctx, this.camera);
@@ -7799,6 +8064,8 @@ this.player.dodgeTime = 0;
     lit.length = 0;
     for (const m of this.monsters) lit.push(m);
     for (const p of this.projectiles) lit.push(p);
+    // Guests carry a small light so a friend in a cave is never a silhouette.
+    this.mp?.pushLit(lit);
     if (this.boss && !this.boss.dead) lit.push(this.boss);
     if (this.dragonFinale) lit.push(this.dragonFinale);
     this.world.renderLighting(this.lightCtx, this.camera, this.player, lit);

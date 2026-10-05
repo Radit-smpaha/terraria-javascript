@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=29">
+  <link rel="stylesheet" href="terraria.css?v=30">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -753,10 +753,7 @@
 
       <main id="title-menu" class="title-menu">
         <button id="title-singleplayer" class="title-button">Singleplayer</button>
-        <div class="title-multiplayer-row">
-          <span class="coming-soon">( Coming soon! )</span>
-          <button class="title-button title-button-disabled" disabled aria-disabled="true">Multiplayer</button>
-        </div>
+        <button id="title-multiplayer" class="title-button">Multiplayer</button>
         <button id="title-credits-button" class="title-button">Credits</button>
       </main>
 
@@ -787,6 +784,32 @@
             <span class="platform-badge" id="title-platform-mobile-badge" hidden>Recommended</span>
           </button>
         </div>
+      </section>
+
+      <!-- Multiplayer: host a world for friends, or join theirs. One room code
+           ties the two together. The server field is only needed to play across
+           machines (node server.js speaks ws://host:port/mp); left as this
+           machine, two tabs of this browser join through BroadcastChannel. -->
+      <section id="title-multiplayer-panel" class="title-mp" aria-labelledby="mp-heading" hidden>
+        <h2 id="mp-heading">Multiplayer</h2>
+        <p class="title-mp-hint">Share a world with up to 3 friends. The host owns the monsters, the bosses and the save.</p>
+        <label class="title-mp-field" for="mp-name">Your name
+          <input id="mp-name" type="text" maxlength="14" placeholder="Steve" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="title-mp-field" for="mp-room">Room code
+          <input id="mp-room" type="text" maxlength="4" placeholder="COOP" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="title-mp-field" for="mp-server">Server (optional)
+          <input id="mp-server" type="text" placeholder="ws://192.168.1.5:8000/mp" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="title-mp-note">Leave the server empty to play in another tab of this browser.
+          To play over the network, run <code>node server.js</code> on the host machine and enter its address.</p>
+        <div class="title-mp-actions">
+          <button id="mp-host-btn" class="title-button">HOST GAME</button>
+          <button id="mp-join-btn" class="title-button">JOIN GAME</button>
+        </div>
+        <p id="mp-status" class="title-mp-status" role="status" aria-live="polite"></p>
+        <button id="title-multiplayer-back" class="title-button">Back</button>
       </section>
 
       <!-- Three save files, Terraria's "select world" list. -->
@@ -837,7 +860,8 @@
   <script src="juice.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
   <script src="npcs.js?v=3" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
-  <script src="terraria.js?v=44" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="multiplayer.js?v=1" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL multiplayer.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok multiplayer.js: '+(typeof Multiplayer))"></script>
+<script src="terraria.js?v=45" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>
