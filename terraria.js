@@ -1291,7 +1291,16 @@ class Game {
     ];
 
     const draw = (time) => {
-      if (!this.titleScreenOpen) return;
+      // The loop must stay scheduled even while a world is being played: it was
+      // previously `return`ed out of when the player entered a world, which
+      // killed the animation for good and left the menu background showing the
+      // frozen game canvas when they came back. Now it keeps ticking and simply
+      // skips the painting until the title screen is on top again.
+      if (!this.titleScreenOpen) {
+        prevTime = time;
+        requestAnimationFrame(draw);
+        return;
+      }
       const width = 320;
       const height = 180;
       const dt = Math.min(0.1, Math.max(0, (time - prevTime) / 1000));
@@ -2306,7 +2315,7 @@ class Game {
       const result = this.mp.startJoin(room?.value || '', server?.value || '',
         name?.value || 'Player', () => this.enterFromMultiplayer());
       if (!result.ok) { setStatus(result.error); return; }
-      setStatus('Looking for the host…');
+      setStatus(`Looking for a host in room ${result.room}… (make sure the host used the same room code)`);
     });
     document.getElementById('title-multiplayer-back')?.addEventListener('click', () => {
       if (this._titleShowPanel) this._titleShowPanel('menu');
@@ -2324,14 +2333,16 @@ class Game {
       return;
     }
     if (mp.isHost) {
-      el.textContent = `Hosting room ${mp.room} — waiting for players (${mp.peers.size}/3 guests).`;
+      el.textContent = mp.peers.size
+        ? `Room ${mp.room} — ${mp.peers.size}/3 friend(s) connected. Tell them the room code if they lag behind.`
+        : `Room ${mp.room} is open — tell your friends this room code, then have them press JOIN GAME (${mp.peers.size}/3).`;
       return;
     }
     if (mp.isClient && mp.status === 'connecting') {
       el.textContent = mp.statusDetail || 'Looking for the host…';
       return;
     }
-    if (!mp.active) el.textContent = 'Host a world, or join a friend’s.';
+    if (!mp.active) el.textContent = 'Host a world, or join a friend’s — everyone must use the SAME room code.';
   }
 
   /** Leave the menu into a session — the same path as picking a world. */
@@ -5809,6 +5820,39 @@ class Game {
     return true;
   }
 
+  /**
+   * Can a hit travel from (x0,y0) to (x1,y1) without a wall in the way?
+   *
+   * Bosses used to be hittable straight through solid rock: the melee arc and
+   * the projectile loop both tested DISTANCE and angle but never asked what was
+   * between the two points, so a player standing on the far side of a wall (or
+   * an arrow fired into one) still dealt damage. Sampling the line tile by tile
+   * and refusing the hit when a solid block sits on it makes cover actually
+   * work — you now have to break through, dig around, or fight in the open.
+   *
+   * Platforms are deliberately NOT cover: you shoot and swing through the
+   * walk-through wooden floors the same way you walk through them. The two
+   * endpoints are excluded from the probe so a boss standing flush against the
+   * wall it is leaning on can still be hit from the open side.
+   */
+  bossLineOfSight(x0, y0, x1, y1) {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    if (dist < TILE_SIZE) return true;
+    // ~8px sampling: fine enough that a one-tile wall is never skipped over,
+    // coarse enough to stay cheap when it runs on every melee swing.
+    const steps = Math.ceil(dist / 8);
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const tx = Math.floor((x0 + (x1 - x0) * t) / TILE_SIZE);
+      const ty = Math.floor((y0 + (y1 - y0) * t) / TILE_SIZE);
+      const tile = this.world.getTile(tx, ty);
+      if (!tile) continue;
+      const props = TILE_PROPERTIES[tile];
+      if (props && props.solid && !props.isPlatform) return false;
+    }
+    return true;
+  }
+
   handleLeftClick() {
     const held = this.inventory[this.player.selectedSlot];
     const itemData = ITEMS[held.id];
@@ -5934,6 +5978,10 @@ class Game {
                    inArc(bMidX, bMidY)) {
           struck = { x: bMidX, y: bMidY, head: true };
         }
+        // Cover: a confirmed swing still has to reach its target through open
+        // air. Without this the arc ignored the wall and a boss could be beaten
+        // to death from the safe side of solid stone.
+        if (struck && !this.bossLineOfSight(pMidX, pMidY, struck.x, struck.y)) struck = null;
         if (struck) {
           const roll = this.rollDamage(itemData.damage, itemData);
           const scaled = typeof this.boss.scaleDamageFor === 'function'
@@ -8195,7 +8243,6 @@ this.player.dodgeTime = 0;
     // the same value twice, which would otherwise spike the FPS average).
     const rawDelta = (currentTime - this.lastTime) / 1000;
     const rdt = Number.isFinite(rawDelta) && rawDelta > 0 ? Math.min(1, rawDelta) : 0;
-    const dt = Math.min(0.1, Math.max(0, Number.isFinite(rawDelta) ? rawDelta : 0));
     this.lastTime = currentTime;
 
     // Recompute the pad's visibility before anything can read it: pausing,
@@ -8203,8 +8250,38 @@ this.player.dodgeTime = 0;
     // and doing it in one place means it cannot drift out of step.
     this.refreshTouchControls();
 
+    // ---- Fixed-timestep simulation -------------------------------------
+    // Every movement constant in this game (gravity 0.38, speed 4.2, accel 0.6,
+    // terminal velocity 12) is written as a PER-FRAME amount, tuned when the
+    // loop ran at ~60Hz. The loop used to call update(realDt) once per rAF, so
+    // a 144Hz monitor integrated the physics 2.4x more often per second than a
+    // 60Hz one: everything moved, fell and attacked that much faster. The fix
+    // is to run the simulation on a fixed 1/60s clock regardless of how often
+    // rAF fires, so those old constants keep their intended meaning. Any time
+    // already spent past the fixed step is carried in _stepAccum; a slow frame
+    // catches up with a few extra steps, a fast one runs none. The catch-up is
+    // capped (maxCatchUpSteps) so a long stall - a backgrounded tab, a GC
+    // pause - cannot spiral into hundreds of steps and lock the page.
+    const FIXED_DT = 1 / 60;
+    const maxCatchUpSteps = 5;
+    if (!Number.isFinite(this._stepAccum)) this._stepAccum = 0;
+    // Only the guard band is needed here; rdt is already clamped to 1s, and the
+    // 0.1s per-frame ceiling keeps a hiccup from being replayed as a lurch.
+    this._stepAccum += Math.min(0.1, rdt);
+
     const workStart = performance.now();
-    this.update(dt);
+    let steps = 0;
+    while (this._stepAccum >= FIXED_DT && steps < maxCatchUpSteps) {
+      this.update(FIXED_DT);
+      this._stepAccum -= FIXED_DT;
+      steps += 1;
+    }
+    // Dropped time (more than maxCatchUpSteps worth) is discarded rather than
+    // queued, so the game slows under extreme load instead of teleporting.
+    if (this._stepAccum > FIXED_DT * maxCatchUpSteps) this._stepAccum = 0;
+
+    // Nothing to simulate this frame (very high refresh rate, e.g. 240Hz):
+    // still paint, and still feed the quality/FPS controller the real interval.
     this.render();
     const work = (performance.now() - workStart) / 1000;
 

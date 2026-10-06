@@ -792,23 +792,48 @@
            machine, two tabs of this browser join through BroadcastChannel. -->
       <section id="title-multiplayer-panel" class="title-mp" aria-labelledby="mp-heading" hidden>
         <h2 id="mp-heading">Multiplayer</h2>
-        <p class="title-mp-hint">Share a world with up to 3 friends. The host owns the monsters, the bosses and the save.</p>
+        <p class="title-mp-hint">Share one world with up to 3 friends. Only the host is in charge of the monsters, bosses and the save.</p>
+
+        <!-- Step 1: everyone fills this in the same way. -->
+        <ol class="title-mp-steps">
+          <li><strong>Everyone</strong> types the <strong>same Room code</strong> (any 4 letters, e.g. <code>COOP</code>) and their own name.</li>
+          <li><strong>One player</strong> presses <strong>HOST GAME</strong> and reads the room code out loud.</li>
+          <li><strong>Everyone else</strong> presses <strong>JOIN GAME</strong> with that exact code.</li>
+        </ol>
+
         <label class="title-mp-field" for="mp-name">Your name
           <input id="mp-name" type="text" maxlength="14" placeholder="Steve" autocomplete="off" spellcheck="false">
         </label>
-        <label class="title-mp-field" for="mp-room">Room code
+        <label class="title-mp-field" for="mp-room">Room code (must match on every player's screen)
           <input id="mp-room" type="text" maxlength="4" placeholder="COOP" autocomplete="off" spellcheck="false">
         </label>
-        <label class="title-mp-field" for="mp-server">Server (optional)
-          <input id="mp-server" type="text" placeholder="ws://192.168.1.5:8000/mp" autocomplete="off" spellcheck="false">
+
+        <!-- Two clear ways to play, so nobody has to guess what the server
+             field is for. Local = one computer; Online = across the internet. -->
+        <details class="title-mp-help">
+          <summary>How do I connect with my friends? (tap to read)</summary>
+          <div class="title-mp-help-body">
+            <p><strong>Same computer (or same Wi-Fi, same browser):</strong> leave <em>Server</em> empty.
+              Open this page a second time in another tab or window, then host in one and join in the other.</p>
+            <p><strong>Different computers over the internet:</strong> the host runs the game server
+              (the one you were given, <code>node server.js</code>), then <em>everyone</em> types its address in
+              <em>Server</em> — e.g. <code>ws://your-host-address:8000/mp</code>. Ask the host for the exact
+              address and paste the same one on every screen, then host/join as above.</p>
+            <p><strong>Playable on the hosted web version?</strong> Only the same-computer option works there,
+              because no game server is running. For players in other houses you must use the
+              <code>node server.js</code> address above.</p>
+          </div>
+        </details>
+
+        <label class="title-mp-field" for="mp-server">Server address (leave empty to play on this computer)
+          <input id="mp-server" type="text" placeholder="ws://your-host-address:8000/mp" autocomplete="off" spellcheck="false">
         </label>
-        <p class="title-mp-note">Leave the server empty to play in another tab of this browser.
-          To play over the network, run <code>node server.js</code> on the host machine and enter its address.</p>
         <div class="title-mp-actions">
           <button id="mp-host-btn" class="title-button">HOST GAME</button>
           <button id="mp-join-btn" class="title-button">JOIN GAME</button>
         </div>
         <p id="mp-status" class="title-mp-status" role="status" aria-live="polite"></p>
+        <p class="title-mp-note">In a game, press <code>T</code> (or Enter) to chat. The host entered the world already; joiners follow the host in.</p>
         <button id="title-multiplayer-back" class="title-button">Back</button>
       </section>
 
@@ -829,6 +854,8 @@
           <li><span class="credit-name">Mikey (Radit)</span><span class="credit-role">Creator</span></li>
           <li><span class="credit-name">Cline</span><span class="credit-role">Code AI</span></li>
           <li><span class="credit-name">Codegpt</span><span class="credit-role">Code AI</span></li>
+          <li><span class="credit-name">Ghaniyy</span><span class="credit-role">Tester</span></li>
+          <li><span class="credit-name">Rasheed</span><span class="credit-role">Tester</span></li>
         </ul>
         <button id="title-credits-back" class="title-button">Back</button>
       </section>

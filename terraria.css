@@ -2874,13 +2874,21 @@ body.ui-large.controls-touch .bottom-panel { bottom: 84px !important; }
 .title-mp {
   position: absolute;
   z-index: 2;
-  top: 34%;
+  /* The panel gained instructions, so it can be taller than the old three
+     fields. It must still clear the logo (which sits at 5% and is ~104px tall),
+     so it starts below it and scrolls inside the viewport rather than running
+     its Back button off the bottom on a laptop or a phone. */
+  top: 25vh;
+  bottom: 3vh;
+  padding-right: 4px;
   left: 50%;
   display: flex;
   width: min(470px, 94vw);
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transform: translateX(-50%);
   animation: menu-arrive 650ms 120ms ease-out both;
 }
@@ -2898,6 +2906,43 @@ body.ui-large.controls-touch .bottom-panel { bottom: 84px !important; }
   font: 18px/1.3 'VT323', monospace;
   text-align: center;
 }
+/* Numbered connection steps. The panel gained real instructions so a group of
+   players can follow them in order; the list is plain and quiet on purpose so
+   it reads as help, not as three more buttons. */
+.title-mp-steps {
+  margin: 0;
+  padding: 8px 10px 8px 28px;
+  border: 1px solid rgba(255, 209, 102, .3);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, .35);
+  color: rgba(240, 255, 238, .9);
+  font: 16px/1.35 'VT323', monospace;
+}
+.title-mp-steps li { margin: 2px 0; }
+.title-mp-steps code { color: #ffd76e; }
+/* The "how do I connect" drawer. Open by default so it is seen rather than
+   hunted for, but collapsible to keep the panel short on a small screen. */
+.title-mp-help {
+  border: 1px solid rgba(255, 209, 102, .3);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, .35);
+  color: rgba(240, 255, 238, .86);
+  font: 15px/1.35 'VT323', monospace;
+}
+.title-mp-help > summary {
+  padding: 6px 10px;
+  color: #ffd76e;
+  cursor: pointer;
+  list-style: none;
+}
+.title-mp-help > summary::-webkit-details-marker { display: none; }
+.title-mp-help > summary::before { content: '❔ '; }
+.title-mp-help[open] > summary { border-bottom: 1px solid rgba(255, 209, 102, .25); }
+.title-mp-help-body { padding: 8px 10px; }
+.title-mp-help-body p { margin: 0 0 7px; }
+.title-mp-help-body p:last-child { margin-bottom: 0; }
+.title-mp-help-body code { color: #ffd76e; }
+.title-mp-help-body em { color: #fff1a0; font-style: normal; }
 .title-mp-field {
   display: flex;
   flex-direction: column;
@@ -3013,7 +3058,7 @@ body.ui-large.controls-touch .bottom-panel { bottom: 84px !important; }
 }
 .mp-chat-input.hidden { display: none; }
 @media (max-width: 620px) {
-  .title-mp { top: 22%; gap: 5px; }
+  .title-mp { top: 27vh; bottom: 3vh; gap: 5px; }
   .title-mp h2 { font-size: 36px; }
   .title-mp-actions { flex-direction: column; gap: 6px; }
   .mp-chat-log, .mp-chat-input { bottom: 132px; max-width: 88vw; width: 88vw; }

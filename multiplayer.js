@@ -124,18 +124,34 @@ class BCTransport {
  * a client cannot impersonate anyone; clients only ever accept `from: host`.
  */
 class WSTransport {
-  constructor(url, selfId, onMessage, onStatus) {
+  constructor(url, selfId, onMessage, onStatus, options = {}) {
     this.kind = 'ws';
     this.selfId = selfId;
     this.closed = false;
     this.onMessage = onMessage;
+    // The relay only routes to a connection that has first announced its room
+    // and role. Forgetting this handshake left every socket anonymous and the
+    // server dropped every frame on the floor (see onHello/onRelay in server.js).
+    this.room = String(options.room || '').toUpperCase().slice(0, 4);
+    this.role = options.role || 'client';
+    this.name = options.name || 'Player';
     try {
       this.ws = new WebSocket(url.replace(/^http/, 'ws'));
     } catch (_) {
       onStatus('error', 'bad-url');
       return;
     }
-    this.ws.onopen = () => { if (!this.closed) onStatus('open'); };
+    this.ws.onopen = () => {
+      if (this.closed) return;
+      // Introduce ourselves to the relay BEFORE anything else is sent, or the
+      // room is not known and every following message is unrouteable.
+      try {
+        this.ws.send(JSON.stringify({
+          t: 'hello', room: this.room, role: this.role, name: this.name
+        }));
+      } catch (_) { /* socket died in the same tick */ }
+      onStatus('open');
+    };
     this.ws.onmessage = (event) => {
       if (this.closed) return;
       let d;
@@ -238,7 +254,9 @@ window.Multiplayer = class Multiplayer {
     this.transport = transportFactory
       ? transportFactory('host', onMessage, onStatus)
       : this.serverUrl
-        ? new WSTransport(this.serverUrl, 'host', onMessage, onStatus)
+        ? new WSTransport(this.serverUrl, 'host', onMessage, onStatus, {
+            room: this.room, role: 'host', name: this.playerName
+          })
         : new BCTransport(this.room, 'host', onMessage, onStatus);
     this.markExistingDrops();
     Multiplayer.worldOwners.set(this.game.world, this);
@@ -262,7 +280,9 @@ window.Multiplayer = class Multiplayer {
     this.transport = transportFactory
       ? transportFactory(this.selfId, onMessage, onStatus)
       : this.serverUrl
-        ? new WSTransport(this.serverUrl, this.selfId, onMessage, onStatus)
+        ? new WSTransport(this.serverUrl, this.selfId, onMessage, onStatus, {
+            room: this.room, role: 'client', name: this.playerName
+          })
         : new BCTransport(this.room, this.selfId, onMessage, onStatus);
     this.markExistingDrops();
     Multiplayer.worldOwners.set(this.game.world, this);
