@@ -5,7 +5,13 @@ const HOUSE_WALL = 23;
 // can travel a whole chunk before the cached window has to be repainted.
 const TILE_CACHE_CHUNK = 8;
 // Half-width, in tiles, of the levelled building plot in the plains.
-const PLAINS_PLOT_HALF = 28;
+//
+// This used to be 28 (a 57-tile pancake of dead-level ground around spawn),
+// which read as an artificial runway rather than a place in the world. The pad
+// is now just big enough for the starter house and a little working room; the
+// plains beyond it roll gently (see biomeRelief / biomeReliefScale) so the
+// spawn sits in a living landscape instead of on a table top.
+const PLAINS_PLOT_HALF = 14;
 
 // Tile types enum
 const TILES = {
@@ -295,7 +301,13 @@ class World {
     switch (biome) {
       case 'snow': return Math.sin(x * 0.11 + ph.d) * 4 + Math.sin(x * 0.31) * 1.5;
       case 'forest': return Math.sin(x * 0.06 + ph.a) * 6 + Math.sin(x * 0.21) * 1.5;
-      case 'plains': return Math.sin(x * 0.022 + 0.7 + ph.b) * 1.8 + Math.sin(x * 0.08) * 0.5;
+      // Rolling meadow. The whole landform is carried by ONE very long, lazy
+      // swell (0.018 tiles^-1, ~350 tiles per wave): that gives the plains real
+      // shape over a wide area while contributing almost nothing to TILE-TO-TILE
+      // roughness, which is what keeps plains the calmest band. A tiny slow
+      // second wave adds variety without making the surface jagged. The old
+      // pancake was 1.8/0.5 with a dead-flat scale.
+      case 'plains': return Math.sin(x * 0.018 + 0.7 + ph.b) * 5.0 + Math.sin(x * 0.055) * 0.9;
       case 'savanna': return Math.sin(x * 0.045 + 1.3 + ph.c) * 4 + Math.sin(x * 0.13) * 1.2;
       case 'swamp': return Math.sin(x * 0.05 + 2.6 + ph.d) * 3 - 2 + Math.sin(x * 0.4) * 0.8;
       default: return 0;
@@ -307,7 +319,12 @@ class World {
   // band reads as open level ground instead of downs. Blended across borders by
   // generateTerrain, so a plains edge still melts into the neighbouring hills.
   biomeReliefScale(biome) {
-    return biome === 'plains' ? 0.2 : 1;
+    // Plains damp the high-frequency fractal base hard (the base wave moves ~1
+    // tile per column at full strength, which is what makes a band read as
+    // "bumpy"). The open, rolling shape of the plains comes from the very
+    // long biomeRelief swell instead, so the band keeps real landform while
+    // staying the calmest surface in the world to walk and build on.
+    return biome === 'plains' ? 0.26 : 1;
   }
 
   generateTerrain() {
@@ -347,10 +364,14 @@ class World {
           this.tiles[idx] = surfaceTile;
           this.walls[idx] = TILES.DIRT;
         } else if (y < surfaceY + 6) {
-          // Sprinkle biome stone accents through the dirt band.
+          // Dirt band. Shallow ore lives here too: the old world had a solid
+          // six rows of barren soil before the first stone, so a player who dug
+          // a few tiles out of their house found nothing but dirt. A sparse
+          // scatter of near-surface copper/iron makes the first dig pay off.
           if (biome === 'forest' && this.rand() < 0.06) this.tiles[idx] = TILES.MOSSY_STONE;
           else if (biome === 'snow' && this.rand() < 0.09) this.tiles[idx] = TILES.FROSTBRICK;
           else if (biome === 'savanna' && this.rand() < 0.10) this.tiles[idx] = TILES.SANDSTONE;
+          else if (this.rand() < 0.045) this.tiles[idx] = TILES.IRON_ORE;
           else this.tiles[idx] = dirtTile;
           this.walls[idx] = biome === 'swamp' ? TILES.MUD : biome === 'savanna' ? TILES.SAND : TILES.DIRT;
         } else {
@@ -361,10 +382,14 @@ class World {
             this.tiles[idx] = TILES.AIR;
           } else {
             // Ore generation (savanna hides extra gold, snow hides crystal pockets)
+            // Iron is richer in the top 16 rows of stone so the shallow layer a
+            // new player actually reaches is worth digging, then falls back to
+            // the old rate deeper down where gold/crystal take over.
+            const shallow = y < surfaceY + 22;
             const oreRoll = this.rand();
-            if (oreRoll < 0.035) {
+            if (oreRoll < (shallow ? 0.075 : 0.035)) {
               this.tiles[idx] = TILES.IRON_ORE;
-            } else if (oreRoll < 0.05 && y > surfaceY + 15) {
+            } else if (oreRoll < 0.05 && y > surfaceY + 12) {
               this.tiles[idx] = TILES.GOLD_ORE;
             } else if (biome === 'snow' && oreRoll < 0.058 && y > surfaceY + 12) {
               this.tiles[idx] = TILES.CRYSTAL;
@@ -399,6 +424,11 @@ class World {
     // been dressed and *before* anything grows or is built on it, so nothing has
     // to be validated away afterwards: no flowers to uproot, no trees to fell.
     this.carvePlainsBuildPlot();
+
+    // Shallow ore deposits and surface outcrops. Runs after the plot is levelled
+    // so a vein is never half-deleted by the flattening pass; the plot itself is
+    // explicitly skipped so the starter camp stays clear.
+    this.generateSurfaceOres();
 
     // Grow lush Forest Trees!
     for (let x = 10; x < this.width - 10; x += Math.floor(this.rand() * 5 + 4)) {
@@ -459,6 +489,84 @@ class World {
     this.generateLandmarks();
     this.generateSurfaceStructures();
     this.generateUndergroundFeatures();
+  }
+
+  // ---- Shallow ores the player can actually see ----------------------------
+  //
+  // A brand-new world used to hide every interesting tile 15+ rows down behind
+  // a solid band of dirt: you spawned, dug a few tiles, and found nothing. This
+  // lays down two things that make the very start read as a mineral world:
+  //
+  //   * SURFACE OUTCROPS - a small cluster of ore replacing the grass/dirt a
+  //     few tiles below the sky, so it is visible (and reachable) almost at once.
+  //   * SHALLOW VEINS - short diagonal veins seeded 6-20 tiles under the surface
+  //     so a modest dig hits a real pocket of ore rather than lone pixels.
+  //
+  // The spawn build plot is skipped entirely so the starter camp never has its
+  // ground replaced under it.
+  generateSurfaceOres() {
+    const centre = Math.floor(this.width / 2);
+
+    const pickOre = (biome) => {
+      const r = this.rand();
+      if (biome === 'snow') return r < 0.35 ? TILES.CRYSTAL : r < 0.75 ? TILES.IRON_ORE : TILES.STONE;
+      if (biome === 'savanna') return r < 0.4 ? TILES.GOLD_ORE : TILES.IRON_ORE;
+      if (biome === 'swamp') return r < 0.35 ? TILES.CRYSTAL : TILES.IRON_ORE;
+      return r < 0.8 ? TILES.IRON_ORE : TILES.GOLD_ORE;
+    };
+
+    // Whole ore veins that may touch the surface and rust through the hillside.
+    const veinCount = 26 + Math.floor(this.rand() * 10);
+    for (let i = 0; i < veinCount; i++) {
+      const x = 8 + Math.floor(this.rand() * (this.width - 16));
+      if (this.isInPlainsBuildPlot(x, 2)) continue;
+      const surf = this.surfaceHeights[x];
+      const ore = pickOre(this.getBiomeAtX(x));
+      // 3-18 tiles down: the band a new player will actually reach first.
+      const y = surf + 3 + Math.floor(this.rand() * 16);
+      const size = 2 + Math.floor(this.rand() * 4);
+      for (let s = 0; s < size; s++) {
+        const vx = x + Math.floor((this.rand() - 0.5) * 4);
+        const vy = y + Math.floor((this.rand() - 0.5) * 4);
+        if (vx < 1 || vx >= this.width - 1 || vy < 1 || vy >= this.height - 1) continue;
+        // Only replace natural soil or stone; never carve into open air, a
+        // structure, or another ore type. The surface caps (grass/snow/sand/
+        // mud) are included so a vein can surface on a hillside as an outcrop -
+        // but only when there is sky directly above, so ore never appears in a
+        // sealed pocket where it would be invisible.
+        const t = this.getTile(vx, vy);
+        const isSoil = t === TILES.DIRT || t === TILES.STONE || t === TILES.MOSSY_STONE;
+        const isCap = t === TILES.GRASS || t === TILES.SNOW || t === TILES.SAND || t === TILES.MUD;
+        if (isSoil) {
+          this.setTile(vx, vy, ore);
+        } else if (isCap && this.getTile(vx, vy - 1) === TILES.AIR) {
+          this.setTile(vx, vy, ore);
+        }
+      }
+    }
+
+    // A few guaranteed outcrops near spawn, so the first thing a new player sees
+    // when they step outside is ore in the hillside rather than plain turf.
+    for (let k = 0; k < 6; k++) {
+      const off = (k % 2 ? 1 : -1) * (18 + k * 7);
+      const x = centre + off;
+      if (x < 6 || x >= this.width - 6 || this.isInPlainsBuildPlot(x, 1)) continue;
+      const surf = this.surfaceHeights[x];
+      const ore = pickOre(this.getBiomeAtX(x));
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = 0; dy <= 2; dy++) {
+          const tx = x + dx;
+          const ty = surf + dy;
+          if (tx < 1 || tx >= this.width - 1) continue;
+          // Leave the very top cap (grass/snow/sand) alone; replace the soil.
+          if (dy === 0) continue;
+          const t = this.getTile(tx, ty);
+          if (t === TILES.DIRT || t === TILES.STONE || t === TILES.SAND || t === TILES.MUD) {
+            this.setTile(tx, ty, ore);
+          }
+        }
+      }
+    }
   }
 
   // ---- The plains build plot -----------------------------------------------
@@ -1182,6 +1290,24 @@ class World {
     return this.timeOfDay >= 0.55 && this.timeOfDay <= 0.95;
   }
 
+  /**
+   * Smooth 0..1 daylight strength, for anything that must FADE rather than
+   * switch. isNight() is a hard threshold, and driving backdrop effects off it
+   * made them pop in on a single frame at dusk/dawn: god rays appeared at full
+   * strength the instant the clock crossed 0.95, which was a visible seam in an
+   * otherwise smooth sky. This ramps over the same dawn/dusk windows the sky
+   * palette already uses (0.02..0.14 and 0.44..0.58), so a fade here lines up
+   * exactly with the colour change behind it.
+   */
+  daylightFactor() {
+    const t = this.timeOfDay;
+    if (t <= 0.02 || t >= 0.98) return 0;
+    if (t < 0.14) return (t - 0.02) / 0.12;      // dawn
+    if (t <= 0.44) return 1;                      // full day
+    if (t < 0.58) return 1 - (t - 0.44) / 0.14;   // dusk
+    return 0;                                     // night
+  }
+
   isMidnight() {
     return this.timeOfDay >= 0.72 && this.timeOfDay <= 0.78;
   }
@@ -1320,35 +1446,90 @@ class World {
   // stars and biome flourishes. All of it is deterministic, so it is baked into
   // an offscreen canvas and blitted as ONE drawImage.
   //
-  // The cache is keyed on a coarse bucket of (time of day, camera x, camera y,
-  // biome): stars only fade on a smooth curve and parallax moves in large
-  // steps, so quantising slightly is invisible while letting a row of frames
-  // reuse a single render.
+  // The cache is keyed on a bucket of (time of day, camera x, camera y, biome).
+  //
+  // SMOOTHNESS: a cached layer that only repaints every bucket would visibly
+  // STEP - the sky used to jump from one colour to the next every ~6.5s, and
+  // crossing a biome border swapped the whole backdrop in a single frame. So
+  // the backdrop is now painted into TWO canvases and CROSS-FADED: when the key
+  // changes, the old layer is kept and the new one painted beside it, and the
+  // two are blended over BG_FADE_MS. Day->night and biome->biome therefore read
+  // as one continuous change no matter how coarse the buckets are, and the cost
+  // is a single extra full-screen drawImage only while a fade is in progress.
   renderForestBackground(ctx, camera) {
     const w = camera.viewportWidth;
     const h = camera.viewportHeight;
     const biome = this.getBiomeAtX((camera.x + w / 2) / TILE_SIZE);
+    // The time bucket is deliberately fine. It used to be 220 (~6.5s), which
+    // made drifting clouds and the star fade visibly JUMP in 6.5-second steps.
+    // At 2600 the backdrop repaints roughly twice a second, which reads as
+    // continuous motion, and the cross-fade above hides the seam between
+    // repaints entirely.
     const key = [
-      Math.floor(this.timeOfDay * 220),   // ~6.5s of real time per bucket
-      Math.floor(camera.x / 4),           // parallax shifts a quarter-pixel/frame
-      Math.floor(camera.y / 4),
+      Math.floor(this.timeOfDay * 2600),
+      Math.floor(camera.x / 3),           // parallax shifts a third of a pixel
+      Math.floor(camera.y / 3),
       biome
     ].join('|');
 
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    const BG_FADE_MS = 900;
+
     if (!this._bgCache || this._bgCache.key !== key ||
         this._bgCache.w !== w || this._bgCache.h !== h) {
-      // The backdrop is painted into its own persistent canvas, not into the
-      // caller's buffer, so the cache owns the layer outright.
-      if (!this._bgCanvas) {
-        this._bgCanvas = document.createElement('canvas');
+      // Paint the NEW state into the spare canvas first, so the layer we are
+      // already showing stays intact behind it for the cross-fade.
+      if (!this._bgCanvas) this._bgCanvas = document.createElement('canvas');
+      if (!this._bgPrev) this._bgPrev = document.createElement('canvas');
+      // The previous canvas takes over whatever is on screen right now...
+      const hasOld = !!this._bgCache && !!this._bgCache.key && this._bgCanvas.width > 0;
+      if (hasOld) {
+        this._copyCanvas(this._bgCanvas, this._bgPrev, w, h);
+        this._bgFadeStart = now;
       }
-      // Only mark the cache valid if the layer actually painted; otherwise the
-      // next frame must retry rather than blit an empty canvas forever.
+      // ...and the live canvas is repainted with the new time/biome.
       if (this._renderBackgroundLayer(this._bgCanvas, w, h, camera, biome)) {
         this._bgCache = { key, w, h };
+        if (!hasOld) this._bgFadeStart = 0;
       }
     }
-    if (this._bgCanvas) ctx.drawImage(this._bgCanvas, 0, 0);
+
+    const fading = this._bgFadeStart && (now - this._bgFadeStart) < BG_FADE_MS;
+    // Guard every draw against a zero-sized canvas: drawImage() THROWS on a
+    // source with width or height 0, and a fade can begin in the same frame the
+    // spare canvas is created (resize, first paint after a tile edit). A throw
+    // here would take the whole render down, so the empty case just paints
+    // whatever is actually ready.
+    const ready = (cv) => !!cv && cv.width > 0 && cv.height > 0;
+    if (fading && ready(this._bgCanvas) && ready(this._bgPrev)) {
+      const t = Math.max(0, Math.min(1, (now - this._bgFadeStart) / BG_FADE_MS));
+      // Ease so the change settles gently rather than snapping at the ends.
+      const e = t * t * (3 - 2 * t);
+      ctx.globalAlpha = e;
+      ctx.drawImage(this._bgCanvas, 0, 0);
+      ctx.globalAlpha = 1 - e;
+      ctx.drawImage(this._bgPrev, 0, 0);
+      ctx.globalAlpha = 1;
+    } else {
+      if (this._bgFadeStart) this._bgFadeStart = 0;
+      if (ready(this._bgCanvas)) ctx.drawImage(this._bgCanvas, 0, 0);
+    }
+  }
+
+  /** Copy one canvas onto another at a given size (used for the bg cross-fade). */
+  _copyCanvas(src, dst, w, h) {
+    if (!src || !dst || src.width <= 0 || src.height <= 0 || w <= 0 || h <= 0) return;
+    if (dst.width !== w || dst.height !== h) {
+      dst.width = w;
+      dst.height = h;
+    }
+    const dctx = dst.getContext && dst.getContext('2d');
+    if (!dctx) return;
+    dctx.setTransform(1, 0, 0, 1, 0, 0);
+    dctx.globalAlpha = 1;
+    dctx.clearRect(0, 0, w, h);
+    dctx.drawImage(src, 0, 0, src.width, src.height, 0, 0, w, h);
   }
 
   /**
@@ -1376,8 +1557,15 @@ class World {
 
     const sun = this._paintSky(ctx, camera, biome, w, h, t, night);
 
+    // Fade strength for every daylight-only trimming. Driving these off the
+    // hard isNight() flag made them appear/disappear on one frame at the
+    // dawn/dusk boundary; a smooth factor blends them in with the sky colour.
+    const daylight = this.daylightFactor();
+
     this.renderBiomeDecor(ctx, camera, biome, w, h, t, night);
-    if (biome === 'forest' && !night) this.renderGodRays(ctx, camera, w, h, sun.sunX, sun.sunY);
+    if (biome === 'forest' && daylight > 0.02) {
+      this.renderGodRays(ctx, camera, w, h, sun.sunX, sun.sunY, daylight);
+    }
     if (biome === 'forest') this.renderFallingLeaves(ctx, camera, w, h, t);
     if (biome === 'savanna') this.renderSavannaLife(ctx, camera, w, h, t, night);
     if (biome === 'snow') this.renderSnowfall(ctx, camera, w, h, t);
@@ -1387,9 +1575,12 @@ class World {
     if (biome === 'swamp') {
       ctx.fillStyle = 'rgba(20, 83, 45, 0.16)';
       ctx.fillRect(0, h * 0.52, w, h * 0.48);
-      if (night) {
+      // Fireflies fade IN with darkness rather than switching on, so dusk in
+      // the swamp is a gradual arrival instead of a pop.
+      const fireflyAlpha = 1 - daylight;
+      if (fireflyAlpha > 0.02) {
         ctx.save();
-        ctx.fillStyle = 'rgba(254, 240, 138, 0.9)';
+        ctx.fillStyle = `rgba(254, 240, 138, ${(0.9 * fireflyAlpha).toFixed(3)})`;
         for (let f = 0; f < 14; f++) {
           const fx = ((f * 211 + t * (12 + f * 2)) % (w + 40)) - 20 - (camera.x * 0.02) % 40;
           const fy = h * 0.55 + ((f * 67) % Math.max(1, h * 0.3)) + Math.sin(t * 1.7 + f) * 8;
@@ -1398,10 +1589,11 @@ class World {
         ctx.restore();
       }
     }
-    // Diamond-dust sparkles in snow daylight.
-    if (biome === 'snow' && !night) {
+    // Diamond-dust sparkles in snow daylight — faded with the sun so they thin
+    // out through dusk instead of vanishing at one frame.
+    if (biome === 'snow' && daylight > 0.02) {
       ctx.save();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.fillStyle = `rgba(255, 255, 255, ${(0.55 * daylight).toFixed(3)})`;
       for (let f = 0; f < 18; f++) {
         const fx = ((f * 173 + t * 9) % w);
         const fy = h * 0.15 + ((f * 41) % Math.max(1, h * 0.4));
@@ -1427,21 +1619,60 @@ class World {
     };
   }
 
+  /**
+   * Palette for the column at tileX, blended across a biome border.
+   *
+   * The backdrop used to switch palettes on the single tile where getBiomeAtX()
+   * changes, which swapped the whole range's colour in one frame as you walked
+   * across. This mixes the two biome palettes over the same blend window the
+   * TERRAIN already uses (biomeMix), so the far scenery changes colour gradually
+   * in step with the ground under the player's feet.
+   */
+  _blendedBiomePalette(tileX) {
+    const mix = this.biomeMix(tileX);
+    const a = this._biomePalette(mix.a);
+    if (!mix.b || !mix.t) return a;
+    const b = this._biomePalette(mix.b);
+    const t = Math.max(0, Math.min(1, mix.t));
+    const blend = (ca, cb) => (ca == null || cb == null) ? (t < 0.5 ? ca : cb) : this.mixHex(ca, cb, t);
+    return {
+      ridge: blend(a.ridge, b.ridge),
+      ridgeSnow: blend(a.ridgeSnow, b.ridgeSnow),
+      far: blend(a.far, b.far),
+      near: blend(a.near, b.near),
+      // Haze is an rgba() string; mixHex handles that form too.
+      haze: blend(a.haze, b.haze)
+    };
+  }
+
   /** The sky itself: gradient, haze, celestial bodies, clouds, stars, ridges. */
   _paintSky(ctx, camera, biome, w, h, t, night) {
     const sky = this.getSkyPalette();
-    const palette = this._biomePalette(biome);
+    // COLOURS come from the blended palette so the far scenery cross-fades
+    // across a biome border; the raw `biome` name is still used for the shape
+    // decisions (which tree species, which ground layer) further down.
+    const palette = this._blendedBiomePalette((camera.x + w / 2) / TILE_SIZE);
     // 1. Sky gradient. Three genuinely different colours — a dark zenith, a
     // mid band, and a glow sitting on the horizon — instead of one flat blue.
     // The biome tints the horizon only, so biomes differ without fighting the
-    // time of day.
-    const horizonBoost = biome === 'savanna' ? [1.06, 0.98, 0.86]
-      : biome === 'snow' ? [0.94, 0.99, 1.06]
-      : biome === 'swamp' ? [0.9, 1.0, 0.96]
+    // time of day. The tint is weighted by the same biome blend as the palette,
+    // so crossing a border shifts it gradually rather than snapping.
+    const boostFor = (b) => b === 'savanna' ? [1.06, 0.98, 0.86]
+      : b === 'snow' ? [0.94, 0.99, 1.06]
+      : b === 'swamp' ? [0.9, 1.0, 0.96]
       // Plains are the one biome with nothing tall in the way, so the horizon
       // gets a touch more sky behind it.
-      : biome === 'plains' ? [1.02, 1.02, 1.0]
+      : b === 'plains' ? [1.02, 1.02, 1.0]
       : [1, 1, 1];
+    const bMix = this.biomeMix((camera.x + w / 2) / TILE_SIZE);
+    const boostA = boostFor(bMix.a);
+    const boostB = bMix.b ? boostFor(bMix.b) : boostA;
+    const bt = bMix.b ? Math.max(0, Math.min(1, bMix.t)) : 0;
+    const horizonBoost = [
+      boostA[0] + (boostB[0] - boostA[0]) * bt,
+      boostA[1] + (boostB[1] - boostA[1]) * bt,
+      boostA[2] + (boostB[2] - boostA[2]) * bt
+    ];
     const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
     const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
     skyGrad.addColorStop(0, `rgb(${sky.zenith.join(',')})`);
@@ -1549,10 +1780,38 @@ class World {
       ctx.restore();
     }
 
-    // Far ridge (darker) + near ridge (palette) = instant depth.
-    // Ridges sit at the horizon so the sky reads as receding, not as a backdrop.
-    this.renderMountainLayer(ctx, camera, 0.05, this.shadeHex(palette.ridge, 0.55), h * 0.48, 110, null);
-    this.renderMountainLayer(ctx, camera, 0.08, palette.ridge, h * 0.55, 90, palette.ridgeSnow);
+    // A warm bloom sitting on the horizon, strongest at dawn/dusk. This is the
+    // single cheapest thing that makes a sky feel like air rather than paint:
+    // distant land should glow where it meets the light.
+    ctx.save();
+    const glowStrength = Math.max(0, 1 - Math.abs(this.timeOfDay - 0.5) / 0.45);
+    if (glowStrength > 0.02) {
+      const glowGrad = ctx.createLinearGradient(0, h * 0.32, 0, h * 0.78);
+      glowGrad.addColorStop(0, 'rgba(255,190,120,0)');
+      glowGrad.addColorStop(0.55, `rgba(255,190,120,${(0.30 * glowStrength).toFixed(3)})`);
+      glowGrad.addColorStop(1, 'rgba(255,170,90,0)');
+      ctx.fillStyle = glowGrad;
+      ctx.fillRect(0, h * 0.32, w, h * 0.46);
+    }
+    ctx.restore();
+
+    // THREE ridges receding into haze. Each is drawn progressively lower and
+    // slower-parallaxed than the one before, so the eye reads a valley of
+    // overlapping ranges instead of one cut-out band.
+    //
+    // AERIAL PERSPECTIVE: distant land washes toward the sky, it does not turn
+    // black. But it also must not wash all the way out - mixing the far ridge
+    // 62% toward the sky made the whole range nearly invisible, so the mixes
+    // are tuned to keep each ridge READABLE as a mountain while still clearly
+    // further away than the one in front of it. The near ridge is barely hazed
+    // at all, which is what gives the stack its depth.
+    const skyHaze = `rgb(${sky.horizon.join(',')})`;
+    const ridgeFar = this.mixHex(this.shadeHex(palette.ridge, 0.9), skyHaze, 0.46);
+    const ridgeMid = this.mixHex(this.shadeHex(palette.ridge, 0.95), skyHaze, 0.26);
+    const ridgeNear = this.mixHex(palette.ridge, skyHaze, 0.08);
+    this.renderMountainLayer(ctx, camera, 0.035, ridgeFar, h * 0.44, 132, null);
+    this.renderMountainLayer(ctx, camera, 0.055, ridgeMid, h * 0.50, 112, null);
+    this.renderMountainLayer(ctx, camera, 0.08, ridgeNear, h * 0.57, 88, palette.ridgeSnow);
 
     if (biome === 'savanna') this.renderDuneLayer(ctx, camera, 0.14, '#b45309', h * 0.66);
     else if (biome === 'swamp') this.renderSwampWaterLayer(ctx, camera, 0.14, h * 0.68);
@@ -1662,10 +1921,14 @@ class World {
 
 
   // Slanted god-ray shafts from the sun (forest day). Chunky quads, additive feel.
-  renderGodRays(ctx, camera, w, h, sunX, sunY) {
+  // `strength` (0..1) fades the whole layer, so the shafts swell in with the
+  // sunrise and die back at dusk instead of snapping on.
+  renderGodRays(ctx, camera, w, h, sunX, sunY, strength = 1) {
+    const a = Math.max(0, Math.min(1, strength));
+    if (a <= 0.02) return;
     ctx.save();
     const dx = (w * 0.5 - sunX) * 0.002;
-    ctx.fillStyle = 'rgba(255, 250, 200, 0.06)';
+    ctx.fillStyle = `rgba(255, 250, 200, ${(0.06 * a).toFixed(3)})`;
     for (let i = 0; i < 4; i++) {
       const bx = ((i * 317 + camera.x * 0.1) % (w + 200)) - 100;
       ctx.beginPath();
@@ -1843,39 +2106,135 @@ class World {
     return `rgb(${r},${g},${b})`;
   }
 
+  /** Parse '#rrggbb' or 'rgb(r,g,b)' into [r,g,b]. */
+  parseColor(c) {
+    if (typeof c === 'string' && c[0] === '#') {
+      const n = parseInt(c.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(String(c));
+    if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+    return [128, 128, 128];
+  }
+
+  /**
+   * Blend colour `a` toward colour `b` by t (0 = a, 1 = b).
+   *
+   * Used for aerial perspective on the distant ridges: land recedes by washing
+   * toward the sky, not by getting darker, which is what makes a range read as
+   * genuinely far away instead of as a black cut-out.
+   */
+  mixHex(a, b, t) {
+    const ca = this.parseColor(a);
+    const cb = this.parseColor(b);
+    const k = Math.max(0, Math.min(1, t));
+    const r = Math.round(ca[0] + (cb[0] - ca[0]) * k);
+    const g = Math.round(ca[1] + (cb[1] - ca[1]) * k);
+    const bl = Math.round(ca[2] + (cb[2] - ca[2]) * k);
+    return `rgb(${r},${g},${bl})`;
+  }
+
+  /**
+   * One ridge of distant mountains.
+   *
+   * This used to be a single flat fill with two sine terms, which is exactly
+   * why the sky read as a child's drawing: a solid band of one colour with a
+   * wobbly top edge. It now paints a ridge with real form:
+   *
+   *   * a shadowed base and a sunward-lit face, split along the ridge line, so
+   *     each slope has a lit and a dark side the way a hill actually does;
+   *   * rock striations and a snow line on the higher peaks;
+   *   * an atmospheric haze wash over the whole layer, which is what makes it
+   *     read as FAR away rather than as a cut-out in front of the sky.
+   *
+   * All of it lands in the cached backdrop canvas, which is rebuilt only a few
+   * times a day, so the extra detail costs nothing per frame.
+   */
   renderMountainLayer(ctx, camera, speed, baseColor, baseY, amp, snowCap = null) {
     const offset = camera.x * speed;
     const w = camera.viewportWidth;
-    ctx.fillStyle = baseColor;
-    ctx.beginPath();
-    ctx.moveTo(0, camera.viewportHeight);
+    const h = camera.viewportHeight;
 
-    const step = 40;
+    // Sample the ridgeline once, then reuse it for every pass below.
+    const step = 26;
     const peaks = [];
-    for (let x = -40; x <= w + 40; x += step) {
+    for (let x = -step; x <= w + step; x += step) {
       const worldX = x + offset;
-      const my = baseY - Math.sin(worldX * 0.003) * amp - Math.cos(worldX * 0.008) * (amp * 0.5);
+      const my = baseY
+        - Math.sin(worldX * 0.003) * amp
+        - Math.cos(worldX * 0.008) * (amp * 0.5)
+        - Math.sin(worldX * 0.021) * (amp * 0.13);
       peaks.push([x, my]);
-      ctx.lineTo(x, my);
     }
-    ctx.lineTo(w, camera.viewportHeight);
-    ctx.closePath();
+    const ridgePath = () => {
+      ctx.beginPath();
+      ctx.moveTo(-step, h);
+      ctx.lineTo(-step, peaks[0][1]);
+      for (const [x, my] of peaks) ctx.lineTo(x, my);
+      ctx.lineTo(w + step, peaks[peaks.length - 1][1]);
+      ctx.lineTo(w + step, h);
+      ctx.closePath();
+    };
+
+    // 1. The whole silhouette in the SHADOW tone (the far side of every peak).
+    ctx.fillStyle = this.shadeHex(baseColor, 0.72);
+    ridgePath();
     ctx.fill();
-    // Snow caps on the highest ridges (snow biome) — crisp Terraria triangles.
+
+    // 2. The sun-facing side, lit: clip to the ridge and fill from each peak's
+    //    left slope inward. Sun is up and to the left for most of the day, so
+    //    the left faces catch it, which is what gives the range a direction.
+    ctx.save();
+    ridgePath();
+    ctx.clip();
+    ctx.fillStyle = baseColor;
+    for (let i = 1; i < peaks.length; i++) {
+      const [px, py] = peaks[i];
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      // Slope down-left to the neighbouring point, and fill the wedge.
+      ctx.lineTo(px - step * 1.15, peaks[i - 1][1] + amp * 0.1);
+      ctx.lineTo(px - step * 1.15, h);
+      ctx.lineTo(px, h);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Rock striations: a few darker seams following the slope, sparse enough to
+    // read as texture rather than as noise.
+    ctx.fillStyle = this.shadeHex(baseColor, 0.6);
+    ctx.globalAlpha = 0.5;
+    for (let i = 2; i < peaks.length; i += 3) {
+      const [px, py] = peaks[i];
+      ctx.beginPath();
+      ctx.moveTo(px, py + 10);
+      ctx.lineTo(px - step * 0.7, py + 34);
+      ctx.lineTo(px - step * 0.45, py + 34);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // 3. Snow cap + snow line on the tall peaks (snow biome, and tan on rock).
     if (snowCap) {
       ctx.fillStyle = snowCap;
-      for (const [x, my] of peaks) {
-        const prominence = baseY - my;
-        if (prominence > amp * 0.55) {
-          ctx.beginPath();
-          ctx.moveTo(x - 26, my + 22);
-          ctx.lineTo(x, my - 4);
-          ctx.lineTo(x + 26, my + 22);
-          ctx.closePath();
-          ctx.fill();
-        }
+      for (let i = 0; i < peaks.length; i++) {
+        const [px, py] = peaks[i];
+        const prominence = baseY - py;
+        if (prominence <= amp * 0.45) continue;
+        // Cap follows the peak, wider the taller it is.
+        const capW = 18 + (prominence - amp * 0.45) * 0.35;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + capW, py + capW * 0.85);
+        ctx.lineTo(px + capW * 0.45, py + capW * 0.7);
+        ctx.lineTo(px - capW * 0.4, py + capW * 0.75);
+        ctx.lineTo(px - capW, py + capW * 0.9);
+        ctx.closePath();
+        ctx.fill();
       }
     }
+    ctx.restore();
   }
 
   // Rolling savanna dunes between the mountains and the tree line.
@@ -1962,13 +2321,33 @@ class World {
         ctx.fillRect(screenX + 8, tipY + 44, 5, 22);
         ctx.fillRect(screenX + treeWidth - 13, tipY + 44, 5, 22);
       } else {
-        // Draw pine triangle
-        ctx.beginPath();
-        ctx.moveTo(screenX + treeWidth * 0.5, tipY);
-        ctx.lineTo(screenX + treeWidth, baseY + 60);
-        ctx.lineTo(screenX, baseY + 60);
-        ctx.closePath();
-        ctx.fill();
+        // A conifer built from three stacked, narrowing tiers with a lit edge,
+        // instead of one flat triangle. The tiers overlap so the silhouette
+        // has the notched profile a real pine reads as, and the lighter left
+        // edge gives it a sun side.
+        const cxT = screenX + treeWidth * 0.5;
+        const tiers = 3;
+        for (let tier = 0; tier < tiers; tier++) {
+          const k = tier / (tiers - 1);           // 0 = top, 1 = bottom
+          const ty = tipY + (baseY + 45 - tipY) * k * 0.85;
+          const halfW = treeWidth * (0.42 + k * 0.75);
+          const tierH = (baseY + 45 - tipY) * 0.42;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(cxT, ty - tierH);
+          ctx.lineTo(cxT + halfW, ty);
+          ctx.lineTo(cxT - halfW, ty);
+          ctx.closePath();
+          ctx.fill();
+          // Lit left flank of each tier.
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
+          ctx.beginPath();
+          ctx.moveTo(cxT, ty - tierH);
+          ctx.lineTo(cxT - halfW, ty);
+          ctx.lineTo(cxT - halfW * 0.55, ty);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
     }
   }
@@ -1992,10 +2371,28 @@ class World {
       ctx.fillStyle = biome === 'savanna' ? '#5b3413' : biome === 'swamp' ? '#2f2417' : biome === 'snow' ? '#4a3b2c' : '#3f2e1e';
       ctx.fillRect(screenX + spacing * 0.5 - 6, cy, 12, heightVar + 40);
 
-      // Lush crown
+      // Lush crown: overlapping lobes rather than one circle, so the canopy
+      // edge is broken up and reads as foliage. The lobes are placed from a
+      // stable per-tree hash so a tree keeps the same shape as it scrolls.
+      const cxC = screenX + spacing * 0.5;
       ctx.fillStyle = color;
+      const lobes = [
+        [0, 0, crownRadius],
+        [-crownRadius * 0.62, crownRadius * 0.28, crownRadius * 0.62],
+        [crownRadius * 0.6, crownRadius * 0.24, crownRadius * 0.58],
+        [-crownRadius * 0.28, -crownRadius * 0.5, crownRadius * 0.58],
+        [crownRadius * 0.32, -crownRadius * 0.46, crownRadius * 0.52]
+      ];
+      for (const [ox, oy, r] of lobes) {
+        ctx.beginPath();
+        ctx.arc(cxC + ox, cy + oy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Sun-side rim: a lighter arc up and to the left, the same direction the
+      // mountains are lit from.
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
       ctx.beginPath();
-      ctx.arc(screenX + spacing * 0.5, cy, crownRadius, 0, Math.PI * 2);
+      ctx.arc(cxC - crownRadius * 0.2, cy - crownRadius * 0.25, crownRadius * 0.72, Math.PI * 0.9, Math.PI * 1.9);
       ctx.fill();
       // Canopy light-pockets: snow glints, savanna sun-flecks, swamp glow-moss.
       if (biome === 'snow') {
@@ -2056,7 +2453,14 @@ class World {
     this._tileCacheDirty = false;
 
     const c = this._tileCache;
-    ctx.drawImage(c.canvas, minTileX * TILE_SIZE - camera.x, minTileY * TILE_SIZE - camera.y);
+    // Guarded: drawImage() THROWS when the source canvas has width or height 0,
+    // which happens whenever the viewport rounds out to no tiles at all (a
+    // render before the first resize(), or a transiently 0-height frame). The
+    // tile layer simply contributes nothing in that case instead of taking the
+    // whole frame down.
+    if (c && c.canvas && c.canvas.width > 0 && c.canvas.height > 0) {
+      ctx.drawImage(c.canvas, minTileX * TILE_SIZE - camera.x, minTileY * TILE_SIZE - camera.y);
+    }
 
     // Animated tiles drawn live on top (usually < 40 in view). Swept over the
     // viewport, not the cached window, so the slack chunk costs nothing here.

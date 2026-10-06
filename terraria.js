@@ -5628,17 +5628,22 @@ class Game {
     }
     if (this.boss && !this.boss.dead) {
       // A bomb is a wide blast, so it is allowed to catch the spine too — and
-      // whatever it catches pays that part's own price.
+      // whatever it catches pays that part's own price. The blast does NOT go
+      // through solid rock: the thrower must see the boss, same as melee.
       const struck = typeof this.boss.nearestHitTarget === 'function'
         ? this.boss.nearestHitTarget(centerX, centerY, 105)
         : (Math.hypot(this.boss.x + this.boss.width / 2 - centerX,
                       this.boss.y + this.boss.height / 2 - centerY) <= 105
             ? { x: this.boss.x + this.boss.width / 2, y: this.boss.y + this.boss.height / 2, head: true }
             : null);
-      if (struck) {
+      const seen = struck && this.bossLineOfSight(
+        this.player.x + this.player.width / 2,
+        this.player.y + this.player.height / 2,
+        struck.x, struck.y) ? struck : null;
+      if (seen) {
         this.boss.takeDamage(
           typeof this.boss.scaleDamageFor === 'function'
-            ? this.boss.scaleDamageFor(struck, 45) : 45,
+            ? this.boss.scaleDamageFor(seen, 45) : 45,
           this.sound, this.particles, true);
       }
     }
@@ -5653,7 +5658,7 @@ class Game {
     toast.className = 'toast';
     toast.textContent = text;
     cont.appendChild(toast);
-    setTimeout(() => toast.remove(), 2500);
+    setTimeout(() => { try { if (typeof toast.remove === 'function') toast.remove(); else if (cont.removeChild) cont.removeChild(toast); } catch (_) {} }, 2500);
   }
 
   showAnnouncement(text) {
@@ -7637,7 +7642,7 @@ this.player.dodgeTime = 0;
           }
         }
         // Hits boss
-        if (this.boss && !this.boss.dead) {
+        if (!p.dead && this.boss && !this.boss.dead) {
           const bMidX = this.boss.x + this.boss.width / 2;
           const bMidY = this.boss.y + this.boss.height / 2;
           // Same story as the melee path: an arrow that clearly crosses the
@@ -7649,6 +7654,15 @@ this.player.dodgeTime = 0;
             struck = this.boss.nearestHitTarget(p.x, p.y, 0);
           } else if (Math.hypot(p.x - bMidX, p.y - bMidY) < 36) {
             struck = { x: bMidX, y: bMidY, head: true };
+          }
+          // Cover works against arrows too: the shooter must see the boss.
+          // Without this an arrow exploding against the near face of a wall
+          // still splashed the boss standing on the far face, because the
+          // 36px centre test ignores what is between the two points.
+          if (struck) {
+            const sMidX = this.player.x + this.player.width / 2;
+            const sMidY = this.player.y + this.player.height / 2;
+            if (!this.bossLineOfSight(sMidX, sMidY, struck.x, struck.y)) struck = null;
           }
           if (struck) {
             p.dead = true;

@@ -159,6 +159,87 @@ const wallResult = setup({ wall: true });
 check('a swing through a solid wall does NOT damage the boss', wallResult.dealt === 0,
   'dealt=' + wallResult.dealt + ' at the same ' + Math.round(wallResult.info.dist) + 'px distance');
 
+// ---- projectiles must respect the same cover ----------------------------
+// An arrow that dies against the near face of a wall must not splash the boss
+// on the far face. Fire straight at the boss through the wall and require the
+// boss to walk away unhurt (the arrow itself dies on the rock either way).
+console.log('\n== with a solid wall between: arrows do not splash through ==');
+equipSword(sword);
+{
+  const px = 60, py = 20;
+  clearAir(px - 6, py - 6, px + 20, py + 6);
+  g.player.x = px * TILE_SIZE;
+  g.player.y = py * TILE_SIZE;
+  g.player.vx = 0; g.player.vy = 0;
+  g.player.hp = g.player.maxHp = 100000;
+  g.player.facing = 1;
+  const bx = px + 4;
+  const boss = new global.Monster(g.player.x + 9999, g.player.y, 'zombie');
+  boss.x = bx * TILE_SIZE;
+  boss.y = py * TILE_SIZE;
+  boss.hp = boss.maxHp = 100000;
+  g.boss = boss;
+  // Full-height solid wall between the shooter and the boss.
+  for (let y = py - 8; y <= py + 8; y++) g.world.setTile(px + 2, y, TILES.STONE);
+  const before = boss.hp;
+  // A fast arrow aimed dead at the boss's centre: several frames of travel so
+  // it genuinely meets the wall, then the game loop resolves the hit.
+  g.projectiles.length = 0;
+  const sMidX = g.player.x + g.player.width / 2;
+  const sMidY = g.player.y + g.player.height / 2;
+  const bMidX = boss.x + boss.width / 2;
+  const bMidY = boss.y + boss.height / 2;
+  const dx = bMidX - sMidX, dy = bMidY - sMidY;
+  const len = Math.hypot(dx, dy) || 1;
+  g.projectiles.push(new global.Projectile(sMidX, sMidY,
+    (dx / len) * 12, (dy / len) * 12, 'arrow', 40, false, 3.0));
+  for (let f = 0; f < 30 && g.projectiles.length; f++) {
+    try { g.update(1 / 60); } catch (_) { break; }
+  }
+  const dealt = before - g.boss.hp;
+  check('an arrow through a solid wall does NOT damage the boss', dealt === 0,
+    'dealt=' + dealt);
+  g.boss = null;
+  g.projectiles.length = 0;
+  // Leave the arena clean for the line-of-sight probes below.
+  clearAir(px - 6, py - 6, px + 20, py + 6);
+}
+
+// ---- bombs must respect the same cover -----------------------------------
+// A blast aimed at a wall face the thrower cannot see past must not leak
+// through to the boss behind it.
+console.log('\n== with a solid wall between: bombs do not leak through ==');
+equipSword(sword);
+{
+  const px = 60, py = 20;
+  clearAir(px - 6, py - 6, px + 20, py + 6);
+  g.player.x = px * TILE_SIZE;
+  g.player.y = py * TILE_SIZE;
+  g.player.vx = 0; g.player.vy = 0;
+  g.player.hp = g.player.maxHp = 100000;
+  g.player.facing = 1;
+  const boss = new global.Monster(g.player.x + 9999, g.player.y, 'zombie');
+  boss.x = (px + 3) * TILE_SIZE;
+  boss.y = py * TILE_SIZE;
+  boss.hp = boss.maxHp = 100000;
+  g.boss = boss;
+  for (let y = py - 8; y <= py + 8; y++) g.world.setTile(px + 2, y, TILES.STONE);
+  g.inventory[g.player.selectedSlot] = { id: 'bomb', count: 1 };
+  // Aim the blast AT the boss: dead-centre, well within the 105px radius, but
+  // with the wall squarely between the thrower and the target.
+  g.input.mouseX = (boss.x + boss.width / 2) - g.camera.x;
+  g.input.mouseY = (boss.y + boss.height / 2) - g.camera.y;
+  g.attackCooldown = 0;
+  const before = boss.hp;
+  try { g.useBomb(); } catch (_) {}
+  const dealt = before - boss.hp;
+  check('a bomb through a solid wall does NOT damage the boss', dealt === 0,
+    'dealt=' + dealt);
+  g.boss = null;
+  clearAir(px - 6, py - 6, px + 20, py + 6);
+  equipSword(sword);
+}
+
 console.log('\n== bossLineOfSight itself ==');
 const w = g.world;
 const cx = 300, cy = 20 * TILE_SIZE;

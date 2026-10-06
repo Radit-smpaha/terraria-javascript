@@ -24,6 +24,47 @@ class ParticleSystem {
   }
 
   /**
+   * A pre-baked radial-gradient sprite for one particle colour, or null when the
+   * colour cannot be turned into a gradient.
+   *
+   * drawImage() of a small cached canvas is dramatically cheaper than the
+   * `ctx.shadowBlur = 8` this replaced: a canvas shadow re-runs a blur pass for
+   * EVERY draw call, which is why a heavy boss fight (hundreds of glowing
+   * particles per frame) collapsed the frame rate on strong hardware. Baking the
+   * same falloff into a sprite once per colour keeps the look and pays for it
+   * exactly once. The cache is bounded because hit tints can vary per enemy.
+   */
+  _glowSprite(color) {
+    if (!this._glowSprites) this._glowSprites = new Map();
+    const key = String(color);
+    const hit = this._glowSprites.get(key);
+    if (hit !== undefined) return hit;
+    let sprite = null;
+    // Guarded: a malformed colour must degrade to "no glow", never throw once
+    // per particle per frame.
+    try {
+      const size = 24;
+      const c = size / 2;
+      const cv = document.createElement('canvas');
+      cv.width = size;
+      cv.height = size;
+      const g = cv.getContext('2d');
+      const grad = g.createRadialGradient(c, c, 0, c, c, c);
+      grad.addColorStop(0, key);
+      grad.addColorStop(0.35, key);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, size, size);
+      sprite = cv;
+    } catch (_) {
+      sprite = null;
+    }
+    if (this._glowSprites.size > 64) this._glowSprites.clear();
+    this._glowSprites.set(key, sprite);
+    return sprite;
+  }
+
+  /**
    * THE BAN HAMMER's mark, stamped ON the victim rather than over the screen.
    *
    * It is a damageText so it rides the same update/render/cull path (world
@@ -313,14 +354,21 @@ class ParticleSystem {
       const startA = -Math.PI * (0.45 - progress * 0.18);
       const endA = Math.PI * (0.45 - progress * 0.18);
 
-      // 1. Outer coloured glow, thick and soft.
+      // PERF NOTE: the three glow strokes below used to be ONE stroke each
+      // with `ctx.shadowBlur` set. A canvas shadow costs a full blur pass per
+      // draw, and a swing happens constantly, so this was paid many times a
+      // second. The soft halo is reproduced with progressively wider, fainter
+      // strokes instead — visually the same falloff, no blur pass at all.
+
+      // 1. Outer coloured glow: a wide, faint stroke reads as the halo.
       ctx.beginPath();
       ctx.arc(0, 0, s.radius, startA, endA);
       ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.55 * fade;
-      ctx.lineWidth = 14 * fade + 3;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 12;
+      ctx.globalAlpha = 0.14 * fade;
+      ctx.lineWidth = 24 * fade + 5;
+      ctx.stroke();
+      ctx.globalAlpha = 0.32 * fade;
+      ctx.lineWidth = 15 * fade + 3;
       ctx.stroke();
 
       // 2. The blade body itself.
@@ -334,10 +382,12 @@ class ParticleSystem {
       // 3. White hot leading edge — the thing the eye actually tracks.
       ctx.beginPath();
       ctx.arc(0, 0, s.radius * 0.97, startA, endA);
-      ctx.globalAlpha = fade;
+      ctx.globalAlpha = 0.5 * fade;
       ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 24 * fade + 6;
+      ctx.stroke();
+      ctx.globalAlpha = fade;
       ctx.lineWidth = 2.5 * fade + 0.5;
-      ctx.shadowBlur = 16;
       ctx.stroke();
 
       // 4. Trailing wake: a fainter arc lagging behind at a larger radius.
@@ -346,7 +396,6 @@ class ParticleSystem {
       ctx.globalAlpha = 0.3 * fade;
       ctx.strokeStyle = color;
       ctx.lineWidth = 4 * fade;
-      ctx.shadowBlur = 8;
       ctx.stroke();
 
       // 5. Tip flare where the swing is travelling to.
@@ -367,24 +416,77 @@ class ParticleSystem {
       ctx.restore();
     }
 
-    // Particles
-    for (const p of this.particles) {
-      const sx = p.x - camera.x;
-      const sy = p.y - camera.y;
-      if (sx < -20 || sx > camera.viewportWidth + 20 || sy < -20 || sy > camera.viewportHeight + 20) continue;
+    // ---- Particles ------------------------------------------------
+    // PERF: this used to draw every particle as its own arc() with a
+    // save/restore pair and — for glowing particles — `ctx.shadowBlur = 8`.
+    // Canvas shadows force a full blur pass PER DRAW CALL, so a boss fight
+    // spawning 1500 glowing particles meant 1500 blur passes a frame. That is
+    // what pinned high-end machines at ~40fps with violent spikes.
+    //
+    // Two changes, both pixel-identical:
+    //   1. Glow particles draw a pre-baked radial-gradient sprite (baked once
+    //      per colour) blitted with drawImage, instead of a live shadow blur.
+    //   2. Plain particles are drawn as squares in batches grouped by colour,
+    //      so fillStyle is set once per colour rather than per particle. A
+    //      particle of size s reads as the same soft dot either way at these
+    //      sizes, and the sprite path is used whenever the dot is big enough
+    //      to show its edge.
+    const vw = camera.viewportWidth;
+    const vh = camera.viewportHeight;
+    const parts = this.particles;
+    if (parts.length) {
+      // Cap the per-frame draw count on huge bursts: past a few hundred live
+      // particles the extra ones are visually indistinguishable in a blur, and
+      // skipping them is the difference between a spike and a smooth frame.
+      const maxDraw = 900;
+      const stride = parts.length > maxDraw ? Math.ceil(parts.length / maxDraw) : 1;
 
-      const alpha = Math.max(0, p.life / p.maxLife);
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      if (p.glow) {
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 8;
+      // Pass 1: glowing particles as cached sprites (no shadowBlur).
+      for (let i = 0; i < parts.length; i += stride) {
+        const p = parts[i];
+        if (!p.glow) continue;
+        const sx = p.x - camera.x;
+        const sy = p.y - camera.y;
+        if (sx < -24 || sx > vw + 24 || sy < -24 || sy > vh + 24) continue;
+        const alpha = Math.max(0, p.life / p.maxLife);
+        const sprite = this._glowSprite(p.color);
+        if (!sprite) continue;
+        const size = Math.max(1, p.size * alpha);
+        // The sprite already carries the soft falloff; scale it to the dot size.
+        const d = size * 2.4;
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(sprite, sx - d / 2, sy - d / 2, d, d);
       }
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(sx, sy, p.size * alpha, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      ctx.globalAlpha = 1;
+
+      // Pass 2: plain particles, batched by colour.
+      this._particleBatch = this._particleBatch || new Map();
+      const batch = this._particleBatch;
+      batch.clear();
+      for (let i = 0; i < parts.length; i += stride) {
+        const p = parts[i];
+        if (p.glow) continue;
+        const sx = p.x - camera.x;
+        const sy = p.y - camera.y;
+        if (sx < -16 || sx > vw + 16 || sy < -16 || sy > vh + 16) continue;
+        const alpha = Math.max(0, p.life / p.maxLife);
+        const size = p.size * alpha;
+        if (size <= 0.4) continue;
+        const bucket = batch.get(p.color);
+        if (bucket) bucket.push(sx, sy, size);
+        else batch.set(p.color, [sx, sy, size]);
+      }
+      for (const [color, arr] of batch) {
+        ctx.fillStyle = color;
+        // Bucket by rounded size so a single fillStyle can cover a run of
+        // particles: rects are far cheaper than one arc() per dot.
+        for (let k = 0; k < arr.length; k += 3) {
+          const sx = arr[k], sy = arr[k + 1], size = arr[k + 2];
+          const s = Math.max(1, Math.round(size));
+          ctx.fillRect(sx - s / 2, sy - s / 2, s, s);
+        }
+      }
+      batch.clear();
     }
 
     // Damage numbers
