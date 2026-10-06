@@ -374,6 +374,29 @@ class WeatherSystem {
 
   /* ---------------- Render ---------------- */
 
+  /**
+   * One baked fog puff: a radial alpha falloff rasterised ONCE into a small
+   * offscreen canvas. FOG weather used to call createRadialGradient() for
+   * every puff on every frame (up to ~30 a frame) — gradients are expensive
+   * to build, and this was pure waste for a shape that never changes. The
+   * sprite is blitted with globalAlpha carrying the per-puff fade and scaled
+   * to p.size, which reproduces the same falloff at any radius.
+   */
+  fogSprite() {
+    if (this._fogSprite) return this._fogSprite;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 96;
+    const g = cv.getContext && cv.getContext('2d');
+    if (!g) return null;
+    const grad = g.createRadialGradient(48, 48, 0, 48, 48, 48);
+    grad.addColorStop(0, 'rgba(206, 219, 214, 0.1)');
+    grad.addColorStop(1, 'rgba(206, 219, 214, 0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 96, 96);
+    this._fogSprite = cv;
+    return cv;
+  }
+
   render(game, ctx, cam, layer) {
     if (this.intensity <= 0.01 && !this.bolt) return;
 
@@ -401,46 +424,94 @@ class WeatherSystem {
     // ---- Front layer: particles, bolt, flash ----
     ctx.save();
 
+    // PERF: every weather particle used to be its own beginPath()+stroke()
+    // (or gradient+fill) with a freshly formatted rgba() string — during a
+    // storm that is hundreds of style parses and draw calls a frame, plus a
+    // radial gradient built per fog puff per frame. The particle's only
+    // per-instance variation is a fading alpha, so alpha is QUANTISED into 8
+    // buckets: every particle in a bucket joins ONE path and is stroked (or
+    // filled) in a single call with one style. The largest visual difference
+    // is a ~0.06 alpha step on a 1-px streak — not perceivable against a
+    // moving sky, for a few percent of the draw calls.
+    const buckets = this._particleBuckets || (this._particleBuckets = {});
+    const bucketArray = (key) => {
+      const arr = buckets[key] || (buckets[key] = []);
+      for (let i = 0; i < 8; i++) (arr[i] || (arr[i] = [])).length = 0;
+      return arr;
+    };
+    const rainB = bucketArray('rain');
+    const sandB = bucketArray('sand');
+    const snowB = bucketArray('snow');
+    const bucketOf = (a) => Math.min(7, Math.max(0, (a * 8) | 0));
+
     for (const p of this.particles) {
       switch (p.kind) {
         case 'rain': {
           const a = Math.min(1, p.life) * this.intensity;
-          ctx.strokeStyle = `rgba(174, 214, 241, ${0.5 * a})`;
-          ctx.lineWidth = 1;
           const slantX = (p.vx + this.wind * p.windFactor) * 0.02;
           const slantY = p.vy * 0.02;
-          ctx.beginPath();
-          ctx.moveTo(p.x - slantX * p.len, p.y - slantY * p.len);
-          ctx.lineTo(p.x, p.y);
-          ctx.stroke();
+          const seg = rainB[bucketOf(a)];
+          seg.push(p.x - slantX * p.len, p.y - slantY * p.len, p.x, p.y);
           break;
         }
         case 'snow': {
           const a = Math.min(1, p.life / 3) * this.intensity;
-          ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * a})`;
-          ctx.fillRect(p.x, p.y, p.size, p.size);
+          if (a > 0) {
+            const seg = snowB[bucketOf(a)];
+            seg.push(p.x, p.y, p.size, p.size);
+          }
           break;
         }
         case 'sand': {
           const a = Math.min(1, p.life / 1.5) * this.intensity;
-          ctx.strokeStyle = `rgba(226, 184, 110, ${0.55 * a})`;
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p.x - Math.sign(p.vx) * (6 + p.size), p.y);
-          ctx.stroke();
+          const seg = sandB[bucketOf(a)];
+          seg.push(p.x, p.y, p.x - Math.sign(p.vx) * (6 + p.size), p.y);
           break;
         }
         case 'fog': {
           const fade = Math.min(1, p.life / 4) * this.intensity;
-          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-          grad.addColorStop(0, `rgba(206, 219, 214, ${0.1 * fade})`);
-          grad.addColorStop(1, 'rgba(206, 219, 214, 0)');
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fill();
+          if (fade <= 0.01) break;
+          // One baked puff sprite (built once) scaled to p.size, instead of
+          // a radial gradient built and rasterised per puff per frame.
+          const sprite = this.fogSprite();
+          if (!sprite) break;
+          ctx.globalAlpha = fade;
+          ctx.drawImage(sprite, p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
           break;
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // One style + one path (rain/sand) or one fillStyle (snow) per bucket.
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      const mid = ((i + 0.5) / 8).toFixed(4);
+      const r = rainB[i];
+      if (r.length) {
+        ctx.strokeStyle = `rgba(174, 214, 241, ${(0.5 * Number(mid)).toFixed(3)})`;
+        ctx.beginPath();
+        for (let k = 0; k < r.length; k += 4) {
+          ctx.moveTo(r[k], r[k + 1]);
+          ctx.lineTo(r[k + 2], r[k + 3]);
+        }
+        ctx.stroke();
+      }
+      const s = sandB[i];
+      if (s.length) {
+        ctx.strokeStyle = `rgba(226, 184, 110, ${(0.55 * Number(mid)).toFixed(3)})`;
+        ctx.beginPath();
+        for (let k = 0; k < s.length; k += 4) {
+          ctx.moveTo(s[k], s[k + 1]);
+          ctx.lineTo(s[k + 2], s[k + 3]);
+        }
+        ctx.stroke();
+      }
+      const n = snowB[i];
+      if (n.length) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${(0.8 * Number(mid)).toFixed(3)})`;
+        for (let k = 0; k < n.length; k += 4) {
+          ctx.fillRect(n[k], n[k + 1], n[k + 2], n[k + 3]);
         }
       }
     }

@@ -1482,16 +1482,34 @@ class World {
       // already showing stays intact behind it for the cross-fade.
       if (!this._bgCanvas) this._bgCanvas = document.createElement('canvas');
       if (!this._bgPrev) this._bgPrev = document.createElement('canvas');
-      // The previous canvas takes over whatever is on screen right now...
       const hasOld = !!this._bgCache && !!this._bgCache.key && this._bgCanvas.width > 0;
-      if (hasOld) {
+      const resized = !!this._bgCache && (this._bgCache.w !== w || this._bgCache.h !== h);
+      if (hasOld && resized) {
+        // Rare path: on a resize the old layer has to be STRETCHED onto the
+        // new canvas, which a reference swap cannot do — pixel copy only here.
         this._copyCanvas(this._bgCanvas, this._bgPrev, w, h);
         this._bgFadeStart = now;
-      }
-      // ...and the live canvas is repainted with the new time/biome.
-      if (this._renderBackgroundLayer(this._bgCanvas, w, h, camera, biome)) {
+        if (this._renderBackgroundLayer(this._bgCanvas, w, h, camera, biome)) {
+          this._bgCache = { key, w, h };
+        }
+      } else if (hasOld) {
+        // PERF: the old layer used to be pixel-copied into the spare canvas
+        // before repainting — a FULL-SCREEN copy every time the key moved,
+        // which while walking meant every single frame. Painting into the
+        // spare and then SWAPPING the two canvas references is output-
+        // identical (the old pixels simply stay where they are, untouched)
+        // and costs nothing. On a failed paint nothing is swapped, so the
+        // live layer can never be replaced by a half-painted one.
+        if (this._renderBackgroundLayer(this._bgPrev, w, h, camera, biome)) {
+          const old = this._bgCanvas;
+          this._bgCanvas = this._bgPrev;
+          this._bgPrev = old;
+          this._bgCache = { key, w, h };
+          this._bgFadeStart = now;
+        }
+      } else if (this._renderBackgroundLayer(this._bgCanvas, w, h, camera, biome)) {
         this._bgCache = { key, w, h };
-        if (!hasOld) this._bgFadeStart = 0;
+        this._bgFadeStart = 0;
       }
     }
 
@@ -1683,9 +1701,17 @@ class World {
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Horizon haze band — atmosphere depth for free.
-    ctx.fillStyle = palette.haze;
-    ctx.fillRect(0, h * 0.42, w, h * 0.14);
+    // Horizon haze band — atmosphere depth for free. Painted as a gradient
+    // that fades in AND out, because the old flat rect left two hard horizontal
+    // edges across the sky, which read as a painted stripe rather than air.
+    const hazeRGB = this.parseColor(palette.haze);
+    const hazeA = parseFloat((/rgba\([^)]*,\s*([\d.]+)\s*\)/.exec(palette.haze) || [0, 0])[1]) || 0;
+    const hazeGrad = ctx.createLinearGradient(0, h * 0.38, 0, h * 0.60);
+    hazeGrad.addColorStop(0, `rgba(${hazeRGB.join(',')},0)`);
+    hazeGrad.addColorStop(0.5, `rgba(${hazeRGB.join(',')},${hazeA})`);
+    hazeGrad.addColorStop(1, `rgba(${hazeRGB.join(',')},0)`);
+    ctx.fillStyle = hazeGrad;
+    ctx.fillRect(0, h * 0.38, w, h * 0.22);
 
     this.renderSkyFlavor(ctx, camera, biome, w, h);
 
@@ -1809,9 +1835,11 @@ class World {
     const ridgeFar = this.mixHex(this.shadeHex(palette.ridge, 0.9), skyHaze, 0.46);
     const ridgeMid = this.mixHex(this.shadeHex(palette.ridge, 0.95), skyHaze, 0.26);
     const ridgeNear = this.mixHex(palette.ridge, skyHaze, 0.08);
-    this.renderMountainLayer(ctx, camera, 0.035, ridgeFar, h * 0.44, 132, null);
-    this.renderMountainLayer(ctx, camera, 0.055, ridgeMid, h * 0.50, 112, null);
-    this.renderMountainLayer(ctx, camera, 0.08, ridgeNear, h * 0.57, 88, palette.ridgeSnow);
+    // skyHaze is handed to each layer so its BASE can fog out into the sky —
+    // that ground-fog wash is what separates one range from the next.
+    this.renderMountainLayer(ctx, camera, 0.035, ridgeFar, h * 0.44, 132, null, skyHaze);
+    this.renderMountainLayer(ctx, camera, 0.055, ridgeMid, h * 0.50, 112, null, skyHaze);
+    this.renderMountainLayer(ctx, camera, 0.08, ridgeNear, h * 0.57, 88, palette.ridgeSnow, skyHaze);
 
     if (biome === 'savanna') this.renderDuneLayer(ctx, camera, 0.14, '#b45309', h * 0.66);
     else if (biome === 'swamp') this.renderSwampWaterLayer(ctx, camera, 0.14, h * 0.68);
@@ -2141,38 +2169,63 @@ class World {
    * why the sky read as a child's drawing: a solid band of one colour with a
    * wobbly top edge. It now paints a ridge with real form:
    *
-   *   * a shadowed base and a sunward-lit face, split along the ridge line, so
-   *     each slope has a lit and a dark side the way a hill actually does;
+   *   * a crest traced through MIDPOINT QUADRATIC CURVES instead of straight
+   *     26px segments — the facets were the single most "blocky" thing in the
+   *     backdrop, and removing them is what makes the silhouette read as rock
+   *     rather than as a polygon;
+   *   * ridged detail terms (|sin| makes V-shaped saddles) on top of the broad
+   *     rolling waves, so peaks have crags instead of being smooth bumps;
+   *   * a shadowed base and a sunward-lit face, split along the ridge line;
    *   * rock striations and a snow line on the higher peaks;
-   *   * an atmospheric haze wash over the whole layer, which is what makes it
-   *     read as FAR away rather than as a cut-out in front of the sky.
+   *   * a ground-fog wash fading the layer's base into `haze` (the sky colour),
+   *     which is what stacks three ranges into a valley instead of three
+   *     cut-outs;
+   *   * a thin rim light along the crest so it stays crisp against the sky.
    *
    * All of it lands in the cached backdrop canvas, which is rebuilt only a few
-   * times a day, so the extra detail costs nothing per frame.
+   * times a second, so the extra detail costs nothing per frame.
    */
-  renderMountainLayer(ctx, camera, speed, baseColor, baseY, amp, snowCap = null) {
+  renderMountainLayer(ctx, camera, speed, baseColor, baseY, amp, snowCap = null, haze = null) {
     const offset = camera.x * speed;
     const w = camera.viewportWidth;
     const h = camera.viewportHeight;
 
     // Sample the ridgeline once, then reuse it for every pass below.
-    const step = 26;
+    const step = 13;
     const peaks = [];
-    for (let x = -step; x <= w + step; x += step) {
+    for (let x = -step * 2; x <= w + step * 2; x += step) {
       const worldX = x + offset;
       const my = baseY
         - Math.sin(worldX * 0.003) * amp
         - Math.cos(worldX * 0.008) * (amp * 0.5)
-        - Math.sin(worldX * 0.021) * (amp * 0.13);
+        - Math.sin(worldX * 0.021) * (amp * 0.13)
+        // Ridged detail: |sin| makes V-shaped saddles rather than more rolling
+        // waves, at two finer scales — this is the crag on top of the swell.
+        - Math.abs(Math.sin(worldX * 0.043)) * amp * 0.12
+        - Math.abs(Math.sin(worldX * 0.097 + 2.1)) * amp * 0.05;
       peaks.push([x, my]);
     }
-    const ridgePath = () => {
+
+    // Trace the crest as a smooth curve through the sample midpoints: each
+    // sample is a control point for a quadratic ending at the midpoint to the
+    // next sample. The standard way to smooth a polyline without overshoot.
+    const crestPath = () => {
       ctx.beginPath();
-      ctx.moveTo(-step, h);
-      ctx.lineTo(-step, peaks[0][1]);
-      for (const [x, my] of peaks) ctx.lineTo(x, my);
-      ctx.lineTo(w + step, peaks[peaks.length - 1][1]);
-      ctx.lineTo(w + step, h);
+      ctx.moveTo(peaks[0][0], peaks[0][1]);
+      for (let i = 1; i < peaks.length - 1; i++) {
+        const mx = (peaks[i][0] + peaks[i + 1][0]) * 0.5;
+        const my = (peaks[i][1] + peaks[i + 1][1]) * 0.5;
+        ctx.quadraticCurveTo(peaks[i][0], peaks[i][1], mx, my);
+      }
+      const last = peaks[peaks.length - 1];
+      ctx.lineTo(last[0], last[1]);
+    };
+    const ridgePath = () => {
+      crestPath();
+      const last = peaks[peaks.length - 1];
+      ctx.lineTo(w + step * 2, last[1]);
+      ctx.lineTo(w + step * 2, h);
+      ctx.lineTo(-step * 2, h);
       ctx.closePath();
     };
 
@@ -2181,20 +2234,23 @@ class World {
     ridgePath();
     ctx.fill();
 
-    // 2. The sun-facing side, lit: clip to the ridge and fill from each peak's
-    //    left slope inward. Sun is up and to the left for most of the day, so
-    //    the left faces catch it, which is what gives the range a direction.
     ctx.save();
     ridgePath();
     ctx.clip();
+
+    // 2. The sun-facing side, lit: clip to the ridge and fill from each peak's
+    //    left slope inward. Sun is up and to the left for most of the day, so
+    //    the left faces catch it, which is what gives the range a direction.
+    //    Drawn every OTHER sample so the lit faces read as broad planes rather
+    //    than as a 13px comb of slivers.
     ctx.fillStyle = baseColor;
-    for (let i = 1; i < peaks.length; i++) {
+    for (let i = 2; i < peaks.length; i += 2) {
       const [px, py] = peaks[i];
       ctx.beginPath();
       ctx.moveTo(px, py);
-      // Slope down-left to the neighbouring point, and fill the wedge.
-      ctx.lineTo(px - step * 1.15, peaks[i - 1][1] + amp * 0.1);
-      ctx.lineTo(px - step * 1.15, h);
+      // Slope down-left to the neighbouring sample, and fill the wedge.
+      ctx.lineTo(px - step * 2.3, peaks[i - 2][1] + amp * 0.1);
+      ctx.lineTo(px - step * 2.3, h);
       ctx.lineTo(px, h);
       ctx.closePath();
       ctx.fill();
@@ -2204,12 +2260,12 @@ class World {
     // read as texture rather than as noise.
     ctx.fillStyle = this.shadeHex(baseColor, 0.6);
     ctx.globalAlpha = 0.5;
-    for (let i = 2; i < peaks.length; i += 3) {
+    for (let i = 4; i < peaks.length; i += 6) {
       const [px, py] = peaks[i];
       ctx.beginPath();
       ctx.moveTo(px, py + 10);
-      ctx.lineTo(px - step * 0.7, py + 34);
-      ctx.lineTo(px - step * 0.45, py + 34);
+      ctx.lineTo(px - step * 1.4, py + 34);
+      ctx.lineTo(px - step * 0.9, py + 34);
       ctx.closePath();
       ctx.fill();
     }
@@ -2218,22 +2274,49 @@ class World {
     // 3. Snow cap + snow line on the tall peaks (snow biome, and tan on rock).
     if (snowCap) {
       ctx.fillStyle = snowCap;
-      for (let i = 0; i < peaks.length; i++) {
+      for (let i = 0; i < peaks.length; i += 2) {
         const [px, py] = peaks[i];
         const prominence = baseY - py;
         if (prominence <= amp * 0.45) continue;
         // Cap follows the peak, wider the taller it is.
         const capW = 18 + (prominence - amp * 0.45) * 0.35;
         ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.lineTo(px + capW, py + capW * 0.85);
-        ctx.lineTo(px + capW * 0.45, py + capW * 0.7);
-        ctx.lineTo(px - capW * 0.4, py + capW * 0.75);
-        ctx.lineTo(px - capW, py + capW * 0.9);
+        ctx.moveTo(px - capW, py + capW * 0.9);
+        // Rounded underside instead of a flat polygon edge: two quadratics
+        // dipping below the peak read as snow lying in the gullies.
+        ctx.quadraticCurveTo(px - capW * 0.3, py + capW * 1.05, px + capW * 0.15, py + capW * 0.7);
+        ctx.quadraticCurveTo(px + capW * 0.6, py + capW * 1.0, px + capW, py + capW * 0.85);
+        ctx.lineTo(px, py);
         ctx.closePath();
         ctx.fill();
       }
     }
+
+    // 4. Ground fog: wash the layer's base into the sky colour. Each range
+    //    therefore dissolves into air at its foot and the range behind shows
+    //    through — the depth cue that stops three ridges reading as stacked
+    //    cardboard cut-outs.
+    if (haze) {
+      const fogRGB = this.parseColor(haze);
+      const fogTop = baseY - amp * 0.25;
+      const fog = ctx.createLinearGradient(0, fogTop, 0, h);
+      fog.addColorStop(0, `rgba(${fogRGB.join(',')},0)`);
+      fog.addColorStop(0.55, `rgba(${fogRGB.join(',')},0.22)`);
+      fog.addColorStop(1, `rgba(${fogRGB.join(',')},0.5)`);
+      ctx.fillStyle = fog;
+      ctx.fillRect(0, fogTop, w, h - fogTop);
+    }
+    ctx.restore();
+
+    // 5. Rim light along the crest — a thin stroke in the haze colour keeps the
+    //    silhouette crisp against the sky without drawing a cartoon outline.
+    ctx.save();
+    crestPath();
+    ctx.strokeStyle = haze
+      ? `rgba(${this.parseColor(haze).join(',')},0.4)`
+      : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -2241,23 +2324,55 @@ class World {
   renderDuneLayer(ctx, camera, speed, color, baseY) {
     const offset = camera.x * speed;
     const w = camera.viewportWidth;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(0, camera.viewportHeight);
-    for (let x = -20; x <= w + 20; x += 20) {
+    const h = camera.viewportHeight;
+    // Smoothed crest (same midpoint-quadratic trick as the ridges): straight
+    // 20px segments gave the dunes a faceted, cut-paper edge.
+    const step = 16;
+    const pts = [];
+    for (let x = -step * 2; x <= w + step * 2; x += step) {
       const worldX = x + offset;
-      const my = baseY - Math.sin(worldX * 0.006) * 34 - Math.cos(worldX * 0.017) * 12;
-      ctx.lineTo(x, my);
+      pts.push([x, baseY
+        - Math.sin(worldX * 0.006) * 34
+        - Math.cos(worldX * 0.017) * 12
+        - Math.abs(Math.sin(worldX * 0.031)) * 7]);
     }
-    ctx.lineTo(w, camera.viewportHeight);
+    const trace = () => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) * 0.5;
+        const my = (pts[i][1] + pts[i + 1][1]) * 0.5;
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+      }
+      const last = pts[pts.length - 1];
+      ctx.lineTo(last[0], last[1]);
+    };
+    trace();
+    ctx.lineTo(w + step * 2, h);
+    ctx.lineTo(-step * 2, h);
     ctx.closePath();
+    ctx.fillStyle = color;
     ctx.fill();
-    // Sunlit dune crests.
-    ctx.fillStyle = 'rgba(253, 224, 130, 0.5)';
-    for (let x = -20; x <= w + 20; x += 20) {
-      const worldX = x + offset;
-      const my = baseY - Math.sin(worldX * 0.006) * 34 - Math.cos(worldX * 0.017) * 12;
-      ctx.fillRect(x, my, 20, 3);
+    // Shade the lee side first: a soft gradient under the crest so the dune
+    // reads as a mound with a lit top and a shaded flank.
+    ctx.save();
+    ctx.clip();
+    const shade = ctx.createLinearGradient(0, baseY - 44, 0, baseY + 60);
+    shade.addColorStop(0, 'rgba(0,0,0,0)');
+    shade.addColorStop(1, 'rgba(0,0,0,0.22)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, baseY - 44, w, 110);
+    ctx.restore();
+    // Sunlit crest: stroke only the segments whose slope faces the light.
+    ctx.strokeStyle = 'rgba(253, 224, 130, 0.55)';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i][1] - pts[i - 1][1] > -0.4) continue; // not rising into the sun
+      ctx.beginPath();
+      ctx.moveTo(pts[i - 1][0], pts[i - 1][1]);
+      ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
     }
   }
 
@@ -2284,17 +2399,54 @@ class World {
   renderSnowDriftLayer(ctx, camera, speed, baseY) {
     const offset = camera.x * speed;
     const w = camera.viewportWidth;
-    ctx.fillStyle = '#dbeafe';
-    ctx.beginPath();
-    ctx.moveTo(0, camera.viewportHeight);
-    for (let x = -20; x <= w + 20; x += 20) {
+    const h = camera.viewportHeight;
+    // Smoothed drift crest — same midpoint-quadratic smoothing as the ridges.
+    const step = 16;
+    const pts = [];
+    for (let x = -step * 2; x <= w + step * 2; x += step) {
       const worldX = x + offset;
-      const my = baseY - Math.sin(worldX * 0.008) * 26 - Math.cos(worldX * 0.02) * 9;
-      ctx.lineTo(x, my);
+      pts.push([x, baseY
+        - Math.sin(worldX * 0.008) * 26
+        - Math.cos(worldX * 0.02) * 9
+        - Math.abs(Math.sin(worldX * 0.037 + 0.9)) * 5]);
     }
-    ctx.lineTo(w, camera.viewportHeight);
+    const trace = () => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) * 0.5;
+        const my = (pts[i][1] + pts[i + 1][1]) * 0.5;
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+      }
+      const last = pts[pts.length - 1];
+      ctx.lineTo(last[0], last[1]);
+    };
+    trace();
+    ctx.lineTo(w + step * 2, h);
+    ctx.lineTo(-step * 2, h);
     ctx.closePath();
+    ctx.fillStyle = '#dbeafe';
     ctx.fill();
+    // Cool shadow pooling under each crest, then a bright wind-lit lip on top:
+    // two strokes are what make a drift look like sculpted snow rather than a
+    // white band.
+    ctx.save();
+    ctx.clip();
+    const shade = ctx.createLinearGradient(0, baseY - 34, 0, baseY + 46);
+    shade.addColorStop(0, 'rgba(147,197,253,0)');
+    shade.addColorStop(1, 'rgba(147,197,253,0.4)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, baseY - 34, w, 84);
+    ctx.restore();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(147, 197, 253, 0.55)';
+    ctx.lineWidth = 5;
+    trace();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2;
+    trace();
+    ctx.stroke();
   }
 
   renderPineForestLayer(ctx, camera, speed, color, baseY, treeWidth, biome = 'forest') {
