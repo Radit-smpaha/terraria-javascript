@@ -21,6 +21,7 @@ GAME_SCRIPTS = [
     "entities.js",
     "underworld.js",
     "space.js",
+    "ocean.js",
     "juice.js",
     "npcs.js",
     "journey.js",
@@ -135,6 +136,7 @@ def build_inline_html() -> str | None:
             "entities.js": "Player",
             "underworld.js": "UnderworldMonster",
             "space.js": "SkeletonDragonBoss",
+            "ocean.js": "OceanLeviathan",
             "juice.js": "GameFeel",
             "npcs.js": "NPCManager",
             "journey.js": "JourneySystem",
@@ -197,4 +199,3 @@ if inline_html:
 else:
     st.error("Local game files did not match terraria.html — falling back to hosted build.")
     st.iframe(GITHUB_FALLBACK, height=GAME_HEIGHT)
-
