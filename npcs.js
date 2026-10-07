@@ -345,8 +345,9 @@ class NPCManager {
       ctx.fillStyle = npc.id === 'guide' ? '#38b764' : npc.id === 'prospector' ? '#f59e0b' : '#a855f7';
       ctx.fillRect(sx + 2, sy + 12, 16, 20);
       ctx.fillStyle = '#334155';
-      ctx.fillRect(sx + 4, sy + 32, 5, 14);
-      ctx.fillRect(sx + 11, sy + 32, 5, 14);
+      // Fill the full two-tile body height so the feet meet the ground row.
+      ctx.fillRect(sx + 4, sy + 32, 5, 16);
+      ctx.fillRect(sx + 11, sy + 32, 5, 16);
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(sx + 12, sy + 5, 2, 2);
 

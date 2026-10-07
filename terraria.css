@@ -765,9 +765,30 @@ kbd {
 .inventory-body { align-items: stretch; }
 .inventory-display { width: 100%; }
 .crafting-recipes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: min(58vh, 560px);
+  overflow-y: auto;
+  padding-right: 5px;
+}
+.recipe-category { display: flex; flex-direction: column; gap: 7px; }
+.recipe-category-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  color: #fde68a;
+  background: #111827;
+  border: 1px solid #475569;
+  border-left: 4px solid #f59e0b;
+  border-radius: 4px;
+  font: 9px 'Press Start 2P', monospace;
+}
+.recipe-category-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .recipe-card {
@@ -2779,23 +2800,23 @@ body:not(.controls-touch) .mobile-controls { display: none; }
 
 /* ============================================================
    HUD SIZE (Settings -> Display -> HUD size)
-   One variable scales the whole in-game interface. `zoom` is used rather than
-   transform:scale because it rescales LAYOUT as well as pixels, so anchored
-   panels stay anchored and - crucially - hit-testing follows the visual size,
-   which transform would break for every touch button.
+   One variable scales the whole in-game interface. A transform plus a
+   compensating width/height keeps the layer anchored to the viewport, while
+   browser hit-testing follows the scaled positions of touch buttons.
 
-   The width/height division cancels the zoom back out, so #ui-layer still
+   The width/height division compensates for the scale so #ui-layer still
    covers exactly the viewport instead of overflowing by the zoom factor.
 
    Scoped to #ui-layer only. #title-screen is a SIBLING of it, which is what
    keeps the main menu at full size no matter what the player picks here.
    ============================================================ */
-body.ui-small { --ui-zoom: 0.85; }
-body.ui-large { --ui-zoom: 1.18; }
+body.ui-small { --ui-scale: 0.85; }
+body.ui-large { --ui-scale: 1.18; }
 #ui-layer {
-  zoom: var(--ui-zoom, 1);
-  width: calc(100% / var(--ui-zoom, 1));
-  height: calc(100% / var(--ui-zoom, 1));
+  transform: scale(var(--ui-scale, 1));
+  transform-origin: top left;
+  width: calc(100% / var(--ui-scale, 1));
+  height: calc(100% / var(--ui-scale, 1));
 }
 /* A large HUD must not fight the thumb pad for the bottom of the screen. */
 body.ui-large.controls-touch .bottom-panel { bottom: 84px !important; }

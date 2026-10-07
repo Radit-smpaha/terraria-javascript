@@ -76,6 +76,27 @@ function mpId() {
   return Math.random().toString(36).slice(2, 8);
 }
 
+/** Accept a host name or HTTP(S)/WS(S) URL and target the relay endpoint. */
+function mpRelayUrl(raw) {
+  let value = String(raw || '').trim();
+  if (!value) return '';
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(value)) {
+    const securePage = typeof location !== 'undefined' && location.protocol === 'https:';
+    value = `${securePage ? 'wss' : 'ws'}://${value}`;
+  }
+  const url = new URL(value);
+  if (url.protocol === 'http:') url.protocol = 'ws:';
+  else if (url.protocol === 'https:') url.protocol = 'wss:';
+  if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error('Use a ws:// or wss:// multiplayer server address.');
+  }
+  if (url.pathname === '/' || url.pathname === '') url.pathname = '/mp';
+  if (url.pathname !== '/mp') {
+    throw new Error('The multiplayer server address must end with /mp.');
+  }
+  return url.toString();
+}
+
 // ---------------------------------------------------------------------------
 // Transports. All three expose: send(message, to?), close(), selfId, kind and
 // call back with (message, fromId) for every inbound application message.
@@ -136,7 +157,7 @@ class WSTransport {
     this.role = options.role || 'client';
     this.name = options.name || 'Player';
     try {
-      this.ws = new WebSocket(url.replace(/^http/, 'ws'));
+      this.ws = new WebSocket(mpRelayUrl(url));
     } catch (_) {
       onStatus('error', 'bad-url');
       return;
@@ -242,9 +263,15 @@ window.Multiplayer = class Multiplayer {
    */
   startHost(room, serverUrl, name, transportFactory) {
     if (this.active) return { ok: false, error: 'Already in a session.' };
+    let relayUrl;
+    try {
+      relayUrl = mpRelayUrl(serverUrl);
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
     this.role = 'host';
     this.room = (room || '').toUpperCase().slice(0, 4) || mpRoomCode();
-    this.serverUrl = (serverUrl || '').trim();
+    this.serverUrl = relayUrl;
     this.playerName = (name || 'Host').trim().slice(0, 14) || 'Host';
     this.hostName = this.playerName;
     this.selfId = 'host';
@@ -266,10 +293,17 @@ window.Multiplayer = class Multiplayer {
   /** Knock on a room. Resolves into status 'joined' once welcome lands. */
   startJoin(room, serverUrl, name, onJoined, transportFactory) {
     if (this.active) return { ok: false, error: 'Already in a session.' };
+    const roomCode = (room || '').toUpperCase().slice(0, 4);
+    if (!roomCode) return { ok: false, error: 'Type the 4-letter room code.' };
+    let relayUrl;
+    try {
+      relayUrl = mpRelayUrl(serverUrl);
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
     this.role = 'client';
-    this.room = (room || '').toUpperCase().slice(0, 4);
-    if (!this.room) return { ok: false, error: 'Type the 4-letter room code.' };
-    this.serverUrl = (serverUrl || '').trim();
+    this.room = roomCode;
+    this.serverUrl = relayUrl;
     this.playerName = (name || 'Player').trim().slice(0, 14) || 'Player';
     this.selfId = 'c' + mpId();
     this.status = 'connecting';
@@ -294,10 +328,10 @@ window.Multiplayer = class Multiplayer {
     this.joinTimer = setTimeout(() => {
       if (this.isClient && this.status === 'connecting') {
         this.fail(this.serverUrl
-          ? 'No host answered on that server (is node server.js running there?).'
+          ? 'No host answered yet. Check the server address and room code, then try again.'
           : 'No host in this browser. Host a game in another tab first.');
       }
-    }, 6000);
+    }, 20000);
     return { ok: true, room: this.room };
   }
 
@@ -390,7 +424,8 @@ window.Multiplayer = class Multiplayer {
     if (state === 'error') {
       const map = {
         'no-bc': 'This browser has no BroadcastChannel, so same-device play is off.',
-        'bad-url': 'That is not a valid server address (expected ws://host:port).',
+        'bad-url': 'That server address is not valid. Use ws:// or wss:// and end it with /mp.',
+        'bad-room': 'Room codes can use letters and numbers only.',
         'socket': 'Could not reach the server.',
         'no-host': 'Nobody is hosting that room on this server.',
         'full': 'That room is full (4 players max).',
@@ -768,12 +803,34 @@ window.Multiplayer = class Multiplayer {
   }
 
   _onWelcome(m) {
+    if (this.status !== 'connecting') return;
+    const snap = m && m.snap;
+    if (!snap || !Number.isInteger(snap.w) || !Number.isInteger(snap.h) ||
+        snap.w < 1 || snap.h < 1 || snap.w * snap.h > 4000000) {
+      this.fail('The host sent an invalid world snapshot. Ask them to update the game server.');
+      return;
+    }
+    const tiles = mpUnb64(snap.tiles);
+    const walls = mpUnb64(snap.walls);
+    const tileCount = snap.w * snap.h;
+    if (!tiles || !walls || tiles.length !== tileCount || walls.length !== tileCount) {
+      this.fail('The shared world could not be read. Check that everyone is using the same game version.');
+      return;
+    }
+    this.statusDetail = 'Loading the shared world…';
+    this._pushHud();
+    try {
+      this._applySnapshot(snap, { tiles, walls });
+    } catch (error) {
+      console.error('Terracraft multiplayer world load failed:', error);
+      this.fail('Could not load the shared world. Please reconnect and try again.');
+      return;
+    }
     clearTimeout(this.joinTimer);
     this.selfId = m.id;
     this.hostName = m.hostName || 'Host';
     this.status = 'joined';
     this.statusDetail = `Room ${m.room}`;
-    this._applySnapshot(m.snap);
     for (const entry of (Array.isArray(m.peers) ? m.peers : [])) {
       if (entry.id === this.selfId) continue;
       const peer = {
@@ -796,7 +853,7 @@ window.Multiplayer = class Multiplayer {
    * the seed differs (it must be — the host's world is a different place),
    * which means every subsystem holding a world reference is rebuilt too.
    */
-  _applySnapshot(snap) {
+  _applySnapshot(snap, decoded = null) {
     if (!snap) return;
     const g = this.game;
     const oldWorld = g.world;
@@ -809,8 +866,8 @@ window.Multiplayer = class Multiplayer {
       rebuilt = true;
     }
     const w = g.world;
-    const tiles = mpUnb64(snap.tiles);
-    const walls = mpUnb64(snap.walls);
+    const tiles = decoded ? decoded.tiles : mpUnb64(snap.tiles);
+    const walls = decoded ? decoded.walls : mpUnb64(snap.walls);
     if (tiles && tiles.length === w.tiles.length) w.tiles.set(tiles);
     if (walls && walls.length === w.walls.length) w.walls.set(walls);
     w.timeOfDay = Number.isFinite(snap.tod) ? snap.tod : w.timeOfDay;
@@ -1736,8 +1793,6 @@ Multiplayer.makeHubTransport = function makeHubTransport(hub, selfId, onMessage,
 
 // World exists by the time this script loads (it sits after world.js).
 Multiplayer.hookWorld();
-
-
 
 
 

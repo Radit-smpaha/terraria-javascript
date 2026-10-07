@@ -112,6 +112,15 @@ check('base64 survives a payload that ends mid-triplet',
     }
     return true;
   })());
+check('a bare server address resolves to the multiplayer relay endpoint',
+  global.mpRelayUrl('relay.example:8000') === 'ws://relay.example:8000/mp');
+check('an HTTPS server address uses a secure WebSocket relay',
+  global.mpRelayUrl('https://relay.example:8000') === 'wss://relay.example:8000/mp');
+check('an invalid relay address is rejected before connecting',
+  (() => {
+    try { global.mpRelayUrl('ftp://relay.example:8000'); return false; }
+    catch (_) { return true; }
+  })());
 
 // ===========================================================================
 // 1. Two REAL Game instances in one session (the hub transport stands in for
@@ -592,6 +601,5 @@ relaySuite()
     try { server.close(); } catch (_) { /* never listened */ }
     staticSuite();
   });
-
 
 

@@ -4610,46 +4610,71 @@ class Game {
     if (!list) return;
     list.innerHTML = '';
 
-    for (const r of RECIPES) {
-      const resItem = ITEMS[r.result.id];
-      const canCraft = this.canCraftRecipe(r);
+    const categories = new Map([
+      ['weapon', 'Weapons'],
+      ['tool', 'Tools'],
+      ['armor', 'Armor'],
+      ['accessory', 'Accessories'],
+      ['ammo', 'Ammunition'],
+      ['backpack', 'Backpacks'],
+      ['consumable', 'Potions & Food'],
+      ['tile', 'Blocks & Furniture'],
+      ['material', 'Materials']
+    ]);
+    const grouped = new Map();
+    for (const recipe of RECIPES) {
+      const result = ITEMS[recipe.result.id];
+      const category = categories.get(result ? result.type : '') || 'Other';
+      if (!grouped.has(category)) grouped.set(category, []);
+      grouped.get(category).push(recipe);
+    }
 
-      const card = document.createElement('div');
-      card.className = `recipe-card ${canCraft ? 'craftable' : ''}`;
+    for (const [category, recipes] of grouped) {
+      const section = document.createElement('section');
+      section.className = 'recipe-category';
+      const heading = document.createElement('h4');
+      heading.className = 'recipe-category-title';
+      heading.textContent = category;
+      section.appendChild(heading);
 
-      const info = document.createElement('div');
-      info.className = 'recipe-info';
+      const cards = document.createElement('div');
+      cards.className = 'recipe-category-grid';
+      for (const r of recipes) {
+        const resItem = ITEMS[r.result.id];
+        const canCraft = this.canCraftRecipe(r);
+        const card = document.createElement('div');
+        card.className = `recipe-card ${canCraft ? 'craftable' : ''}`;
 
-      const icon = document.createElement('div');
-      icon.className = 'recipe-icon';
-      icon.textContent = resItem ? resItem.icon : '🛠️';
+        const info = document.createElement('div');
+        info.className = 'recipe-info';
+        const icon = document.createElement('div');
+        icon.className = 'recipe-icon';
+        icon.textContent = resItem ? resItem.icon : '🛠️';
 
-      const details = document.createElement('div');
-      details.className = 'recipe-details';
+        const details = document.createElement('div');
+        details.className = 'recipe-details';
+        const name = document.createElement('h5');
+        name.textContent = r.dynamicRite ? this.riteOfWakingName(this.ritesCrafted > 0) : r.name;
+        const reqs = document.createElement('div');
+        reqs.className = 'recipe-reqs';
+        reqs.textContent = this.recipeMaterials(r)
+          .map(m => `${ITEMS[m.id].name}: ${this.countItem(m.id)}/${m.count}`).join(', ');
+        details.appendChild(name);
+        details.appendChild(reqs);
+        info.appendChild(icon);
+        info.appendChild(details);
 
-      const name = document.createElement('h5');
-      name.textContent = r.dynamicRite ? this.riteOfWakingName(this.ritesCrafted > 0) : r.name;
-
-      const reqs = document.createElement('div');
-      reqs.className = 'recipe-reqs';
-      // Resolved through recipeMaterials so the rite card shows the cost it will
-      // actually charge right now (cheap first time, expensive afterwards).
-      reqs.textContent = this.recipeMaterials(r).map(m => `${ITEMS[m.id].name}: ${this.countItem(m.id)}/${m.count}`).join(', ');
-
-      details.appendChild(name);
-      details.appendChild(reqs);
-      info.appendChild(icon);
-      info.appendChild(details);
-
-      const btn = document.createElement('button');
-      btn.className = 'craft-btn';
-      btn.textContent = 'CRAFT';
-      btn.disabled = !canCraft;
-      btn.onclick = () => this.craftRecipe(r);
-
-      card.appendChild(info);
-      card.appendChild(btn);
-      list.appendChild(card);
+        const btn = document.createElement('button');
+        btn.className = 'craft-btn';
+        btn.textContent = 'CRAFT';
+        btn.disabled = !canCraft;
+        btn.onclick = () => this.craftRecipe(r);
+        card.appendChild(info);
+        card.appendChild(btn);
+        cards.appendChild(card);
+      }
+      section.appendChild(cards);
+      list.appendChild(section);
     }
   }
 
@@ -8271,7 +8296,10 @@ this.player.dodgeTime = 0;
     this.camera.x += shakeX;
     this.camera.y += shakeY;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Keep world-space drawing in viewport coordinates even when the internal
+    // canvas is rendered at reduced resolution. Resetting to identity here
+    // clipped half the scene into the smaller buffer and looked like zoom.
+    ctx.setTransform(internalScale, 0, 0, internalScale, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, vw, vh);
 

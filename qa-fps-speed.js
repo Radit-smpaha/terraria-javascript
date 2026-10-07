@@ -22,6 +22,7 @@ function check(name, ok, detail) {
 // ---- Minimal DOM stub -----------------------------------------------------
 function makeCtx() {
   const noop = () => {};
+  const transform = { a: 1, d: 1 };
   return new Proxy({
     canvas: { width: 1280, height: 720 },
     measureText: () => ({ width: 10 }),
@@ -29,6 +30,16 @@ function makeCtx() {
     createRadialGradient: () => ({ addColorStop: noop }),
     createPattern: () => null,
     getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+    setTransform(a, b, c, d) {
+      if (a && typeof a === 'object') {
+        transform.a = a.a;
+        transform.d = a.d;
+      } else {
+        transform.a = a;
+        transform.d = d;
+      }
+    },
+    getTransform: () => ({ a: transform.a, d: transform.d }),
     save: noop, restore: noop
   }, {
     get: (t, k) => (k in t ? t[k] : noop),
@@ -163,6 +174,27 @@ check('walk speed does not depend on refresh rate', rel < 0.12,
 // old bug made it ~2.4x). Guard the specific regression directly.
 check('144fps is not the old 2.4x speed-up', w144 < w60 * 1.4,
   '144/60 = ' + (w144 / Math.max(1, w60)).toFixed(2) + 'x');
+
+// Reduced render resolution must not shrink the camera viewport or leave the
+// scene drawn at full resolution into a smaller buffer (the old visual zoom).
+const originalQuality = g.settings.quality;
+const viewport = [g.camera.viewportWidth, g.camera.viewportHeight];
+let renderScaleOk = true;
+for (const mode of ['high', 'balanced', 'low']) {
+  g.applyQualityMode(mode, false);
+  g.render();
+  const scale = g.renderScale;
+  const transform = g.pixelCtx.getTransform();
+  renderScaleOk = renderScaleOk &&
+    g.camera.viewportWidth === viewport[0] &&
+    g.camera.viewportHeight === viewport[1] &&
+    g.pixelCanvas.width === Math.floor(viewport[0] * scale) &&
+    g.pixelCanvas.height === Math.floor(viewport[1] * scale) &&
+    Math.abs(transform.a - scale) < 0.01 &&
+    Math.abs(transform.d - scale) < 0.01;
+}
+g.applyQualityMode(originalQuality, false);
+check('lower render quality keeps the same camera view without zooming', renderScaleOk);
 
 console.log(failures ? 'FAILING CHECKS: ' + failures : 'FPS-INDEPENDENCE OK');
 process.exit(failures ? 1 : 0);
