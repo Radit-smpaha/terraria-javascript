@@ -234,6 +234,7 @@ check('it has a white-hot core pass', /255,190,190/.test(src));
 // ══════════════════════════════════════════════════════════════════════════
 step('9. The Sort button tidies the bag without losing anything');
 const ITEMS = global.ITEMS;
+check('every catalog item stacks to 256', Object.values(ITEMS).every(item => item.stackMax === 256));
 const put = (i, id, count, fav) => { g.inventory[i] = { id, count, ...(fav ? { fav: true } : {}) }; };
 const bagCount = () => g.inventory.reduce((n, s) => n + (s && s.id !== 'empty' ? s.count : 0), 0);
 
@@ -265,14 +266,17 @@ check('the empties all sit at the end', (() => {
   return firstEmpty < 0 || g.inventory.slice(firstEmpty).every(s => s.id === 'empty');
 })());
 
-// A merge that overflows one stack splits at stackMax instead (apples cap at 30).
+// A merge that overflows one stack splits at the universal 256-item limit.
 freshBag();
-put(0, 'apple', 20);
-put(1, 'apple', 25);
+put(0, 'apple', 220);
+put(1, 'apple', 80);
 g.sortInventory();
 check('an overflowing merge splits at stackMax',
-  g.inventory.filter(s => s.id === 'apple').map(s => s.count).join(',') === '30,15',
+  g.inventory.filter(s => s.id === 'apple').map(s => s.count).join(',') === '256,44',
   JSON.stringify(g.inventory.filter(s => s.id === 'apple')));
+freshBag();
+check('potion stacks can exceed one and still split at 256', g.addItem('healing_potion', 300) &&
+  g.inventory.filter(s => s.id === 'healing_potion').map(s => s.count).join(',') === '256,44');
 
 // Sorting an empty bag is refused, not a crash.
 freshBag();
