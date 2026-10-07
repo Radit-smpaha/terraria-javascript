@@ -198,15 +198,6 @@ const KEYBIND_LABELS = {
   slot9: 'Hotbar slot 9'
 };
 
-const NON_STACKING_POTIONS = new Set([
-  'healing_potion',
-  'swiftness_potion',
-  'ironskin_potion',
-  'wrath_potion',
-  'regeneration_potion',
-  'miners_potion'
-]);
-
 const NEW_ITEMS = {
   life_crystal: {
     id: 'life_crystal', name: 'Life Crystal', type: 'consumable',
@@ -466,6 +457,7 @@ const NEW_ITEMS = {
 };
 
 Object.assign(ITEMS, NEW_ITEMS);
+for (const item of Object.values(ITEMS)) item.stackMax = 256;
 
 // ============================================================
 // ARMOUR LADDER
@@ -2702,7 +2694,9 @@ class Game {
     const next = ['auto', 'high', 'balanced', 'low'].includes(mode) ? mode : 'auto';
     this.settings.quality = next;
     this.autoQuality = next === 'auto';
-    this.quality.budgetMs = next === 'low' ? 32 : next === 'balanced' ? 28 : 24;
+    // Auto quality should step down before sustained work misses a 60 FPS
+    // frame budget, not wait until the game is already running below 42 FPS.
+    this.quality.budgetMs = next === 'auto' ? 16.7 : next === 'balanced' ? 20 : 24;
     this.quality.goodFrames = 0;
     if (next === 'high') {
       this.quality.lowQuality = false; this.renderScale = 1;
@@ -3552,11 +3546,19 @@ class Game {
       const raw = localStorage.getItem('terracraft-shared-inventory');
       const parsed = raw ? JSON.parse(raw) : null;
       if (!Array.isArray(parsed)) return false;
-      this.savedInventory = parsed
-        .slice(0, 18)
-        .map(slot => (slot && ITEMS[slot.id] && Number.isFinite(slot.count) && slot.count > 0)
-          ? { id: slot.id, count: Math.floor(slot.count) }
-          : { id: 'empty', count: 0 });
+      this.savedInventory = [];
+      for (const slot of parsed.slice(0, 18)) {
+        if (!slot || !ITEMS[slot.id] || !Number.isFinite(slot.count) || slot.count <= 0) {
+          this.savedInventory.push({ id: 'empty', count: 0 });
+          continue;
+        }
+        let remaining = Math.floor(slot.count);
+        while (remaining > 0) {
+          const count = Math.min(ITEMS[slot.id].stackMax, remaining);
+          this.savedInventory.push({ id: slot.id, count });
+          remaining -= count;
+        }
+      }
       return true;
     } catch (error) {
       console.warn('Terracraft shared inventory: unreadable, starting empty.', error);
@@ -4243,7 +4245,6 @@ class Game {
       // with the tail of the bag missing.
       const wanted = Math.max(this.inventory.length, save.inventory.length);
       const restored = [];
-      const potionOverflow = [];
       for (let i = 0; i < wanted; i++) {
         const slot = save.inventory[i];
         // A `creativeOnly` item (The Ban Hammer) has no legitimate presence in
@@ -4255,25 +4256,22 @@ class Game {
         // the filter has to be explicit.
         const banned = slot && ITEMS[slot.id] && ITEMS[slot.id].creativeOnly;
         if (slot && ITEMS[slot.id] && Number.isFinite(slot.count) && !banned) {
-          const count = Math.max(0, Math.floor(slot.count));
-          if (NON_STACKING_POTIONS.has(slot.id) && count > 1) {
-            restored.push({ id: slot.id, count: 1, fav: slot.fav === true });
-            for (let n = 1; n < count; n++) {
-              potionOverflow.push({ id: slot.id, count: 1, fav: slot.fav === true });
-            }
+          let remaining = Math.max(0, Math.floor(slot.count));
+          if (remaining === 0) {
+            restored.push({ id: 'empty', count: 0 });
             continue;
           }
-          // Carry the favourite flag across, or every protected stack silently
-          // becomes droppable again after a reload.
-          restored.push({ id: slot.id, count, fav: slot.fav === true });
+          while (remaining > 0) {
+            const count = Math.min(ITEMS[slot.id].stackMax, remaining);
+            // Carry the favourite flag across every stack created while
+            // upgrading older saves to the current stack limit.
+            restored.push({ id: slot.id, count, fav: slot.fav === true });
+            remaining -= count;
+          }
+          if (slot.count <= 0) restored.push({ id: 'empty', count: 0 });
         } else {
           restored.push({ id: 'empty', count: 0 });
         }
-      }
-      for (const potion of potionOverflow) {
-        const empty = restored.findIndex(slot => slot.id === 'empty' || slot.count <= 0);
-        if (empty < 0) restored.push(potion);
-        else restored[empty] = potion;
       }
       this.inventory = restored;
     }
@@ -5169,7 +5167,7 @@ class Game {
    */
   addItemUpTo(id, count = 1, creative = false) {
     const item = ITEMS[id];
-    const stackMax = item ? item.stackMax : 999;
+    const stackMax = item ? item.stackMax : 256;
     if (item && item.creativeOnly && !creative) return 0;
 
     let remaining = count;
@@ -5225,7 +5223,7 @@ class Game {
     // out and rely on addItem to refuse it late. Answer no here as well, so the
     // refusal happens before anything is spent or consumed.
     if (item && item.creativeOnly) return false;
-    const stackMax = item ? item.stackMax : 999;
+    const stackMax = item ? item.stackMax : 256;
     let capacity = 0;
     for (const slot of this.inventory) {
       if (slot.id === id) capacity += Math.max(0, stackMax - slot.count);

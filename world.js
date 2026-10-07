@@ -1495,8 +1495,11 @@ class World {
     // repaints entirely.
     const key = [
       Math.floor(this.timeOfDay * 2600),
-      Math.floor(camera.x / 3),           // parallax shifts a third of a pixel
-      Math.floor(camera.y / 3),
+      // Repainting the full layered backdrop every few camera pixels was a
+      // significant cost while walking. A 12px bucket keeps parallax motion
+      // close enough to smooth at normal speed while cutting those repaints.
+      Math.floor(camera.x / 12),
+      Math.floor(camera.y / 12),
       biome
     ].join('|');
 

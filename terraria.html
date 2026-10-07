@@ -821,19 +821,16 @@
         </div>
       </section>
 
-      <!-- Multiplayer: host a world for friends, or join theirs. One room code
-           ties the two together. The server field is only needed to play across
-           machines (node server.js speaks ws://host:port/mp); left as this
-           machine, two tabs of this browser join through BroadcastChannel. -->
+      <!-- Multiplayer: a blank server address connects tabs in the same
+           browser; playing on different computers requires an active relay. -->
       <section id="title-multiplayer-panel" class="title-mp" aria-labelledby="mp-heading" hidden>
         <h2 id="mp-heading">Multiplayer</h2>
-        <p class="title-mp-hint">Share one world with up to 3 friends. Only the host is in charge of the monsters, bosses and the save.</p>
+        <p class="title-mp-hint">Play in one shared world with up to 3 friends. The host keeps the world and save; friends join as guests.</p>
 
-        <!-- Step 1: everyone fills this in the same way. -->
         <ol class="title-mp-steps">
-          <li><strong>Everyone</strong> types the <strong>same Room code</strong> (any 4 letters, e.g. <code>COOP</code>) and their own name.</li>
-          <li><strong>One player</strong> presses <strong>HOST GAME</strong> and reads the room code out loud.</li>
-          <li><strong>Everyone else</strong> presses <strong>JOIN GAME</strong> with that exact code.</li>
+          <li>Pick how you are connecting below. For other houses, you need a multiplayer server address from the person hosting it.</li>
+          <li>Everyone enters the same 4-character room code and their own name.</li>
+          <li>One person clicks <strong>HOST GAME</strong>. Friends click <strong>JOIN GAME</strong> using that same code.</li>
         </ol>
 
         <label class="title-mp-field" for="mp-name">Your name
@@ -846,21 +843,19 @@
         <!-- Two clear ways to play, so nobody has to guess what the server
              field is for. Local = one computer; Online = across the internet. -->
         <details class="title-mp-help">
-          <summary>How do I connect with my friends? (tap to read)</summary>
+          <summary>Simple connection guide (tap to read)</summary>
           <div class="title-mp-help-body">
-            <p><strong>Same computer (or same Wi-Fi, same browser):</strong> leave <em>Server</em> empty.
-              Open this page a second time in another tab or window, then host in one and join in the other.</p>
-            <p><strong>Different computers over the internet:</strong> the host runs the game server
-              (the one you were given, <code>node server.js</code>), then <em>everyone</em> types its address in
-              <em>Server</em> — e.g. <code>ws://your-host-address:8000/mp</code>. Ask the host for the exact
-              address and paste the same one on every screen, then host/join as above.</p>
-            <p><strong>Playable on the hosted web version?</strong> Only the same-computer option works there,
-              because no game server is running. For players in other houses you must use the
-              <code>node server.js</code> address above.</p>
+            <p><strong>Playing on one computer:</strong> leave <em>Server address</em> blank. Open the game in two browser tabs.
+              In the first tab, enter a room code and click <em>HOST GAME</em>. In the second tab, enter the same code and click <em>JOIN GAME</em>.</p>
+            <p><strong>Playing on different computers:</strong> you need a multiplayer server address that is already set up and running.
+              Ask the person who set it up for the full address, then every player enters that exact address, the same room code,
+              and clicks <em>HOST GAME</em> or <em>JOIN GAME</em> as appropriate. The room code alone cannot connect computers.</p>
+            <p><strong>Do not have a server address?</strong> You can still play using two tabs on one computer. The hosted web page does not automatically create an internet server,
+              so players in different homes need the server address first.</p>
           </div>
         </details>
 
-        <label class="title-mp-field" for="mp-server">Server address (leave empty to play on this computer)
+        <label class="title-mp-field" for="mp-server">Server address (leave blank for two tabs on this computer)
           <input id="mp-server" type="text" placeholder="ws://your-host-address:8000/mp" autocomplete="off" spellcheck="false">
         </label>
         <div class="title-mp-actions">
@@ -868,7 +863,7 @@
           <button id="mp-join-btn" class="title-button">JOIN GAME</button>
         </div>
         <p id="mp-status" class="title-mp-status" role="status" aria-live="polite"></p>
-        <p class="title-mp-note">In a game, press <code>T</code> (or Enter) to chat. The host entered the world already; joiners follow the host in.</p>
+        <p class="title-mp-note">The host starts in their current world. Friends appear in that world after joining. Press <code>T</code> (or Enter) to chat.</p>
         <button id="title-multiplayer-back" class="title-button">Back</button>
       </section>
 
