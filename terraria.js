@@ -78,7 +78,7 @@ const ITEMS = {
   gold_armor: { id: 'gold_armor', name: 'Gold Armor Plate', type: 'armor', defense: 4, reduction: 0.08, icon: '🟨', stackMax: 1 },
   diamond_armor: { id: 'diamond_armor', name: 'Diamond Armor Plate', type: 'armor', defense: 9, reduction: 0.18, icon: '💠', stackMax: 1 },
   crystal_armor: { id: 'crystal_armor', name: 'Crystal Armor Plate', type: 'armor', defense: 15, reduction: 0.25, icon: '💠', stackMax: 1 },
-  healing_potion: { id: 'healing_potion', name: 'Lesser Healing Potion', type: 'consumable', heal: 50, icon: '🧪', stackMax: 30 },
+  healing_potion: { id: 'healing_potion', name: 'Lesser Healing Potion', type: 'consumable', heal: 50, icon: '🧪', stackMax: 1 },
   campfire: { id: 'campfire', name: 'Campfire', type: 'tile', tile: TILES.CAMPFIRE, icon: '🏕️', stackMax: 99 }
 };
 
@@ -111,6 +111,102 @@ for (const [tuneId, tune] of Object.entries(ITEM_TUNING)) {
   else ITEMS[tuneId] = { id: tuneId, ...tune };
 }
 
+const KEYBIND_DEFAULTS = {
+  moveLeft: 'KeyA',
+  moveRight: 'KeyD',
+  jump: 'Space',
+  crouch: 'KeyS',
+  dodge: 'ShiftLeft',
+  sprint: 'ControlLeft',
+  craft: 'KeyE',
+  inventory: 'KeyI',
+  heal: 'KeyH',
+  buff: 'KeyQ',
+  drop: 'KeyG',
+  creative: 'KeyC',
+  settings: 'KeyO',
+  journal: 'KeyJ',
+  minimap: 'KeyM',
+  talk: 'KeyT',
+  fps: 'KeyF',
+  pause: 'KeyP',
+  slot1: 'Digit1',
+  slot2: 'Digit2',
+  slot3: 'Digit3',
+  slot4: 'Digit4',
+  slot5: 'Digit5',
+  slot6: 'Digit6',
+  slot7: 'Digit7',
+  slot8: 'Digit8',
+  slot9: 'Digit9'
+};
+
+const KEYBIND_ALIASES = {
+  moveLeft: ['ArrowLeft'],
+  moveRight: ['ArrowRight'],
+  jump: ['KeyW', 'ArrowUp'],
+  crouch: ['ArrowDown'],
+  dodge: ['ShiftRight'],
+  sprint: ['ControlRight']
+};
+
+function keybindConflictAction(action, code, bindings) {
+  for (const [other, bound] of Object.entries(bindings)) {
+    if (other === action) continue;
+    if (bound === code || (KEYBIND_ALIASES[other] || []).includes(code) ||
+        (KEYBIND_ALIASES[action] || []).includes(bound)) return other;
+  }
+  return null;
+}
+
+function isValidKeybindCode(code, action) {
+  const reserved = new Set([
+    'Escape', 'Enter', 'Tab', 'Backspace', 'Delete', 'F1', 'F5', 'F11', 'F12',
+    'ContextMenu', 'BrowserBack', 'BrowserForward'
+  ]);
+  return typeof code === 'string' && /^[A-Za-z][A-Za-z0-9]*$/.test(code) &&
+    !reserved.has(code) && (!/^(Shift|Control|Alt|Meta)/.test(code) || action === 'sprint');
+}
+
+const KEYBIND_LABELS = {
+  moveLeft: 'Move left',
+  moveRight: 'Move right',
+  jump: 'Jump',
+  crouch: 'Crouch / drop through',
+  dodge: 'Dodge roll',
+  sprint: 'Sprint',
+  craft: 'Crafting',
+  inventory: 'Inventory',
+  heal: 'Quick heal',
+  buff: 'Drink buff potion',
+  drop: 'Drop held item',
+  creative: 'Creative menu',
+  settings: 'Settings',
+  journal: 'Journal',
+  minimap: 'Cycle minimap',
+  talk: 'Talk to villager',
+  fps: 'Performance readout',
+  pause: 'Pause',
+  slot1: 'Hotbar slot 1',
+  slot2: 'Hotbar slot 2',
+  slot3: 'Hotbar slot 3',
+  slot4: 'Hotbar slot 4',
+  slot5: 'Hotbar slot 5',
+  slot6: 'Hotbar slot 6',
+  slot7: 'Hotbar slot 7',
+  slot8: 'Hotbar slot 8',
+  slot9: 'Hotbar slot 9'
+};
+
+const NON_STACKING_POTIONS = new Set([
+  'healing_potion',
+  'swiftness_potion',
+  'ironskin_potion',
+  'wrath_potion',
+  'regeneration_potion',
+  'miners_potion'
+]);
+
 const NEW_ITEMS = {
   life_crystal: {
     id: 'life_crystal', name: 'Life Crystal', type: 'consumable',
@@ -122,23 +218,23 @@ const NEW_ITEMS = {
   },
   swiftness_potion: {
     id: 'swiftness_potion', name: 'Swiftness Potion', type: 'consumable',
-    buff: 'swiftness', buffTime: 240, icon: '🏃', stackMax: 30
+    buff: 'swiftness', buffTime: 240, icon: '🏃', stackMax: 1
   },
   ironskin_potion: {
     id: 'ironskin_potion', name: 'Ironskin Potion', type: 'consumable',
-    buff: 'ironskin', buffTime: 240, icon: '🛡️', stackMax: 30
+    buff: 'ironskin', buffTime: 240, icon: '🛡️', stackMax: 1
   },
   wrath_potion: {
     id: 'wrath_potion', name: 'Wrath Potion', type: 'consumable',
-    buff: 'wrath', buffTime: 240, icon: '😤', stackMax: 30
+    buff: 'wrath', buffTime: 240, icon: '😤', stackMax: 1
   },
   regeneration_potion: {
     id: 'regeneration_potion', name: 'Regeneration Potion', type: 'consumable',
-    buff: 'regeneration', buffTime: 180, icon: '💚', stackMax: 30
+    buff: 'regeneration', buffTime: 180, icon: '💚', stackMax: 1
   },
   miners_potion: {
     id: 'miners_potion', name: "Miner's Potion", type: 'consumable',
-    buff: 'miners_focus', buffTime: 300, icon: '⛏️', stackMax: 30
+    buff: 'miners_focus', buffTime: 300, icon: '⛏️', stackMax: 1
   },
   hellstone: {
     id: 'hellstone', name: 'Hellstone', type: 'material',
@@ -1010,7 +1106,8 @@ class Game {
       mouseX: 0,
       mouseY: 0,
       mouseDown: false,
-      mouseRightDown: false
+      mouseRightDown: false,
+      keybinds: this.settings.keybinds
     };
 
     // ---- Control scheme -------------------------------------------------
@@ -2378,7 +2475,8 @@ class Game {
       // How large the in-game HUD is drawn. 'normal' is the original size;
       // the player can shrink it to free up room on a phone or enlarge it to
       // read it comfortably. The main menu is deliberately NOT affected.
-      uiScale: 'normal'
+      uiScale: 'normal',
+      keybinds: { ...KEYBIND_DEFAULTS }
     };
     try {
       const raw = localStorage.getItem('terracraft-settings');
@@ -2402,8 +2500,99 @@ class Game {
       if (['hidden', 'small', 'medium', 'large'].includes(saved.minimap)) defaults.minimap = saved.minimap;
       defaults.tooltips = saved.tooltips !== false;
       if (['small', 'normal', 'large'].includes(saved.uiScale)) defaults.uiScale = saved.uiScale;
+      for (const action of Object.keys(KEYBIND_DEFAULTS)) {
+        const code = saved.keybinds && saved.keybinds[action];
+        if (isValidKeybindCode(code, action) &&
+            !keybindConflictAction(action, code, defaults.keybinds)) {
+          defaults.keybinds[action] = code;
+        }
+      }
     } catch (_) {}
     return defaults;
+  }
+
+  keyMatches(action, code) {
+    return this.settings.keybinds[action] === code ||
+      (KEYBIND_ALIASES[action] || []).includes(code);
+  }
+
+  keybindActionForCode(code) {
+    for (const action of Object.keys(KEYBIND_DEFAULTS)) {
+      if (this.keyMatches(action, code)) return action;
+    }
+    return null;
+  }
+
+  formatKeybind(code) {
+    if (code === 'Space') return 'SPACE';
+    if (code === 'ShiftLeft' || code === 'ShiftRight') return 'SHIFT';
+      if (code === 'ControlLeft' || code === 'ControlRight') return 'CTRL';
+    if (code === 'ArrowLeft') return '←';
+    if (code === 'ArrowRight') return '→';
+    if (code === 'ArrowUp') return '↑';
+    if (code === 'ArrowDown') return '↓';
+    if (code.startsWith('Key')) return code.slice(3).toUpperCase();
+    if (code.startsWith('Digit')) return code.slice(5);
+    if (code.startsWith('Numpad')) return 'NUM ' + code.slice(6);
+    return code.toUpperCase();
+  }
+
+  syncKeybindUI() {
+    for (const button of document.querySelectorAll('button[data-keybind]')) {
+      const action = button.dataset.keybind;
+      const code = this.settings.keybinds[action];
+      button.textContent = this._capturingKeybind === action
+        ? 'PRESS A KEY…'
+        : this.formatKeybind(code);
+      button.setAttribute('aria-label', `${KEYBIND_LABELS[action]}: ${this.formatKeybind(code)}. Click to change.`);
+      button.setAttribute('aria-pressed', String(this._capturingKeybind === action));
+    }
+    for (const label of document.querySelectorAll('[data-keybind-label]')) {
+      const action = label.dataset.keybindLabel;
+      const code = this.settings.keybinds[action];
+      if (code) label.textContent = this.formatKeybind(code);
+    }
+    const rangeText = `${this.formatKeybind(this.settings.keybinds.slot1)}-${this.formatKeybind(this.settings.keybinds.slot9)}`;
+    for (const id of ['hotbar-key-range', 'hotbar-key-range-guide']) {
+      const range = document.getElementById(id);
+      if (range) range.textContent = rangeText;
+    }
+  }
+
+  captureKeybind(action) {
+    if (!Object.prototype.hasOwnProperty.call(KEYBIND_DEFAULTS, action)) return false;
+    this._capturingKeybind = action;
+    this.syncKeybindUI();
+    const button = document.querySelector(`button[data-keybind="${action}"]`);
+    button?.focus();
+    return true;
+  }
+
+  setCapturedKeybind(code) {
+    const action = this._capturingKeybind;
+    if (!action) return false;
+    if (code === 'Escape') {
+      this._capturingKeybind = null;
+      this.syncKeybindUI();
+      this.showToast('Key binding change cancelled.');
+      return false;
+    }
+    if (!isValidKeybindCode(code, action)) {
+      this.showToast('Choose a regular keyboard key.');
+      return false;
+    }
+    const conflict = keybindConflictAction(action, code, this.settings.keybinds);
+    if (conflict) {
+      this.showToast(`That key is already assigned to ${KEYBIND_LABELS[conflict]}.`);
+      return false;
+    }
+    this.settings.keybinds[action] = code;
+    this.input.keybinds = this.settings.keybinds;
+    this._capturingKeybind = null;
+    this.saveSettings();
+    this.syncKeybindUI();
+    this.showToast(`${KEYBIND_LABELS[action]}: ${this.formatKeybind(code)}.`);
+    return true;
   }
 
   /**
@@ -2561,6 +2750,7 @@ class Game {
     setSel('settings-minimap', this.settings.minimap);
     setCheck('settings-tooltips', this.settings.tooltips);
     setSel('settings-ui-scale', this.settings.uiScale);
+    this.syncKeybindUI();
     // The control scheme lives outside this.settings, but it is still a control
     // in this panel, so it gets synced here alongside the rest.
     this.syncControlSchemeLabels();
@@ -2660,29 +2850,38 @@ class Game {
     window.addEventListener('keydown', (e) => {
       this.sound.init(); // Audio unlock on first action
 
+      if (this._capturingKeybind) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setCapturedKeybind(e.code);
+        return;
+      }
+
       // While a modal is open its input owns the keyboard. The creative search
       // box in particular would otherwise eat characters as game actions.
       const typing = e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
       if (typing) return;
 
       this.input.keys[e.code] = true;
+      const action = this.keybindActionForCode(e.code);
+      if (action) e.preventDefault();
       // Track Shift explicitly so the inventory can offer "move whole stack".
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.shiftHeld = true;
 
       // C opens the creative menu (give yourself any item).
-      if (e.code === 'KeyC' && !e.repeat) {
+      if (action === 'creative' && !e.repeat) {
         this.toggleCreativeModal();
         return;
       }
 
       // O opens the compact settings panel.
-      if (e.code === 'KeyO' && !e.repeat) {
+      if (action === 'settings' && !e.repeat) {
         this.toggleSettings();
         return;
       }
 
       // J opens the settlement journal (discoveries + score).
-      if (e.code === 'KeyJ' && !e.repeat) {
+      if (action === 'journal' && !e.repeat) {
         this.toggleJournal();
         return;
       }
@@ -2703,7 +2902,7 @@ class Game {
       }
 
       // Pause / resume takes priority over everything else, except closing Settings.
-      if (e.code === 'Escape' || e.code === 'KeyP') {
+      if (e.code === 'Escape' || action === 'pause') {
         const settingsModal = document.getElementById('settings-modal');
         if (e.code === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) {
           this.toggleSettings(false);
@@ -2724,14 +2923,14 @@ class Game {
       if (this.paused) return;
 
       // M cycles the minimap: hidden -> small -> medium -> large
-      if (e.code === 'KeyM' && !e.repeat) {
+      if (action === 'minimap' && !e.repeat) {
         const size = this.minimap.cycle();
         this.showToast(size ? `🗺️ Minimap size: ${size}px` : '🗺️ Minimap hidden');
         return;
       }
 
       // T talks to a nearby villager (quests — see npcs.js)
-      if (e.code === 'KeyT' && !e.repeat) {
+      if (action === 'talk' && !e.repeat) {
         if (this.npcs) this.npcs.handleTalkKey();
         return;
       }
@@ -2739,46 +2938,46 @@ class Game {
     // Zoom is handled elsewhere in this build.
 
     // 1-9 Hotbar selection
-      if (e.key >= '1' && e.key <= '9') {
-        this.player.selectedSlot = parseInt(e.key) - 1;
+      if (action && action.startsWith('slot') && !e.repeat) {
+        this.player.selectedSlot = Number(action.slice(4)) - 1;
         this.updateHotbarUI();
       }
 
       // A/D (or left/right) reels in while a line is in the water. This must
       // run before the movement bindings below so a bite is never missed.
-      if ((e.code === 'KeyA' || e.code === 'KeyD' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') && !e.repeat) {
+      if ((action === 'moveLeft' || action === 'moveRight') && !e.repeat) {
         if (this.onFishingKey()) return;
       }
 
       // Jump / Double Jump / Wall Kick.
       // Ignoring OS key-repeat stops a held space bar from instantly burning
       // the double jump the moment we touch the ground.
-      if ((e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') && !e.repeat) {
+      if (action === 'jump' && !e.repeat) {
         this.player.queueJump(this.sound, this.particles);
       }
 
       // Dodge Roll
-      if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !e.repeat) {
+      if (action === 'dodge' && !e.repeat) {
         this.player.dodge(this.sound, this.particles);
       }
 
       // Crafting and inventory are deliberately separate screens.
-      if (e.code === 'KeyE' && !e.repeat) {
+      if (action === 'craft' && !e.repeat) {
         e.preventDefault();
         this.toggleCraftingModal();
       }
-      if (e.code === 'KeyI' && !e.repeat) {
+      if (action === 'inventory' && !e.repeat) {
         e.preventDefault();
         this.toggleInventoryModal();
       }
 
       // Quick Heal (H)
-      if (e.code === 'KeyH' && !e.repeat) {
+      if (action === 'heal' && !e.repeat) {
         this.quickHeal();
       }
 
       // Q drinks the best buff potion in the bag
-      if (e.code === 'KeyQ' && !e.repeat) {
+      if (action === 'buff' && !e.repeat) {
         this.quickBuff();
       }
 
@@ -2786,13 +2985,13 @@ class Game {
       //
       // Shift drops ONE item, exactly like Minecraft: handy for feeding one
       // ore to a furnace or nudging a stack out from under a wall.
-      if (e.code === 'KeyG' && !e.repeat) {
+      if (action === 'drop' && !e.repeat) {
         e.preventDefault();
         this.dropSelectedStack(e.shiftKey ? 1 : Infinity);
       }
 
       // F toggles the performance HUD: FPS, resolution and particle load.
-      if (e.code === 'KeyF' && !e.repeat) {
+      if (action === 'fps' && !e.repeat) {
         this.showFps = !this.showFps;
         this.settings.showFps = this.showFps;
         if (this.showFps) this.renderFpsBadge();
@@ -2992,6 +3191,10 @@ class Game {
     // so it persists under its own key and applies the moment it changes.
     document.getElementById('settings-controls')?.addEventListener('change', (event) => {
       this.setControlScheme(event.target.value);
+    });
+    document.getElementById('settings-keybinds')?.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-keybind]');
+      if (button) this.captureKeybind(button.dataset.keybind);
     });
     document.getElementById('settings-ui-scale')?.addEventListener('change', (event) => {
       this.settings.uiScale = event.target.value;
@@ -4040,6 +4243,7 @@ class Game {
       // with the tail of the bag missing.
       const wanted = Math.max(this.inventory.length, save.inventory.length);
       const restored = [];
+      const potionOverflow = [];
       for (let i = 0; i < wanted; i++) {
         const slot = save.inventory[i];
         // A `creativeOnly` item (The Ban Hammer) has no legitimate presence in
@@ -4051,12 +4255,25 @@ class Game {
         // the filter has to be explicit.
         const banned = slot && ITEMS[slot.id] && ITEMS[slot.id].creativeOnly;
         if (slot && ITEMS[slot.id] && Number.isFinite(slot.count) && !banned) {
+          const count = Math.max(0, Math.floor(slot.count));
+          if (NON_STACKING_POTIONS.has(slot.id) && count > 1) {
+            restored.push({ id: slot.id, count: 1, fav: slot.fav === true });
+            for (let n = 1; n < count; n++) {
+              potionOverflow.push({ id: slot.id, count: 1, fav: slot.fav === true });
+            }
+            continue;
+          }
           // Carry the favourite flag across, or every protected stack silently
           // becomes droppable again after a reload.
-          restored.push({ id: slot.id, count: Math.max(0, slot.count), fav: slot.fav === true });
+          restored.push({ id: slot.id, count, fav: slot.fav === true });
         } else {
           restored.push({ id: 'empty', count: 0 });
         }
+      }
+      for (const potion of potionOverflow) {
+        const empty = restored.findIndex(slot => slot.id === 'empty' || slot.count <= 0);
+        if (empty < 0) restored.push(potion);
+        else restored[empty] = potion;
       }
       this.inventory = restored;
     }
@@ -4742,64 +4959,42 @@ class Game {
     const slot = this.inventory[index];
     if (!slot || slot.id === 'empty' || slot.count <= 0) return false;
 
-    // One item out of a stack, or the whole thing.
-    const wholeStack = amount >= slot.count;
-    const dropIndex = wholeStack ? index : this.spillOneToOverflowSlot(index, amount);
-    if (dropIndex === null || dropIndex === undefined) return false;
-
-    const dropped = this.dropInventoryStack(dropIndex);
-    return dropped;
+    return this.dropInventoryStack(index, amount);
   }
 
-  /**
-   * Move `count` items off the front of a stack into a free slot, so the existing
-   * single-slot drop can throw "one of these". Returns the index of the new
-   * stack, or null if the bag has nowhere to put it — in which case the drop is
-   * refused rather than silently eating items.
-   */
-  spillOneToOverflowSlot(index, count) {
-    const src = this.inventory[index];
-    const take = Math.max(1, Math.min(count, src.count));
-    if (take >= src.count) return index;
-    const item = ITEMS[src.id];
-    const stackMax = item ? item.stackMax : 999;
-    const free = this.inventory.findIndex((s, i) =>
-      i !== index && (!s || s.id === 'empty' || s.count <= 0));
-    if (free === -1) {
-      this.showToast('🎒 No free slot to drop one into.');
-      return null;
-    }
-    this.inventory[free] = { id: src.id, count: Math.min(take, stackMax) };
-    src.count -= this.inventory[free].count;
-    return free;
-  }
-
-  dropInventoryStack(index) {
+  dropInventoryStack(index, amount = Infinity) {
     const slot = this.inventory[index];
     if (!slot || slot.id === 'empty' || slot.count <= 0) return false;
     // A favourited stack cannot be thrown on the floor. This is the guard the
     // drag-out path lands in, so it covers every way of dropping from the bag —
     // and the G key as well, since that routes through here too.
     if (!this.guardFavorite(slot, 'drop it')) return false;
+    const count = Number.isFinite(amount)
+      ? Math.max(1, Math.min(slot.count, Math.floor(amount)))
+      : slot.count;
+    const facing = this.player.facing < 0 ? -1 : 1;
     const drop = new DropItem(
-      this.player.x + this.player.width / 2,
-      this.player.y,
+      Math.max(0, Math.min(
+        this.world.pixelWidth - 14,
+        this.player.x + this.player.width / 2 + facing * TILE_SIZE * 4 - 7
+      )),
+      this.player.y + this.player.height / 2 - 7,
       slot.id,
-      slot.count
+      count
     );
-    // Thrown clear of the player, and NOT collectable for a moment. The pickup
-    // radius is 22px and the player is standing right here, so a drop that
-    // spawned at their feet with no delay was vacuumed straight back into the
-    // bag on the very next frame — dropping was impossible to do on purpose.
-    drop.vx = (Math.random() - 0.5) * 5;
-    drop.vy = -7;
+    // Spawn four tiles ahead and leave a generous pickup grace period. Repeated
+    // drops therefore cannot be vacuumed back into the bag before the player
+    // can move away or inspect the stack.
+    drop.vx = facing * 2.5;
+    drop.vy = -4.5;
     drop.life = 90;
-    drop.pickupDelay = 0.75;
+    drop.pickupDelay = 2.5;
     this.drops.push(drop);
-    this.inventory[index] = { id: 'empty', count: 0 };
+    slot.count -= count;
+    if (slot.count <= 0) this.inventory[index] = { id: 'empty', count: 0 };
     this.renderInventoryGrid();
     this.updateHotbarUI();
-    this.showToast(`Dropped ${ITEMS[slot.id]?.name || slot.id}.`);
+    this.showToast(`Dropped ${count} ${ITEMS[slot.id]?.name || slot.id}.`);
     return true;
   }
 
@@ -4850,6 +5045,26 @@ class Game {
     if (!Number.isInteger(sourceIndex) || !Number.isInteger(targetIndex)) return;
     if (sourceIndex < 0 || sourceIndex >= this.inventory.length || targetIndex < 0 || targetIndex >= this.inventory.length) return;
     if (sourceIndex === targetIndex || this.inventory[sourceIndex].id === 'empty') return;
+
+    const source = this.inventory[sourceIndex];
+    const target = this.inventory[targetIndex];
+    const item = ITEMS[source.id];
+    if (target.id === source.id && item && item.stackMax > 1) {
+      const room = Math.max(0, item.stackMax - target.count);
+      const moved = Math.min(room, source.count);
+      if (moved > 0) {
+        target.count += moved;
+        target.fav = target.fav === true || source.fav === true;
+        source.count -= moved;
+        if (source.count <= 0) this.inventory[sourceIndex] = { id: 'empty', count: 0 };
+        if (targetIndex < 9) this.player.selectedSlot = targetIndex;
+        this.updateHotbarUI();
+        this.renderHotbarUI();
+        this.renderInventoryGrid();
+        this.showToast(`🎒 Combined ${moved} ${item.name}.`);
+        return;
+      }
+    }
 
     [this.inventory[sourceIndex], this.inventory[targetIndex]] = [this.inventory[targetIndex], this.inventory[sourceIndex]];
     if (targetIndex < 9) this.player.selectedSlot = targetIndex;
@@ -5492,13 +5707,13 @@ class Game {
 
   /**
    * Apply one potion straight from the bag. Handles healing, buffs, permanent
-   * life/mana upgrades and the shared potion-sickness cooldown.
+   * life/mana upgrades. Potions can be used consecutively without a cooldown.
    */
   consumePotion(itemData) {
     if (!itemData) return false;
     const isPermanent = !!(itemData.maxHpBonus || itemData.maxManaBonus);
-    if (!isPermanent && this.buffs.has('potion_sickness')) {
-      this.showToast(`💊 Potion Sickness — ${Math.ceil(this.buffs.timeLeft('potion_sickness'))}s left`);
+    if (!isPermanent && itemData.heal && this.player.hp >= this.player.maxHp) {
+      this.showToast('❤️ Life is already full.');
       return false;
     }
     if (!this.removeItem(itemData.id, 1)) return false;
@@ -5542,9 +5757,6 @@ class Game {
       if (def) parts.push(`${def.icon} ${def.name}`);
     }
 
-    // Everything except permanent upgrades leaves you on a potion cooldown.
-    if (!permanent) this.buffs.add('potion_sickness', 20);
-
     this.sound.playPickup();
     if (permanent) {
       this.showAnnouncement(permanent);
@@ -5562,10 +5774,6 @@ class Game {
 
   /** Drink the most impactful buff potion currently in the bag (Q key). */
   quickBuff() {
-    if (this.buffs.has('potion_sickness')) {
-      this.showToast(`💊 Potion Sickness — ${Math.ceil(this.buffs.timeLeft('potion_sickness'))}s left`);
-      return false;
-    }
     const order = ['wrath_potion', 'ironskin_potion', 'swiftness_potion', 'regeneration_potion', 'miners_potion'];
     const drinkable = order.filter(id => this.countItem(id) > 0);
     if (!drinkable.length) {
@@ -5591,14 +5799,9 @@ class Game {
 
   useConsumable(itemData) {
     if (!itemData) return false;
-    // Buff potions, Life Crystals and Mana Crystals share the potion pipeline
-    // (which owns the potion-sickness cooldown and permanent stat upgrades).
+    // Buff potions, Life Crystals and Mana Crystals share the potion pipeline.
     if (itemData.buff || itemData.maxHpBonus || itemData.maxManaBonus || itemData.id === 'healing_potion') {
       return this.consumePotion(itemData);
-    }
-    if (this.buffs.has('potion_sickness') && itemData.heal) {
-      this.showToast(`💊 Potion Sickness — ${Math.ceil(this.buffs.timeLeft('potion_sickness'))}s left`);
-      return false;
     }
     if (itemData.heal && !itemData.hunger && this.player.hp >= this.player.maxHp) {
       this.showToast('❤️ Life is already full.');
@@ -7965,17 +8168,6 @@ this.player.dodgeTime = 0;
     this.renderManaStars();
     // ---- Buff / debuff rack, exactly like Terraria's top-right icon row ----
     this.buffs.renderHUD(document);
-    // ---- Potion Sickness readout ----
-    const potionBadge = document.getElementById('potion-badge');
-    if (potionBadge) {
-      const left = this.buffs.timeLeft('potion_sickness');
-      if (left > 0) {
-        potionBadge.textContent = `💊 POTION SICKNESS ${Math.ceil(left)}s`;
-        potionBadge.classList.remove('hidden');
-      } else {
-        potionBadge.classList.add('hidden');
-      }
-    }
     this.journey?.renderHUD();
   }
 

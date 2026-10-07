@@ -754,9 +754,10 @@ class Player {
     }
 
     // Horizontal movement (hold CTRL while running to sprint)
-    const leftHeld = input.keys['KeyA'] || input.keys['ArrowLeft'];
-    const rightHeld = input.keys['KeyD'] || input.keys['ArrowRight'];
-    const sprintHeld = (input.keys['ControlLeft'] || input.keys['ControlRight']) &&
+    const bindings = input.keybinds || {};
+    const leftHeld = input.keys[bindings.moveLeft] || input.keys['KeyA'] || input.keys['ArrowLeft'];
+    const rightHeld = input.keys[bindings.moveRight] || input.keys['KeyD'] || input.keys['ArrowRight'];
+    const sprintHeld = (input.keys[bindings.sprint] || input.keys['ControlLeft'] || input.keys['ControlRight']) &&
       (leftHeld || rightHeld) && this.stamina > 1;
     this.isSprinting = !!sprintHeld;
 
@@ -809,7 +810,7 @@ class Player {
     }
 
     // Falling through platforms when pressing Down / S
-    const dropThrough = input.keys['KeyS'] || input.keys['ArrowDown'];
+    const dropThrough = input.keys[bindings.crouch] || input.keys['KeyS'] || input.keys['ArrowDown'];
 
     // Gravity
     this.vy += this.gravity;
@@ -830,7 +831,7 @@ class Player {
     // countdown, and a fresh pair only arrived by dying or swapping gear.
     // A spent tank and a running lock-out are now the same fact: whichever
     // half is missing gets created here, so the pair can never desync.
-    const wingJumpHeld = input.keys['Space'] || input.keys['KeyW'] || input.keys['ArrowUp'];
+    const wingJumpHeld = input.keys[bindings.jump] || input.keys['Space'] || input.keys['KeyW'] || input.keys['ArrowUp'];
     const wasFlying = this.isFlying;
     this.isFlying = false;
 
@@ -879,12 +880,14 @@ class Player {
       const rightTileX = Math.floor((this.x + this.width + 2) / TILE_SIZE);
       const midY = Math.floor((this.y + this.height / 2) / TILE_SIZE);
 
-      if (world.isSolid(leftTileX, midY) && (input.keys['KeyA'] || input.keys['ArrowLeft'])) {
+      if (world.isSolid(leftTileX, midY) &&
+          (input.keys[bindings.moveLeft] || input.keys['KeyA'] || input.keys['ArrowLeft'])) {
         this.isWallSliding = true;
         this.wallDir = -1;
         this.vy = Math.min(this.vy, 2.0); // slower descent
         particleSystem.addParticle(this.x, this.y + this.height * 0.7, 1, -1, '#64748b', 2.5, 0.15);
-      } else if (world.isSolid(rightTileX, midY) && (input.keys['KeyD'] || input.keys['ArrowRight'])) {
+      } else if (world.isSolid(rightTileX, midY) &&
+          (input.keys[bindings.moveRight] || input.keys['KeyD'] || input.keys['ArrowRight'])) {
         this.isWallSliding = true;
         this.wallDir = 1;
         this.vy = Math.min(this.vy, 2.0);

@@ -196,7 +196,6 @@
           <div id="journey-threat" class="journey-threat hidden"></div>
         </section>
         <div id="buff-bar" class="buff-bar"></div>
-        <span id="potion-badge" class="potion-badge hidden">💊 POTION SICKNESS</span>
         <div id="minimap-panel" class="minimap-panel">
           <canvas id="minimap" width="132" height="132"></canvas>
           <div id="minimap-label" class="minimap-label">FOREST</div>
@@ -224,17 +223,17 @@
           </div>
         </div>
         <div class="controls-hint">
-          <span><kbd>1-9</kbd> Select Item</span>
+          <span><kbd id="hotbar-key-range">1-9</kbd> Select Item</span>
           <span><kbd>L-Click</kbd> Attack/Mine</span>
           <span><kbd>R-Click</kbd> Place/Use</span>
-          <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
-          <span><kbd>SPACE</kbd> Jump / Double Jump</span>
-          <span><kbd>SHIFT</kbd> Dodge Roll</span>
-          <span><kbd>E</kbd> Crafting</span>
-          <span><kbd>I</kbd> Inventory</span>
-          <span><kbd>C</kbd> Creative</span>
-          <span><kbd>J</kbd> Journal</span>
-          <span><kbd>F</kbd> FPS</span>
+          <span><kbd data-keybind-label="moveLeft">A</kbd>/<kbd data-keybind-label="moveRight">D</kbd> Move</span>
+          <span><kbd data-keybind-label="jump">SPACE</kbd> Jump / Double Jump</span>
+          <span><kbd data-keybind-label="dodge">SHIFT</kbd> Dodge Roll</span>
+          <span><kbd data-keybind-label="craft">E</kbd> Crafting</span>
+          <span><kbd data-keybind-label="inventory">I</kbd> Inventory</span>
+          <span><kbd data-keybind-label="creative">C</kbd> Creative</span>
+          <span><kbd data-keybind-label="journal">J</kbd> Journal</span>
+          <span><kbd data-keybind-label="fps">F</kbd> FPS</span>
         </div>
         <!-- The same cheat-sheet for thumbs. Only one of the two is ever
              displayed (see body.controls-touch), so the bottom panel never
@@ -373,6 +372,39 @@
               <p class="settings-help settings-help-tight" id="settings-controls-note">
                 Switching to Mobile draws thumb controls over the world and shrinks the HUD to make room for them.
               </p>
+              <p class="settings-help settings-help-tight">Click a key to rebind it, then press the new key. Escape cancels; each action needs a different key.</p>
+              <div class="keybind-grid" id="settings-keybinds">
+                <div class="keybind-group-title">MOVEMENT</div>
+                <label>Move left <button type="button" class="keybind-button" data-keybind="moveLeft"></button></label>
+                <label>Move right <button type="button" class="keybind-button" data-keybind="moveRight"></button></label>
+                <label>Jump <button type="button" class="keybind-button" data-keybind="jump"></button></label>
+                <label>Crouch / drop through <button type="button" class="keybind-button" data-keybind="crouch"></button></label>
+                <label>Dodge roll <button type="button" class="keybind-button" data-keybind="dodge"></button></label>
+                <label>Sprint <button type="button" class="keybind-button" data-keybind="sprint"></button></label>
+                <div class="keybind-group-title">ACTIONS</div>
+                <label>Crafting <button type="button" class="keybind-button" data-keybind="craft"></button></label>
+                <label>Inventory <button type="button" class="keybind-button" data-keybind="inventory"></button></label>
+                <label>Quick heal <button type="button" class="keybind-button" data-keybind="heal"></button></label>
+                <label>Drink buff potion <button type="button" class="keybind-button" data-keybind="buff"></button></label>
+                <label>Drop held item <button type="button" class="keybind-button" data-keybind="drop"></button></label>
+                <label>Creative menu <button type="button" class="keybind-button" data-keybind="creative"></button></label>
+                <label>Settings <button type="button" class="keybind-button" data-keybind="settings"></button></label>
+                <label>Journal <button type="button" class="keybind-button" data-keybind="journal"></button></label>
+                <label>Cycle minimap <button type="button" class="keybind-button" data-keybind="minimap"></button></label>
+                <label>Talk to villager <button type="button" class="keybind-button" data-keybind="talk"></button></label>
+                <label>Performance readout <button type="button" class="keybind-button" data-keybind="fps"></button></label>
+                <label>Pause <button type="button" class="keybind-button" data-keybind="pause"></button></label>
+                <div class="keybind-group-title">HOTBAR</div>
+                <label>Slot 1 <button type="button" class="keybind-button" data-keybind="slot1"></button></label>
+                <label>Slot 2 <button type="button" class="keybind-button" data-keybind="slot2"></button></label>
+                <label>Slot 3 <button type="button" class="keybind-button" data-keybind="slot3"></button></label>
+                <label>Slot 4 <button type="button" class="keybind-button" data-keybind="slot4"></button></label>
+                <label>Slot 5 <button type="button" class="keybind-button" data-keybind="slot5"></button></label>
+                <label>Slot 6 <button type="button" class="keybind-button" data-keybind="slot6"></button></label>
+                <label>Slot 7 <button type="button" class="keybind-button" data-keybind="slot7"></button></label>
+                <label>Slot 8 <button type="button" class="keybind-button" data-keybind="slot8"></button></label>
+                <label>Slot 9 <button type="button" class="keybind-button" data-keybind="slot9"></button></label>
+              </div>
             </section>
             <section class="settings-section">
               <h4>QUICK ACTIONS</h4>
@@ -512,7 +544,7 @@
       </div>
 
       <!-- NPC talk prompt + quest dialog (see npcs.js) -->
-      <div id="npc-prompt" class="npc-prompt hidden"><span class="hint-keys">Press <kbd>T</kbd> to talk</span><span class="hint-touch">Tap <strong>💬</strong> to talk</span></div>
+      <div id="npc-prompt" class="npc-prompt hidden"><span class="hint-keys">Press <kbd data-keybind-label="talk">T</kbd> to talk</span><span class="hint-touch">Tap <strong>💬</strong> to talk</span></div>
       <div id="npc-modal" class="modal hidden">
         <div class="modal-content npc-modal-content">
           <div class="modal-header">
@@ -577,6 +609,7 @@
                 Starlight Bow, Forest Wand), armor and torches.</li>
               <li><strong>Nighttime:</strong> At 07:00 PM the sky turns dark. Zombies, Demon Eyes, and Forest Wraiths
                 spawn!</li>
+              <li><strong>🍎 Eat when you need it.</strong> Use food from your hotbar to restore hunger and life; you cannot eat when both are full. Potions can be used back-to-back, and each potion occupies its own inventory slot.</li>
               <li><strong>The Underworld:</strong> Dig far below the blackstone layer. You will reach a lava ocean and the
                 Hellbound Castle. Its gate opens with one click; the demon altar inside wakes a three-phase boss.</li>
               <li><strong>The Boss:</strong> Surviving to midnight or clicking <strong>[👁️ SUMMON BOSS]</strong>
@@ -587,7 +620,7 @@
             <ul>
               <li><strong>🎣 Go fishing.</strong> Craft a <strong>Fishing Rod</strong> (8 wood + 2 wool), select it,
                 and <strong>right-click a pool of water</strong> to cast. Wait for the bobber to flash, then press
-                <kbd>A</kbd> or <kbd>D</kbd> to reel it in. Fish feed you; Golden Koi and Sunken Boots sell the dream.
+                <kbd data-keybind-label="moveLeft">A</kbd> or <kbd data-keybind-label="moveRight">D</kbd> to reel it in. Fish feed you; Golden Koi and Sunken Boots sell the dream.
                 Every catch raises your Angler level, which attracts rarer fish.</li>
               <li><strong>📖 Fill your Journal.</strong> Press <kbd>J</kbd> to see your settlement score — days
                 survived, monsters slain, bosses defeated, chests opened, quests finished. The first time you do
@@ -602,28 +635,30 @@
             </ul>
             <h4>CONTROLS & MOVEMENT</h4>
             <ul>
-              <li><kbd>A</kbd> / <kbd>D</kbd> — Smooth run & slide mechanics.</li>
-              <li><kbd>W</kbd> or <kbd>SPACE</kbd> — Jump. Press again in air for double jump (Hermes Wind).</li>
-              <li><kbd>S</kbd> — Crouch / Fast fall through wood platforms.</li>
-              <li><kbd>SHIFT</kbd> — Dodge roll with invincibility frames & particle trail!</li>
+              <li><kbd data-keybind-label="moveLeft">A</kbd> / <kbd data-keybind-label="moveRight">D</kbd> — Smooth run & slide mechanics.</li>
+              <li><kbd data-keybind-label="jump">SPACE</kbd> — Jump. Press again in air for double jump (Hermes Wind).</li>
+              <li><kbd data-keybind-label="crouch">S</kbd> — Crouch / Fast fall through wood platforms.</li>
+              <li><kbd data-keybind-label="dodge">SHIFT</kbd> — Dodge roll with invincibility frames & particle trail!</li>
+              <li><kbd data-keybind-label="sprint">CTRL</kbd> — Sprint while moving.</li>
               <li>Wall Slide & Wall Jump — Touch any wall while falling and press <kbd>SPACE</kbd> to wall kick!</li>
               <li><kbd>Left Click</kbd> — Swing sword, shoot bow, cast spells, or mine tiles with pickaxe.</li>
               <li><kbd>Right Click</kbd> — Place blocks or consume potions.</li>
-              <li><kbd>1</kbd> - <kbd>9</kbd> or Mouse Scroll — Switch hotbar slot.</li>
-              <li><kbd>E</kbd> — Open/Close Crafting Forge.</li>
-              <li><kbd>T</kbd> — Talk to nearby villagers (Guide, Prospector, Scavenger) and accept quests.</li>
-              <li><kbd>C</kbd> — Open the Creative Menu and give yourself any item or block.</li>
-              <li><kbd>Q</kbd> — Drink the best buff potion in your bag.</li>
-              <li><kbd>G</kbd> — Drop the item you are holding on the floor. <kbd>Shift</kbd>+<kbd>G</kbd> drops
-                just one item out of a stack, like Minecraft.</li>
-              <li><kbd>H</kbd> — Quick heal with a potion.</li>
-              <li><kbd>M</kbd> — Cycle the minimap: hidden → small → medium → large.</li>
-              <li><kbd>O</kbd> — Open Settings for quality, effects density, audio, saves, and quick actions.</li>
-              <li><kbd>ESC</kbd> or <kbd>P</kbd> — Pause menu: Resume, Save World, Settings, or
+              <li><kbd id="hotbar-key-range-guide">1-9</kbd> or Mouse Scroll — Switch hotbar slot.</li>
+              <li><kbd data-keybind-label="craft">E</kbd> — Open/Close Crafting Forge.</li>
+              <li><kbd data-keybind-label="talk">T</kbd> — Talk to nearby villagers (Guide, Prospector, Scavenger) and accept quests.</li>
+              <li><kbd data-keybind-label="creative">C</kbd> — Open the Creative Menu and give yourself any item or block.</li>
+              <li><kbd data-keybind-label="buff">Q</kbd> — Drink the best buff potion in your bag.</li>
+              <li><kbd data-keybind-label="drop">G</kbd> — Drop the held stack four blocks ahead. <kbd>Shift</kbd>+<kbd data-keybind-label="drop">G</kbd> drops
+                just one item out of a stack.</li>
+              <li><kbd data-keybind-label="heal">H</kbd> — Quick heal with a potion.</li>
+              <li><kbd data-keybind-label="minimap">M</kbd> — Cycle the minimap: hidden → small → medium → large.</li>
+              <li><kbd data-keybind-label="settings">O</kbd> — Open Settings for quality, effects density, audio, saves, and quick actions.</li>
+              <li><kbd>ESC</kbd> or <kbd data-keybind-label="pause">P</kbd> — Pause menu: Resume, Save World, Settings, or
                 <strong>Main Menu</strong>. Main Menu saves your world and drops you back at the
                 title screen so you can switch save files without closing the game.</li>
-              <li><kbd>F</kbd> — Toggle the performance readout (FPS, resolution, effect count).</li>
-              <li><kbd>J</kbd> — Open the Settlement Journal (discoveries and score).</li>
+              <li><kbd data-keybind-label="fps">F</kbd> — Toggle the performance readout (FPS, resolution, effect count).</li>
+              <li><kbd data-keybind-label="inventory">I</kbd> — Open your inventory.</li>
+              <li><kbd data-keybind-label="journal">J</kbd> — Open the Settlement Journal (discoveries and score).</li>
               <li><kbd>Right-click</kbd> with the Fishing Rod on water — cast or reel in a line.</li>
             </ul>
             <h4>PLAYING ON A PHONE OR TABLET</h4>
@@ -708,7 +743,7 @@
             <button id="btn-pause-settings" class="ui-btn" title="Settings and controls">⚙️ SETTINGS</button>
             <button id="btn-pause-menu" class="ui-btn" title="Save, then return to the main menu to switch worlds">🏠 MAIN MENU</button>
           </div>
-          <p class="pause-hint"><span class="hint-keys">Press <kbd>ESC</kbd> or <kbd>P</kbd> to resume</span><span class="hint-touch">Tap <strong>▶ RESUME</strong> to head back out</span></p>
+          <p class="pause-hint"><span class="hint-keys">Press <kbd>ESC</kbd> or <kbd data-keybind-label="pause">P</kbd> to resume</span><span class="hint-touch">Tap <strong>▶ RESUME</strong> to head back out</span></p>
         </div>
       </div>
 

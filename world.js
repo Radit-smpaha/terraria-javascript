@@ -2278,23 +2278,23 @@ class World {
     ridgePath();
     ctx.clip();
 
-    // 2. The sun-facing side, lit: clip to the ridge and fill from each peak's
-    //    left slope inward. Sun is up and to the left for most of the day, so
-    //    the left faces catch it, which is what gives the range a direction.
-    //    Drawn every OTHER sample so the lit faces read as broad planes rather
-    //    than as a 13px comb of slivers.
-    ctx.fillStyle = baseColor;
-    for (let i = 2; i < peaks.length; i += 2) {
-      const [px, py] = peaks[i];
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      // Slope down-left to the neighbouring sample, and fill the wedge.
-      ctx.lineTo(px - step * 2.3, peaks[i - 2][1] + amp * 0.1);
-      ctx.lineTo(px - step * 2.3, h);
-      ctx.lineTo(px, h);
-      ctx.closePath();
-      ctx.fill();
-    }
+    // 2. Shade the complete mountain face with smooth gradients. Filling
+    //    individual straight wedges left gaps and a jagged colour edge beneath
+    //    an otherwise smooth crest. The clip keeps both gradients exactly
+    //    inside the silhouette, while the broad horizontal wash suggests
+    //    sunward and shadowed faces without drawing seams across the outline.
+    const face = ctx.createLinearGradient(0, baseY - amp, 0, h);
+    face.addColorStop(0, this.shadeHex(baseColor, 1.18));
+    face.addColorStop(0.48, baseColor);
+    face.addColorStop(1, this.shadeHex(baseColor, 0.68));
+    ctx.fillStyle = face;
+    ctx.fillRect(-step * 2, baseY - amp, w + step * 4, h - baseY + amp);
+    const sunward = ctx.createLinearGradient(0, 0, w, 0);
+    sunward.addColorStop(0, 'rgba(255,255,255,0.12)');
+    sunward.addColorStop(0.52, 'rgba(255,255,255,0)');
+    sunward.addColorStop(1, 'rgba(0,0,0,0.12)');
+    ctx.fillStyle = sunward;
+    ctx.fillRect(-step * 2, baseY - amp, w + step * 4, h - baseY + amp);
 
     // Rock striations: a few darker seams following the slope, sparse enough to
     // read as texture rather than as noise.

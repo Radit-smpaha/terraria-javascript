@@ -187,10 +187,6 @@ const BUFF_DEFS = {
     name: "Miner's Focus", icon: '⛏️', color: '#fbbf24', good: true,
     modifiers: { mining: 2.0 }
   },
-  potion_sickness: {
-    name: 'Potion Sickness', icon: '💊', color: '#a855f7', good: false,
-    modifiers: {}
-  }
 };
 
 class BuffSystem {
@@ -973,4 +969,3 @@ if (typeof window !== 'undefined') {
   window.describeItem = describeItem;
   window.buildItemTooltipHTML = buildItemTooltipHTML;
 }
-

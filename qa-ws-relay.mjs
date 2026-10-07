@@ -46,7 +46,7 @@ function connect() {
           listeners.push(fn);
         });
       },
-      close() { try { ws.close(); } catch {} }
+      close() { try { ws.close(); } catch { } }
     }));
   });
 }
