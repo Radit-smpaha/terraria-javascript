@@ -13,7 +13,7 @@ const NPC_DEFS = [
     // outward until it finds open ground. They are spread well clear of the
     // spawn cottage (spawnX +/- 6) so nobody ends up nose-to-wall.
     dx: -9,
-    greeting: 'Welcome, traveller! The forest bites back at night — let me toughen you up.',
+    greeting: 'Welcome, traveller! The reef lies far west: find four glowing pearls, then wake the shrines. Old sailors say a Void Rift Beacon can tear the sky open, and the dragon beyond remembers every wound.',
     quests: [
       { type: 'kill', desc: 'Slay 5 monsters', target: 5, reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'kill', desc: 'Slay 10 monsters', target: 10, reward: [{ id: 'arrow', count: 30 }, { id: 'swiftness_potion', count: 1 }] },

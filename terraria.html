@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Terracraft: Forest Survivor & Boss Slayer</title>
-  <link rel="stylesheet" href="terraria.css?v=32">
+  <link rel="stylesheet" href="terraria.css?v=33">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -148,6 +148,11 @@
             </div>
           </div>
         </div>
+        <div id="oxygen-panel" class="oxygen-panel hidden" aria-live="polite">
+          <span id="oxygen-label">OXYGEN</span>
+          <div class="oxygen-bar-outer"><div id="oxygen-bar" class="oxygen-bar-fill"></div></div>
+          <span id="oxygen-text">100%</span>
+        </div>
       </div>
 
       <!-- Top Right: Boss Health Bar (hidden by default) -->
@@ -156,6 +161,7 @@
           <span id="boss-name">ANCIENT FOREST GUARDIAN</span>
           <span id="boss-phase-badge">PHASE 1</span>
         </div>
+
         <div class="boss-bar-outer">
           <div id="boss-hp-bar" class="boss-hp-fill" style="width: 100%;"></div>
           <div id="boss-hp-text" class="boss-hp-text">3000 / 3000</div>
@@ -912,14 +918,15 @@
   <script src="particles.js?v=10" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
   <script src="world.js?v=19" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL world.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok world.js: '+(typeof World))"></script>
   <script src="weather.js?v=7" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL weather.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok weather.js: '+(typeof WeatherSystem))"></script>
-  <script src="entities.js?v=16" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL entities.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok entities.js: Player='+(typeof Player))"></script>
+  <script src="entities.js?v=17" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL entities.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok entities.js: Player='+(typeof Player))"></script>
   <script src="underworld.js?v=6" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL underworld.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok underworld.js: '+(typeof UnderworldMonster)+' CerberusPet='+(typeof CerberusPet))"></script>
   <script src="space.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL space.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok space.js: '+(typeof SkeletonDragonBoss))"></script>
+  <script src="ocean.js?v=1" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL ocean.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok ocean.js: '+(typeof OceanLeviathan))"></script>
   <script src="juice.js?v=14" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
-  <script src="npcs.js?v=5" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
+  <script src="npcs.js?v=6" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
   <script src="journey.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
   <script src="multiplayer.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL multiplayer.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok multiplayer.js: '+(typeof Multiplayer))"></script>
-  <script src="terraria.js?v=47" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+  <script src="terraria.js?v=48" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
 </body>
 
 </html>

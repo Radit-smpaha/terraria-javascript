@@ -32,7 +32,7 @@ class DropItem {
 
     if (world.isSolid(tileX, tileY)) {
       this.y = tileY * TILE_SIZE - this.height;
-      this.vy = 0;
+        this.vy = 0;
       this.vx *= 0.8;
     } else {
       this.y = nextY;
@@ -412,6 +412,7 @@ class Player {
     this.height = 36;
     this.vx = 0;
     this.vy = 0;
+    this.swimming = false;
 
     // Movement constants
     this.speed = 4.2;
@@ -634,7 +635,7 @@ class Player {
    */
   jump(soundSystem, particleSystem) {
     if (this.canGroundJump) {
-      this.vy = -this.jumpForce;
+      this.vy = this.swimming ? -2.8 : -this.jumpForce;
       this.onGround = false;
       this.coyoteTimer = 0;
       this.canDoubleJump = true;
@@ -658,7 +659,7 @@ class Player {
     // Double Jump (Hermes wind)
     if (this.canDoubleJump) {
       this.canDoubleJump = false;
-      this.vy = -this.jumpForce * 0.88;
+      this.vy = this.swimming ? -2.5 : -this.jumpForce * 0.88;
       soundSystem.playDoubleJump();
       particleSystem.windBurst(this.x + this.width / 2, this.y + this.height);
       return true;
@@ -762,8 +763,10 @@ class Player {
     this.isSprinting = !!sprintHeld;
 
     if (!this.isDodgeRolling) {
-      const maxSpeed = this.speed * (this.speedMultiplier || 1) * (this.isSprinting ? this.sprintMultiplier : 1);
-      const accel = this.accel * (this.isSprinting ? 1.15 : 1);
+      const swimScale = this.swimming ? (this.swimSpeedMultiplier || 1) : 1;
+      const maxSpeed = this.speed * (this.speedMultiplier || 1) * swimScale *
+        (this.isSprinting ? this.sprintMultiplier : 1);
+      const accel = this.accel * (this.isSprinting ? 1.15 : 1) * (this.swimming ? 0.65 : 1);
       if (leftHeld) {
         this.vx -= accel;
         this.facing = -1;
@@ -813,8 +816,13 @@ class Player {
     const dropThrough = input.keys[bindings.crouch] || input.keys['KeyS'] || input.keys['ArrowDown'];
 
     // Gravity
-    this.vy += this.gravity;
-    if (this.vy > this.terminalVel) this.vy = this.terminalVel;
+    this.vy += this.swimming ? 0.075 : this.gravity;
+    const maxFallSpeed = this.swimming ? 2.4 : this.terminalVel;
+    if (this.vy > maxFallSpeed) this.vy = maxFallSpeed;
+    if (this.swimming && (input.keys[bindings.jump] || input.keys['Space'] ||
+        input.keys['KeyW'] || input.keys['ArrowUp'])) {
+      this.vy = Math.max(-2.5, this.vy - 0.18);
+    }
 
     // ---- Wings: hold jump in the air to beat them -------------------------
     // The tank drains against dt so the flight time is identical at any
@@ -1288,7 +1296,8 @@ const MONSTER_TRAITS = {
   snow_bat: { name: 'Frost Bat', kb: 0.05, elite: true },
   sun_scorpion: { name: 'Sun Scorpion', kb: 0.35, elite: true },
   ostrich: { name: 'Wild Ostrich', kb: 0.25, elite: true },
-  bog_witch: { name: 'Bog Witch', kb: 0.50, elite: true }
+  bog_witch: { name: 'Bog Witch', kb: 0.50, elite: true },
+  pirate: { name: 'Reef Pirate', kb: 0.12, elite: true }
 };
 
 class Monster {
@@ -1430,6 +1439,14 @@ class Monster {
       this.speed = 1.4;
       this.damage = 26;
       this.exp = 42;
+    } else if (type === 'pirate') {
+      this.width = 22;
+      this.height = 36;
+      this.hp = 105;
+      this.maxHp = 105;
+      this.speed = 1.9;
+      this.damage = 28;
+      this.exp = 48;
     }
 
     // ---- Shared combat / AI state ----
@@ -1852,7 +1869,22 @@ class Monster {
       ctx.translate(-this.width, 0);
     }
 
-    if (this.type === 'zombie') {
+    if (this.type === 'pirate') {
+      ctx.fillStyle = '#1e3a8a';
+      ctx.fillRect(4, 13, 14, 16);
+      ctx.fillStyle = '#f1c27d';
+      ctx.fillRect(7, 4, 10, 10);
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(3, 7, 17, 4);
+      ctx.fillRect(7, 3, 11, 3);
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(13, 7, 2, 2);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillRect(17, 16, 3, 14);
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(5, 29, 5, 7);
+      ctx.fillRect(13, 29, 5, 7);
+    } else if (this.type === 'zombie') {
       // Rotting green flesh
       ctx.fillStyle = '#4ade80';
       ctx.fillRect(4, 4, 10, 10);

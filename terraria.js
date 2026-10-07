@@ -392,6 +392,23 @@ const NEW_ITEMS = {
     id: 'fish_koi', name: 'Golden Koi', type: 'material',
     icon: '🎏', stackMax: 99
   },
+  fish_clownfish: { id: 'fish_clownfish', name: 'Reef Clownfish', type: 'consumable', heal: 22, hunger: 18, icon: '🐠', stackMax: 256 },
+  fish_parrotfish: { id: 'fish_parrotfish', name: 'Rainbow Parrotfish', type: 'consumable', heal: 30, hunger: 24, icon: '🐟', stackMax: 256 },
+  fish_manta: { id: 'fish_manta', name: 'Moonlit Manta', type: 'material', icon: '🪽', stackMax: 256 },
+  fish_lionfish: { id: 'fish_lionfish', name: 'Spined Lionfish', type: 'consumable', heal: 35, hunger: 28, icon: '🐡', stackMax: 256 },
+  fish_turtle: { id: 'fish_turtle', name: 'Reef Turtle', type: 'material', icon: '🐢', stackMax: 256 },
+  fish_angler: { id: 'fish_angler', name: 'Abyssal Anglerfish', type: 'material', icon: '🐟', stackMax: 256 },
+  sacred_pearl: { id: 'sacred_pearl', name: 'Sacred Pearl', type: 'material', icon: '🫧', stackMax: 256 },
+  coral_fragment: { id: 'coral_fragment', name: 'Coral Fragment', type: 'material', icon: '🪸', stackMax: 256 },
+  sea_scale: { id: 'sea_scale', name: 'Leviathan Scale', type: 'material', icon: '🔹', stackMax: 256 },
+  leviathan_trophy: { id: 'leviathan_trophy', name: 'Leviathan Trophy', type: 'material', icon: '🐉', stackMax: 1 },
+  leviathan_trident: { id: 'leviathan_trident', name: 'Leviathan Trident', type: 'weapon', weaponType: 'melee', damage: 142, range: 132, useTime: 0.28, icon: '🔱', stackMax: 1 },
+  diving_gear_1: { id: 'diving_gear_1', name: 'Reef Diver Set', type: 'material', icon: '🤿', oxygen: 18, stackMax: 1 },
+  diving_gear_2: { id: 'diving_gear_2', name: 'Tidecaller Set', type: 'material', icon: '🤿', oxygen: 38, stackMax: 1 },
+  diving_gear_3: { id: 'diving_gear_3', name: 'Abyssal Suit', type: 'material', icon: '🫧', oxygen: 75, stackMax: 1 },
+  swim_fins_1: { id: 'swim_fins_1', name: 'Reef Swim Fins', type: 'material', icon: '🩴', swimSpeed: 1.18, stackMax: 1 },
+  swim_fins_2: { id: 'swim_fins_2', name: 'Current fins', type: 'material', icon: '🩴', swimSpeed: 1.34, stackMax: 1 },
+  swim_fins_3: { id: 'swim_fins_3', name: 'Leviathan Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
   sunken_boot: {
     id: 'sunken_boot', name: 'Sunken Boot', type: 'material',
     icon: '🥾', stackMax: 99
@@ -723,6 +740,13 @@ const RECIPES = [
     materials: [{ id: 'wood', count: 8 }, { id: 'wool', count: 2 }],
     name: 'Fishing Rod'
   },
+  { result: { id: 'diving_gear_1', count: 1 }, materials: [{ id: 'wool', count: 8 }, { id: 'iron_ore', count: 6 }, { id: 'fish_clownfish', count: 3 }], name: 'Reef Diver Set (18s oxygen)' },
+  { result: { id: 'diving_gear_2', count: 1 }, materials: [{ id: 'diving_gear_1', count: 1 }, { id: 'gold_ore', count: 8 }, { id: 'coral_fragment', count: 16 }, { id: 'fish_manta', count: 2 }], name: 'Tidecaller Set (38s oxygen)' },
+  { result: { id: 'diving_gear_3', count: 1 }, materials: [{ id: 'diving_gear_2', count: 1 }, { id: 'diamond', count: 8 }, { id: 'sacred_pearl', count: 2 }, { id: 'fish_angler', count: 3 }], name: 'Abyssal Suit (75s oxygen)' },
+  { result: { id: 'swim_fins_1', count: 1 }, materials: [{ id: 'wool', count: 4 }, { id: 'fish_turtle', count: 2 }], name: 'Reef Swim Fins' },
+  { result: { id: 'swim_fins_2', count: 1 }, materials: [{ id: 'swim_fins_1', count: 1 }, { id: 'fish_turtle', count: 2 }, { id: 'coral_fragment', count: 12 }], name: 'Current Fins' },
+  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Leviathan Fins' },
+  { result: { id: 'leviathan_trident', count: 1 }, materials: [{ id: 'leviathan_trophy', count: 1 }, { id: 'sea_scale', count: 18 }, { id: 'sacred_pearl', count: 4 }], name: 'Leviathan Trident' },
   {
     result: { id: 'anglers_charm', count: 1 },
     materials: [{ id: 'gold_ore', count: 6 }, { id: 'crystal', count: 3 }, { id: 'fish_koi', count: 2 }],
@@ -938,6 +962,7 @@ class Game {
     this.sound = new SoundSystem();
     this.particles = new ParticleSystem();
     this.world = new World(440, 175, this.worldSeed());
+    this.world.generateReef();
     this.weather = new WeatherSystem(this.world);
 
     // ---- Retro pixel presentation ----
@@ -992,6 +1017,13 @@ class Game {
     const spawnX = Math.floor(this.world.width / 2) * TILE_SIZE;
     const spawnY = (this.world.surfaceHeights[Math.floor(this.world.width / 2)] - 3) * TILE_SIZE;
     this.player = new Player(spawnX, spawnY);
+    this.oxygen = 75;
+    this.oxygenMax = 75;
+    this.oxygenDamageTimer = 0;
+    this.reefFish = [];
+    this.reefFishSpawnTimer = 0;
+    this.leviathanHP = null;
+    this.leviathanSlain = false;
     this.equippedArmorId = null;
     // Second slot: accessories (currently only the Sovereign's Dragon Wings).
     // Kept separate from equippedArmorId so flight never costs you the plate.
@@ -4091,13 +4123,14 @@ class Game {
     // the rainbow flag are stashed for the trip too, so they are read from the
     // same place. A player who logs out inside the rift comes back home, at the
     // spot the wormhole opened over, and arena loot is written from the stash.
-    const inSpace = this.world.isInSpace();
-    const stashed = inSpace ? this.world.overworldStash : null;
-    const pos = (inSpace && this.overworldReturnPos) ? this.overworldReturnPos : this.player;
-    const savedDrops = (inSpace && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
+    const inSpecialDimension = this.world.isInSpace() || this.world.isInOcean();
+    const stashed = this.world.isInSpace() ? this.world.overworldStash
+      : this.world.isInOcean() ? this.world.oceanStash : null;
+    const pos = (inSpecialDimension && this.overworldReturnPos) ? this.overworldReturnPos : this.player;
+    const savedDrops = (inSpecialDimension && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
-      version: 11,
+      version: 12,
       timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
       tiles: Array.from(this.world.persistTiles()),
@@ -4127,9 +4160,10 @@ class Game {
       // load with no stored chest contents.
       chests: this.chestStorage,
       quests: this.npcs ? this.npcs.toSave() : null,
-      underworld: this.world.underworld ? { ...this.world.underworld } : null,
+      underworld: (stashed ? stashed.underworld : this.world.underworld)
+        ? { ...(stashed ? stashed.underworld : this.world.underworld) } : null,
       progress: this.progressToSave(),
-      dungeon: this.world.dungeon || null,
+      dungeon: (stashed ? stashed.dungeon : this.world.dungeon) || null,
       respawn: this.respawnPoint,
       bossDays: this.bossDaysDone,
       rainbowSeeded: (stashed ? stashed.rainbowSeeded : this.world.rainbowSeeded) === true,
@@ -4139,6 +4173,10 @@ class Game {
       dragonHP: (this.boss && this.boss.kind === 'dragon' && !this.boss.dead)
         ? Math.max(1, Math.round(this.boss.hp))
         : (Number.isFinite(this.dragonHP) ? this.dragonHP : null),
+      leviathanHP: (this.boss && this.boss.kind === 'leviathan' && !this.boss.dead)
+        ? Math.max(1, Math.round(this.boss.hp))
+        : (Number.isFinite(this.leviathanHP) ? this.leviathanHP : null),
+      leviathanSlain: this.leviathanSlain === true,
       // A pending charged re-entry is part of the promise ("it remembers you"),
       // so it survives a reload too — otherwise a player who quits during the
       // few seconds a rift takes to reopen loses the way back to their fight.
@@ -4182,7 +4220,7 @@ class Game {
       return false;
     }
 
-    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 11;
+    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 12;
     if (!supportedVersion || !Array.isArray(save.tiles) || save.tiles.length !== this.world.tiles.length) {
       this.showToast('⚠️ Save data is incompatible.');
       return false;
@@ -4191,6 +4229,9 @@ class Game {
     this.world.timeOfDay = Number.isFinite(save.timeOfDay) ? save.timeOfDay : this.world.timeOfDay;
     this.world.dayCount = Number.isFinite(save.dayCount) ? save.dayCount : this.world.dayCount;
     this.world.tiles.set(save.tiles);
+    if (save.version < 12) this.world.generateReef();
+    this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(110000, save.leviathanHP)) : null;
+    this.leviathanSlain = save.leviathanSlain === true;
     this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
       ? new CerberusPet(this.player.x, this.player.y, save.cerberus)
       : null;
@@ -4314,6 +4355,7 @@ class Game {
     // in, the player is put back home and the Ossuary is rebuilt from scratch on
     // the next trip. The Sovereign keeps the damage it had taken.
     if (this.world.isInSpace()) this.world.exitSpaceDimension();
+    else if (this.world.isInOcean()) this.world.exitOceanDimension();
     this.wormhole = null;
     this.wormholeIntent = null;
     this.riftReturnDelay = 0;
@@ -5535,8 +5577,18 @@ class Game {
       ['fish_minnow', 46], ['fish_bass', 26], ['sunken_boot', 14],
       ['gold_ore', 6], ['fish_koi', 4], ['crystal', 3], ['diamond', 1]
     ];
-    if (night) {
+    if (this.world.isReefAtX(f.bobX / TILE_SIZE) || this.world.isInOcean()) {
       table = [
+        ['fish_clownfish', 28], ['fish_parrotfish', 22], ['fish_lionfish', 17],
+        ['fish_turtle', 13], ['fish_manta', 10], ['fish_angler', 7], ['coral_fragment', 3]
+      ];
+    }
+    if (night) {
+      table = this.world.isReefAtX(f.bobX / TILE_SIZE) || this.world.isInOcean()
+        ? [
+          ['fish_clownfish', 18], ['fish_parrotfish', 17], ['fish_lionfish', 20],
+          ['fish_turtle', 10], ['fish_manta', 14], ['fish_angler', 16], ['coral_fragment', 5]
+        ] : [
         ['fish_minnow', 34], ['fish_bass', 30], ['sunken_boot', 10],
         ['crystal', 12], ['fish_koi', 7], ['diamond', 4], ['fallen_star', 3]
       ];
@@ -5922,6 +5974,65 @@ class Game {
 
   interactWithSpecialTile(tileX, tileY) {
     const tile = this.world.getTile(tileX, tileY);
+    if (tile === TILES.REEF_SHRINE || tile === TILES.REEF_SHRINE_ACTIVE) {
+      const playerX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
+      const playerY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
+      if (Math.hypot(tileX - playerX, tileY - playerY) > 7) return false;
+      if (tile === TILES.REEF_SHRINE_ACTIVE) {
+        this.showToast('🪸 This shrine is already awake. Four pearls will wake the portal.');
+        return true;
+      }
+      if (!this.removeItem('sacred_pearl', 1)) {
+        this.showToast('🫧 The shrine needs a Sacred Pearl. Look for a glowing pearl deeper in the reef.');
+        return true;
+      }
+      this.world.setTile(tileX, tileY, TILES.REEF_SHRINE_ACTIVE);
+      this.sound.playHit();
+      this.particles.magicSparkle((tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE, '#67e8f9', 30);
+      const remaining = this.world.reefShrines.filter(shrine =>
+        this.world.getTile(shrine.x, shrine.y) !== TILES.REEF_SHRINE_ACTIVE).length;
+      if (remaining === 0) {
+        const portal = this.world.reefPortal;
+        this.world.setTile(portal.x, portal.y, TILES.OCEAN_PORTAL);
+        this.showAnnouncement('🌊 THE FOUR PEARLS AWAKEN THE TIDAL GATE!');
+        this.showToast('The portal between the shrines is open. Prepare your diving gear before entering.');
+        this.logDiscovery('reef_portal', '🌊 The Four Pearls Awakened the Tidal Gate', 500);
+      } else {
+        this.showToast(`🪸 Shrine awakened. ${remaining} more shrine${remaining === 1 ? '' : 's'} remain.`);
+      }
+      this.saveGame(true);
+      return true;
+    }
+    if (tile === TILES.OCEAN_PORTAL || tile === TILES.DORMANT_OCEAN_PORTAL) {
+      const playerX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
+      const playerY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
+      if (Math.hypot(tileX - playerX, tileY - playerY) > 7) return false;
+      if (this.world.isInOcean()) {
+        if (this.mp && this.mp.status !== 'idle') {
+          this.showToast('📡 Leave the multiplayer session before travelling between dimensions.');
+          return true;
+        }
+        this.openWormhole('overworld', (tileX + 0.5) * TILE_SIZE, (tileY - 1) * TILE_SIZE, true);
+        return true;
+      }
+      const allAwake = this.world.reefShrines &&
+        this.world.reefShrines.every(shrine => this.world.getTile(shrine.x, shrine.y) === TILES.REEF_SHRINE_ACTIVE);
+      if (!allAwake || tile !== TILES.OCEAN_PORTAL) {
+        this.showToast('🫧 The Tide Gate is dormant. Find the four Sacred Pearls and awaken all four shrines.');
+        this.showToast('📜 Reef lore: each pearl rests beyond a different coral shelf.');
+        return true;
+      }
+      if (this.mp && this.mp.status !== 'idle') {
+        this.showToast('📡 The ocean dimension is solo-only for now. Leave the multiplayer session to enter.');
+        return true;
+      }
+      if (this.boss && !this.boss.dead) {
+        this.showToast('⚠️ Finish your current boss battle before entering the Tide Gate.');
+        return true;
+      }
+      this.openWormhole('ocean', (tileX + 0.5) * TILE_SIZE, (tileY - 1) * TILE_SIZE);
+      return true;
+    }
     // (CHEST_OPEN is no longer a dead end here — both chest states fall
     // through to the shared chest branch further down and open the panel.)
     // The drowned chapel oath-seal. Its ward must be defeated before the way opens.
@@ -6709,7 +6820,8 @@ class Game {
     // Remember where home is while the player is still standing in it. By the
     // frame the rift collapses they have been dragged a hundred pixels into the
     // sky, and the way back has to set them down on the ground they left.
-    if (intent === 'space' && !this.world.isInSpace()) {
+    if ((intent === 'space' || intent === 'ocean') &&
+        !this.world.isInSpace() && !this.world.isInOcean()) {
       this.overworldReturnPos = { x: this.player.x, y: this.player.y };
     }
     this.riftUses++;
@@ -6718,11 +6830,13 @@ class Game {
       charged,
       // Opening a rift toward the arena is the loud, cinematic one; the way
       // home is a smaller, quieter tear, because you walk into it.
-      maxRadius: intent === 'space' ? 205 : 170
+      maxRadius: intent === 'space' ? 205 : intent === 'ocean' ? 190 : 170
     });
     this.showAnnouncement(intent === 'space'
       ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
-      : '🕳️ THE WAY HOME OPENS.');
+      : intent === 'ocean'
+        ? '🌊 THE TIDE GATE OPENS — THE LEVIATHAN STIRS.'
+        : '🕳️ THE WAY HOME OPENS.');
   }
 
   /**
@@ -6746,7 +6860,7 @@ class Game {
         return false;
       }
       if (this.riftReturnDelay > 0) {
-        if (this.isDead || this.world.isInSpace() || this.boss) return false;
+        if (this.isDead || this.world.isInSpace() || this.world.isInOcean() || this.boss) return false;
         this.riftReturnDelay -= dt;
         if (this.riftReturnDelay <= 0) {
           this.riftReturnDelay = 0;
@@ -6764,6 +6878,7 @@ class Game {
       this.wormhole = null;
       this.wormholeIntent = null;
       if (intent === 'space') this.enterSpaceDimension();
+      else if (intent === 'ocean') this.enterOceanDimension();
       else if (intent === 'overworld') this.returnToOverworld();
     }
     return true;
@@ -6782,6 +6897,10 @@ class Game {
     }
     if (this.world.isInSpace()) {
       this.showToast('🌀 You are already in the Ossuary. Walk into the 🕳️ Rift Gate on the west wall to go home.');
+      return false;
+    }
+    if (this.world.isInOcean()) {
+      this.showToast('🌊 The Tide Gate is the only safe route back from this ocean world.');
       return false;
     }
     if (this.wormhole) {
@@ -6937,6 +7056,38 @@ class Game {
     this.particles.magicSparkle(this.player.x, this.player.y, '#c4b5fd', 40);
   }
 
+  enterOceanDimension() {
+    const arena = this.world.enterOceanDimension();
+    this.dimensionStash = { monsters: this.monsters, critters: this.critters, drops: this.drops };
+    this.overworldReturnPos = this.overworldReturnPos || { x: this.player.x, y: this.player.y };
+    this.monsters = [];
+    this.critters = [];
+    this.drops = [];
+    this.projectiles = [];
+    this.minimap?.markDirty();
+    this.player.x = arena.spawnX;
+    this.player.y = arena.spawnY;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.oxygen = this.oxygenMax;
+    if (this.mp && this.mp.status !== 'idle') {
+      this.showToast('This ocean-world expedition is solo-only.');
+    }
+    if (!this.leviathanSlain && typeof OceanLeviathan === 'function') {
+      const hp = Number.isFinite(this.leviathanHP) ? this.leviathanHP : 110000;
+      this.boss = new OceanLeviathan(arena.bossX, arena.bossY, this);
+      this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, hp));
+      this.leviathanHP = null;
+      this.sound.isBoss = true;
+      document.getElementById('boss-panel')?.classList.remove('hidden');
+      this.showAnnouncement('🐉 THE THREE-HEADED SEA LEVIATHAN RISES!');
+    } else {
+      this.boss = null;
+      this.showToast('🌊 The ocean planet is quiet. The Leviathan you defeated remains gone.');
+    }
+    this.showToast('🫧 Keep your diving gear close. The Tide Gate behind you returns home.');
+  }
+
   /**
    * Stand a Sovereign up in the arena. `resumeHP` is the banked HP of a fight the
    * player walked out on; pass null (or leave it banked-empty) for a whole one.
@@ -6978,7 +7129,9 @@ class Game {
    */
   returnToOverworld() {
     // An unfinished fight is banked, not forgotten.
+    const fromOcean = this.world.isInOcean();
     if (this.boss && !this.boss.dead && this.boss.kind === 'dragon') this.dragonHP = this.boss.hp;
+    if (this.boss && !this.boss.dead && this.boss.kind === 'leviathan') this.leviathanHP = this.boss.hp;
     this.boss = null;
     // The death show belongs to the arena: leaving (or being dragged out by
     // death) ends it. The held victory screen keeps its own timer — the kill
@@ -6991,7 +7144,8 @@ class Game {
     this.monsters = [];
     this.critters = [];
     this.drops = [];
-    this.world.exitSpaceDimension();
+    if (fromOcean) this.world.exitOceanDimension();
+    else this.world.exitSpaceDimension();
     // …and the minimap has to forget the arena and redraw the world it knows.
     if (this.minimap) this.minimap.markDirty();
     const stash = this.dimensionStash;
@@ -7017,9 +7171,13 @@ class Game {
       this.player.x + this.player.width / 2 - this.camera.viewportWidth / 2));
     this.camera.y = Math.max(0, Math.min(this.world.pixelHeight - this.camera.viewportHeight,
       this.player.y + this.player.height / 2 - this.camera.viewportHeight / 2));
-    this.showToast(Number.isFinite(this.dragonHP)
-      ? '🕳️ The rift closes. It is still in there, and it remembers every hit.'
-      : '🌲 Back under the sky of home.');
+    this.showToast(fromOcean
+      ? (Number.isFinite(this.leviathanHP)
+        ? '🌊 Back at the reef. The Leviathan remembers the damage it took.'
+        : '🌊 Back at the reef, with the Tide Gate still behind you.')
+      : Number.isFinite(this.dragonHP)
+        ? '🕳️ The rift closes. It is still in there, and it remembers every hit.'
+        : '🌲 Back under the sky of home.');
     this.particles.magicSparkle(this.player.x, this.player.y, '#a5f3fc', 40);
     // Leaving the Sovereign alive is allowed, losing your way back to it is not:
     // a wounded dragon re-tears the sky a few seconds after the retreat, so a
@@ -7056,13 +7214,14 @@ class Game {
     // overworld is restored first (so the bed/campfire maths below read the
     // real surface profile), and updateWormhole then reopens a charged rift a
     // few seconds later to drag you straight back in for the retry.
-    if (this.world.isInSpace()) {
+    const diedInSpace = this.world.isInSpace();
+    if (diedInSpace || this.world.isInOcean()) {
       this.returnToOverworld();
       // Only a Sovereign that is still standing — or banked with damage on it —
       // pulls you back in. Dying in a quiet Ossuary opens nothing: before the
       // first rite is read there is no fight to be pulled into, and a player
       // scouting the mine for ore must be free to die and simply come back.
-      if (Number.isFinite(this.dragonHP) || (this.boss && !this.boss.dead)) {
+      if (diedInSpace && (Number.isFinite(this.dragonHP) || (this.boss && !this.boss.dead))) {
         this.riftReturnDelay = 3.2;
       }
     }
@@ -7159,7 +7318,7 @@ this.player.dodgeTime = 0;
   }
 
   updateCerberus(dt) {
-    const inUnderworld = !this.world.isInSpace() &&
+    const inUnderworld = !this.world.isInSpace() && !this.world.isInOcean() &&
       this.world.isUnderworldAtY(this.player.y / TILE_SIZE);
     if (!this.cerberus && inUnderworld && typeof CerberusPet !== 'undefined') {
       this.cerberus = new CerberusPet(
@@ -7174,6 +7333,84 @@ this.player.dodgeTime = 0;
     if (this.cerberus && !(this.mp && this.mp.isClient)) {
       this.cerberus.update(dt, this);
     }
+  }
+
+  updateOceanSystems(dt) {
+    const px = this.player.x + this.player.width / 2;
+    const py = this.player.y + this.player.height / 2;
+    const inWater = [
+      [px, py], [px - 6, py], [px + 6, py],
+      [px, this.player.y + this.player.height - 3]
+    ].some(([x, y]) =>
+      this.world.getTile(Math.floor(x / TILE_SIZE), Math.floor(y / TILE_SIZE)) === TILES.WATER);
+    const underwater = this.world.getTile(Math.floor(px / TILE_SIZE),
+      Math.floor((this.player.y + 4) / TILE_SIZE)) === TILES.WATER;
+    this.player.swimming = inWater;
+
+    const gear = this.countItem('diving_gear_3') ? ITEMS.diving_gear_3
+      : this.countItem('diving_gear_2') ? ITEMS.diving_gear_2
+        : this.countItem('diving_gear_1') ? ITEMS.diving_gear_1 : null;
+    const fins = this.countItem('swim_fins_3') ? ITEMS.swim_fins_3
+      : this.countItem('swim_fins_2') ? ITEMS.swim_fins_2
+        : this.countItem('swim_fins_1') ? ITEMS.swim_fins_1 : null;
+    this.player.swimSpeedMultiplier = fins ? fins.swimSpeed : 1;
+    this.oxygenMax = gear ? gear.oxygen : 8;
+    if (underwater) {
+      this.oxygen = Math.max(0, Math.min(this.oxygen, this.oxygenMax) - dt);
+      if (this.oxygen <= 0) {
+        this.oxygenDamageTimer += dt;
+        if (this.oxygenDamageTimer >= 1) {
+          this.oxygenDamageTimer -= 1;
+          this.damagePlayer(7, null, 'You are drowning! Find air or equip diving gear.');
+        }
+      } else {
+        this.oxygenDamageTimer = 0;
+      }
+    } else {
+      this.oxygen = Math.min(this.oxygenMax, this.oxygen + dt * 12);
+      this.oxygenDamageTimer = 0;
+    }
+
+    const panel = document.getElementById('oxygen-panel');
+    const bar = document.getElementById('oxygen-bar');
+    const text = document.getElementById('oxygen-text');
+    if (panel) panel.classList.toggle('hidden', !underwater);
+    if (bar) {
+      bar.style.width = `${this.oxygenMax > 0 ? (this.oxygen / this.oxygenMax) * 100 : 0}%`;
+      bar.style.background = this.oxygen < this.oxygenMax * 0.25
+        ? 'linear-gradient(90deg,#ef4444,#fca5a5)'
+        : 'linear-gradient(90deg,#22d3ee,#a5f3fc)';
+    }
+    if (text) text.textContent = `${Math.ceil(this.oxygen)}s`;
+  }
+
+  updateOceanFish(dt) {
+    const cx = (this.player.x + this.player.width / 2) / TILE_SIZE;
+    const active = this.world.isInOcean() || this.world.isReefAtX(cx);
+    if (!active || typeof OceanFish === 'undefined') {
+      this.reefFish.length = 0;
+      return;
+    }
+    this.reefFishSpawnTimer += dt;
+    const maxFish = this.world.isInOcean() ? 24 : 16;
+    const reefRight = this.world.reefBounds ? this.world.reefBounds.right : this.world.width * 0.32;
+    while (this.reefFish.length < maxFish && this.reefFishSpawnTimer >= 0.08) {
+      this.reefFishSpawnTimer -= 0.08;
+      const fishX = this.world.isInOcean()
+        ? Math.random() * this.world.pixelWidth
+        : Math.max(3, Math.min(reefRight - 3, cx + (Math.random() - 0.5) * 75)) * TILE_SIZE;
+      const minY = this.world.isInOcean() ? this.world.oceanArena.seaY + 2 : 42;
+      let fishY = minY * TILE_SIZE;
+      for (let tries = 0; tries < 24; tries++) {
+        const candidate = (minY + Math.floor(Math.random() * Math.max(2, this.world.height - minY - 10))) * TILE_SIZE;
+        if (this.world.getTile(Math.floor(fishX / TILE_SIZE), Math.floor(candidate / TILE_SIZE)) === TILES.WATER) {
+          fishY = candidate;
+          break;
+        }
+      }
+      this.reefFish.push(new OceanFish(fishX, fishY, Math.floor(Math.random() * 6)));
+    }
+    for (const fish of this.reefFish) fish.update(dt, this.world);
   }
 
   update(dt) {
@@ -7214,7 +7451,7 @@ this.player.dodgeTime = 0;
     // Frozen solid while the player is inside the Ossuary: there is no sky up
     // there to rain from, and the storm waiting at home keeps the exact state
     // it had the moment they were swallowed.
-    if (this.weather && !this.world.isInSpace()) this.weather.update(dt, this);
+    if (this.weather && !this.world.isInSpace() && !this.world.isInOcean()) this.weather.update(dt, this);
 
     // Night announcements & Midnight boss awakening
     if (this.world.isNight() && !this.nightAnnounced) {
@@ -7304,7 +7541,9 @@ this.player.dodgeTime = 0;
     // While a wormhole is tearing, the rift drives the player: input, gravity
     // and collision all stand down so nothing fights the pull.
     const inRift = this.updateWormhole(dt);
+    this.updateOceanSystems(dt);
     if (!inRift) this.player.update(dt, this.input, this.world, this.sound, this.particles);
+    this.updateOceanFish(dt);
     this.journey?.update(dt);
 
     // Heavy landings kick dust and nudge the camera.
@@ -7399,7 +7638,7 @@ this.player.dodgeTime = 0;
     // No meadows in the Ossuary: the arena is bone and vacuum, so the surface
     // profile there must never be read as grass to graze on.
     this.critterTimer += dt;
-    if (!this.world.isInSpace() && !this.world.isNight() && this.critterTimer >= 5.0) {
+    if (!this.world.isInSpace() && !this.world.isInOcean() && !this.world.isNight() && this.critterTimer >= 5.0) {
       this.critterTimer = 0;
       if (this.critters.length < 6) {
         const spawnDir = Math.random() > 0.5 ? 1 : -1;
@@ -7458,7 +7697,11 @@ this.player.dodgeTime = 0;
           const biome = this.world.getBiomeAtX(tileX);
           const underground = Math.floor(this.player.y / TILE_SIZE) > this.world.surfaceHeights[tileX] + 12;
           const underworld = Math.floor(this.player.y / TILE_SIZE) >= this.world.underworldStart;
-          const mY = underworld ? Math.max((this.world.underworldStart + 3) * TILE_SIZE, this.player.y - 40 - Math.random() * 120) : underground ? this.player.y - 80 : (this.world.surfaceHeights[tileX] - 3) * TILE_SIZE;
+          const reefColumn = this.world.isReefAtX(tileX);
+          const mY = underworld
+            ? Math.max((this.world.underworldStart + 3) * TILE_SIZE, this.player.y - 40 - Math.random() * 120)
+            : reefColumn ? (this.world.surfaceHeights[tileX] - 10) * TILE_SIZE
+              : underground ? this.player.y - 80 : (this.world.surfaceHeights[tileX] - 3) * TILE_SIZE;
           let mType = 'zombie';
           if (underworld) {
             const roll = Math.random();
@@ -7470,6 +7713,8 @@ this.player.dodgeTime = 0;
             else mType = 'zombie';
           } else if (underground) {
             mType = 'zombie';
+          } else if (reefColumn && Math.random() < 0.28) {
+            mType = 'pirate';
           } else if (night) {
             const roll = Math.random();
             if (biome === 'snow') mType = ['snow_wolf', 'ice_golem', 'snow_bat'][Math.floor(roll * 3)];
@@ -7494,7 +7739,7 @@ this.player.dodgeTime = 0;
       const darkChance = Math.max(0.04, Math.min(0.95, darkness + (1 - lit) * 0.55));
       // The Ossuary breeds nothing: the Sovereign summons its own undead and the
       // overworld's biome tables must not leak a zombie into the arena.
-      if (this.world.isInSpace() || Math.random() > darkChance) {
+      if (this.world.isInSpace() || this.world.isInOcean() || Math.random() > darkChance) {
         this.spawnTimer = 0;
       } else if (mType && (underworld || !underground || this.undergroundTime >= 6)) {
         // Never spawn inside rock. The surface branch above takes its Y straight
@@ -7606,6 +7851,10 @@ this.player.dodgeTime = 0;
         if (m.type === 'cave_spider' && Math.random() < 0.5) {
           this.drops.push(new DropItem(m.x, m.y, 'crystal', 1));
         }
+        if (m.type === 'pirate') {
+          this.drops.push(new DropItem(m.x + 6, m.y - 4, 'coral_fragment', 2));
+          if (Math.random() < 0.2) this.drops.push(new DropItem(m.x + 12, m.y - 8, 'fish_manta', 1));
+        }
         if (m.type === 'snow_wolf' || m.type === 'savanna_hyena' || m.type === 'swamp_slime') {
           this.drops.push(new DropItem(m.x, m.y, 'raw_mutton', 1));
         }
@@ -7648,6 +7897,7 @@ this.player.dodgeTime = 0;
       const defeatedKnight = this.boss.kind === 'knight';
       const defeatedDemon = this.boss.kind === 'demon';
       const defeatedDragon = this.boss.kind === 'dragon';
+      const defeatedLeviathan = this.boss.kind === 'leviathan';
       this.stats.bossKills += 1;
       this.journey?.recordActivity('hunt', this.boss.x + this.boss.width / 2, this.boss.y);
       // Remember which bosses this world has ever felled — the journal scores
@@ -7658,35 +7908,48 @@ this.player.dodgeTime = 0;
       this._bossKinds[bossKey] = true;
       if (firstTime) {
         this.logDiscovery(`boss_${bossKey}`,
-          defeatedDragon ? '🌌 First Ossuary Sovereign Defeated!'
-            : defeatedDemon ? '🔥 First Hellbound Demon Defeated!'
-              : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!',
-          defeatedDragon ? 900 : defeatedDemon ? 600 : 300);
+          defeatedLeviathan ? '🌊 First Three-Headed Sea Leviathan Defeated!'
+            : defeatedDragon ? '🌌 First Ossuary Sovereign Defeated!'
+              : defeatedDemon ? '🔥 First Hellbound Demon Defeated!'
+                : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!',
+          defeatedLeviathan ? 1000 : defeatedDragon ? 900 : defeatedDemon ? 600 : 300);
       }
       const bossPanel = document.getElementById('boss-panel');
       if (bossPanel) bossPanel.classList.add('hidden');
       this.sound.isBoss = false;
-      this.showAnnouncement(defeatedDragon
+      this.showAnnouncement(defeatedLeviathan
+        ? '🌊 THE THREE-HEADED SEA LEVIATHAN HAS FALLEN!'
+        : defeatedDragon
         ? '🌌 THE OSSUARY SOVEREIGN HAS FALLEN!'
         : defeatedDemon
           ? '🔥 THE HELLBOUND DEMON HAS FALLEN!'
           : defeatedKnight ? '⚔️ THE CURSED KNIGHT IS UNDONE!' : '👑 THE ANCIENT FOREST GUARDIAN HAS BEEN FELLED!');
-      this.feel.slow(defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6, defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
-      this.feel.shake(defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
-      const rewardIds = defeatedDragon
+      this.feel.slow(defeatedLeviathan ? 2.8 : defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6,
+        defeatedLeviathan ? 0.15 : defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
+      this.feel.shake(defeatedLeviathan ? 2.2 : defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
+      const rewardIds = defeatedLeviathan
+        ? ['sea_scale', 'coral_fragment', 'fish_manta', 'fish_angler', 'sacred_pearl']
+        : defeatedDragon
         ? ['dragonbone', 'meteor_shard', 'nebula_crystal', 'crystal', 'life_crystal', 'mana_crystal']
         : defeatedDemon
           ? ['hellstone', 'obsidian_block', 'demon_soul', 'life_crystal', 'mana_crystal']
           : defeatedKnight
             ? ['crystal', 'diamond', 'gold_ore', 'fallen_star', 'life_crystal', 'mana_crystal']
             : ['gold_ore', 'iron_ore', 'crystal', 'diamond', 'fallen_star', 'life_crystal', 'mana_crystal'];
-      const bagCount = defeatedDragon ? 18 : defeatedDemon ? 12 : defeatedKnight ? 7 : 8;
+      const bagCount = defeatedLeviathan ? 12 : defeatedDragon ? 18 : defeatedDemon ? 12 : defeatedKnight ? 7 : 8;
       for (let i = 0; i < bagCount; i++) {
         this.drops.push(new DropItem(this.boss.x + i * 10 - 40, this.boss.y, rewardIds[i % rewardIds.length],
-          defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
+          defeatedLeviathan ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
       this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-        defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy' : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+        defeatedLeviathan ? 'leviathan_trophy'
+          : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
+            : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+      if (defeatedLeviathan) {
+        this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'leviathan_trident', 1));
+        this.leviathanHP = null;
+        this.leviathanSlain = true;
+      }
       if (defeatedDemon) this.drops.push(new DropItem(this.boss.x + 12, this.boss.y - 20, 'inferno_brand', 1));
       // The Sovereign drops its own gear: the apex weapon, the wings that let
       // you fly, and the Voidscale plate itself. The forge recipe stays as a
@@ -7715,7 +7978,10 @@ this.player.dodgeTime = 0;
       }
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
-      if (defeatedDragon) {
+      if (defeatedLeviathan) {
+        if (vTitle) vTitle.textContent = '🌊 THE SEA LEVIATHAN IS BROKEN!';
+        if (vLead) vLead.textContent = 'All three heads have fallen. The Tidal Gate remains open, and the ocean planet is yours to explore. Gather Leviathan Scales and craft the trident from its trophy.';
+      } else if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
         if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it — and they will never fall again, because there is only one of each. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and another Rite of Waking read on them will bring another; it will cost you far more than the first.';
       } else if (defeatedDemon) {
@@ -8021,7 +8287,7 @@ this.player.dodgeTime = 0;
     this.particles.update(dt, this.world.pixelWidth, this.world.pixelHeight);
 
     // 11. Villagers, fog-of-war map + timed autosave
-    if (this.npcs) this.npcs.update(dt);
+    if (this.npcs && !this.world.isInSpace() && !this.world.isInOcean()) this.npcs.update(dt);
     this.minimap.update(dt, this);
     this.minimap.render(this);
     if (this.autosaveTimer <= 0) {
@@ -8105,8 +8371,10 @@ this.player.dodgeTime = 0;
     // the Ossuary borrows a marker of its own while the buffers are swapped.
     const dimBadge = this.hudEl('dimension-badge');
     if (dimBadge) {
-      const shown = this.world.isInSpace() ? 'dimension-badge' : 'dimension-badge hidden';
+      const inSpecialDimension = this.world.isInSpace() || this.world.isInOcean();
+      const shown = inSpecialDimension ? 'dimension-badge' : 'dimension-badge hidden';
       if (dimBadge.className !== shown) dimBadge.className = shown;
+      if (inSpecialDimension) dimBadge.textContent = this.world.isInOcean() ? '🌊 THE ABYSSAL PLANET' : '🌌 THE OSSUARY';
     }
 
     // Weather badge
@@ -8308,6 +8576,7 @@ this.player.dodgeTime = 0;
     // notion of dimension, so sharing it once let stale daylight show up in
     // deep space after a return trip.
     if (this.world.isInSpace()) this.world.renderSpaceBackground(ctx, this.camera);
+    else if (this.world.isInOcean()) this.world.renderOceanBackground(ctx, this.camera);
     else this.world.renderForestBackground(ctx, this.camera);
 
     // 2. World Solid & Wall Tiles
@@ -8315,7 +8584,9 @@ this.player.dodgeTime = 0;
 
     // 2b. Ambient weather layer (rain / snow / sand / fog) sits behind entities
     // (there is no weather in the Ossuary — it is a vacuum.)
-    if (this.weather && !this.world.isInSpace()) this.weather.render(this, ctx, this.camera, 'back');
+    if (this.weather && !this.world.isInSpace() && !this.world.isInOcean()) this.weather.render(this, ctx, this.camera, 'back');
+
+    for (const fish of this.reefFish) fish.render(ctx, this.camera);
 
     // 3. Drop Items
     for (const d of this.drops) {
@@ -8328,7 +8599,7 @@ this.player.dodgeTime = 0;
     }
     if (this.cerberus) this.cerberus.render(ctx, this.camera);
     // 4b. Quest-giving villagers
-    if (this.npcs) this.npcs.render(ctx, this.camera);
+    if (this.npcs && !this.world.isInSpace() && !this.world.isInOcean()) this.npcs.render(ctx, this.camera);
 
     // 5. Monsters
     for (const m of this.monsters) {
@@ -8397,7 +8668,7 @@ this.player.dodgeTime = 0;
     }
 
     // 10. Foreground weather (close-up rain streaks + lightning flash)
-    if (this.weather && !this.world.isInSpace()) this.weather.render(this, ctx, this.camera, 'front');
+    if (this.weather && !this.world.isInSpace() && !this.world.isInOcean()) this.weather.render(this, ctx, this.camera, 'front');
 
     // 11. Multiply Dynamic Lighting Pass
     // Reused scratch array — building a fresh one every frame was needless
