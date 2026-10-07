@@ -1638,7 +1638,7 @@ kbd {
 .creative-btn { color: #fde68a; border-color: #78350f; }
 .creative-btn:hover { color: #fffbeb; border-color: var(--accent-gold); }
 
-.creative-modal-content { width: 720px; border-color: #fbbf24; }
+.creative-modal-content { width: min(720px, 94vw); max-height: 90vh; border-color: #fbbf24; }
 .creative-help { color: #94a3b8; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
 
 .creative-controls { display: flex; gap: 10px; align-items: center; }
@@ -1681,12 +1681,14 @@ kbd {
 .creative-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  grid-auto-rows: 64px;
   gap: 6px;
-  /* Scales with the window instead of a fixed 330px, and is allowed to shrink
-     inside the modal. A fixed height on a short screen is what pushed the
-     bottom rows of items out of reach. */
+  /* Keep a real scroll viewport even when the modal's flex layout is short;
+     otherwise the grid can collapse to one row and hide nearly every item. */
+  height: min(330px, 40vh);
   max-height: min(330px, 40vh);
   min-height: 0;
+  flex: 0 0 auto;
   overflow-y: auto;
   padding: 4px;
   background: #020617;
@@ -1698,7 +1700,7 @@ kbd {
 
 .creative-cell {
   position: relative;
-  aspect-ratio: 1 / 1;
+  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2604,10 +2606,10 @@ body.controls-touch .mobile-controls:not(.hidden) { display: block; }
   left: var(--touch-edge);
   bottom: calc(var(--touch-edge-b) + 62px + 48px + var(--touch-gap) * 3 + 12px);
   display: grid;
-  grid-template-columns: repeat(2, 46px);
+  grid-template-columns: repeat(2, 50px);
   gap: 8px;
 }
-.touch-small { width: 46px; height: 46px; font-size: 20px; opacity: .9; }
+.touch-small { width: 50px; height: 50px; font-size: 22px; opacity: .9; }
 /* The button is #touch-pause in the markup and carries no .touch-pause class,
    so this has to key off the id to apply at all. */
 #touch-pause { border-color: rgba(250, 204, 21, .7); }
@@ -2627,8 +2629,8 @@ body.controls-touch .mobile-controls:not(.hidden) { display: block; }
 }
 .touch-attack { grid-area: attack; width: 70px; height: 70px; font-size: 30px; border-color: rgba(250, 204, 21, .75); }
 .touch-jump { grid-area: jump; width: 62px; height: 62px; font-size: 30px; }
-.touch-use { grid-area: use; width: 54px; height: 54px; font-size: 24px; }
-.touch-dodge { grid-area: dodge; width: 54px; height: 54px; font-size: 24px; }
+.touch-use { grid-area: use; width: 62px; height: 62px; font-size: 27px; }
+.touch-dodge { grid-area: dodge; width: 62px; height: 62px; font-size: 27px; }
 
 /* Narrow phones: the pad has to give way before the world does. The safe-area
    floors are kept (just lowered) so a notched phone still clears the home bar. */
@@ -2639,8 +2641,8 @@ body.controls-touch .mobile-controls:not(.hidden) { display: block; }
     --touch-edge-r: max(8px, env(safe-area-inset-right, 0px));
     --touch-gap: 7px;
   }
-  .touch-move .touch-dir { width: 54px; height: 54px; font-size: 26px; }
-  .touch-alt { bottom: calc(var(--touch-edge-b) + 54px + var(--touch-gap)); }
+  .touch-move .touch-dir { width: 58px; height: 58px; font-size: 28px; }
+  .touch-alt { bottom: calc(var(--touch-edge-b) + 58px + var(--touch-gap)); }
 }
 
 /* ============================================================

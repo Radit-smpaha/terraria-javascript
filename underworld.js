@@ -123,8 +123,8 @@ World.prototype.generateUnderworld = function() {
 };
 
 World.prototype.buildDemonCastle = function(cx, top, floorY) {
-  const left = cx - 18;
-  const right = cx + 18;
+  const left = cx - 23;
+  const right = cx + 23;
   // Solid outer shell, hollow rooms, then a solid floor and battlements.
   for (let x = left; x <= right; x++) {
     for (let y = top; y <= floorY; y++) {
@@ -141,6 +141,20 @@ World.prototype.buildDemonCastle = function(cx, top, floorY) {
     this.setTile(left + 3, y, TILES.DEMON_BRICK);
     this.setTile(right - 3, y, TILES.DEMON_BRICK);
   }
+  // Paired crown towers and a raised central arch give the arena a much
+  // stronger silhouette; every solid ornament stays outside the boss flight
+  // box, which begins at top + 3 and inside left/right + 4.
+  for (const x of [left + 1, right - 1]) {
+    for (let y = top - 5; y <= top + 2; y++) {
+      this.setTile(x, y, TILES.DEMON_BRICK);
+      this.walls[y * this.width + x] = TILES.DEMON_BRICK;
+    }
+    this.setTile(x, top - 6, TILES.OBSIDIAN);
+    this.setTile(x, top - 7, TILES.DEMON_BRICK);
+  }
+  for (let dx = -4; dx <= 4; dx++) {
+    this.setTile(cx + dx, top - (Math.abs(dx) < 2 ? 4 : 3), TILES.DEMON_BRICK);
+  }
   for (let x = left + 4; x <= right - 4; x++) {
     if (x < cx - 2 || x > cx + 2) this.setTile(x, top + 2, TILES.OBSIDIAN);
   }
@@ -148,6 +162,8 @@ World.prototype.buildDemonCastle = function(cx, top, floorY) {
   this.setTile(right - 3, top + 4, TILES.TORCH);
   this.setTile(left + 6, top + 5, TILES.TORCH);
   this.setTile(right - 6, top + 5, TILES.TORCH);
+  this.setTile(left + 1, top - 3, TILES.TORCH);
+  this.setTile(right - 1, top - 3, TILES.TORCH);
   // Recessed side pillars, ribbed arches and a raised throne dais make the
   // chamber read like a sealed fortress instead of a plain hollow box.
   for (const x of [left + 5, right - 5]) {
@@ -813,9 +829,213 @@ class DemonBoss {
   }
 }
 
+class CerberusPet {
+  constructor(x, y, saved = {}) {
+    this.x = Number.isFinite(saved.x) ? saved.x : x;
+    this.y = Number.isFinite(saved.y) ? saved.y : y;
+    this.width = 62;
+    this.height = 42;
+    this.tamed = saved.tamed === true;
+    this.level = Math.max(1, Math.min(10, Math.floor(saved.level || 1)));
+    this.dead = saved.dead === true;
+    this.hp = 1;
+    this.attackCooldown = 0;
+    this.hitCooldown = 0;
+    this.animT = 0;
+    this.facing = 1;
+    this.syncStats();
+    if (Number.isFinite(saved.hp) && !this.dead) this.hp = Math.max(1, Math.min(this.maxHp, saved.hp));
+    if (this.dead) this.hp = 0;
+  }
+
+  syncStats() {
+    this.maxHp = 1800 + (this.level - 1) * 2200;
+    this.damage = 180 + (this.level - 1) * 95;
+    if (!this.dead) this.hp = Math.min(this.hp || this.maxHp, this.maxHp);
+  }
+
+  isNear(x, y) {
+    return Math.hypot(x - (this.x + this.width / 2), y - (this.y + this.height / 2)) <= 92;
+  }
+
+  interact(game) {
+    if (this.dead) {
+      const cost = 10 + this.level * 2;
+      if (!game.removeItem('bone', cost)) {
+        game.showToast(`🦴 Cerberus needs ${cost} bones to be revived.`);
+        return false;
+      }
+      this.dead = false;
+      this.hp = this.maxHp;
+      game.showAnnouncement('🔥 CERBERUS RISES AGAIN!');
+      return true;
+    }
+    if (!this.tamed) {
+      if (!game.removeItem('bone', 5)) {
+        game.showToast('🦴 Hold 5 bones to tame the Hell Cerberus.');
+        return false;
+      }
+      this.tamed = true;
+      this.level = 1;
+      this.syncStats();
+      this.hp = this.maxHp;
+      game.showAnnouncement('🔥 THE HELL CERBERUS JOINS YOU!');
+      return true;
+    }
+    if (this.level >= 10) {
+      game.showToast('🔥 Cerberus is already at maximum level.');
+      return false;
+    }
+    const cost = 3 + this.level * 2;
+    if (!game.removeItem('bone', cost)) {
+      game.showToast(`🦴 Cerberus needs ${cost} bones for level ${this.level + 1}.`);
+      return false;
+    }
+    this.level++;
+    this.syncStats();
+    this.hp = this.maxHp;
+    game.showAnnouncement(`🔥 CERBERUS REACHED LEVEL ${this.level}!`);
+    return true;
+  }
+
+  takeDamage(amount, game) {
+    if (!this.tamed || this.dead) return;
+    this.hp = Math.max(0, this.hp - Math.max(1, Math.round(amount)));
+    if (this.hp === 0) {
+      this.dead = true;
+      game.showToast('🔥 Cerberus has fallen. Use bones on its remains to revive it.');
+    }
+  }
+
+  update(dt, game) {
+    this.animT += dt;
+    this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+    this.hitCooldown = Math.max(0, this.hitCooldown - dt);
+    if (!this.tamed || this.dead) return;
+
+    const player = game.player;
+    const enemies = game.monsters.filter(m => m && !m.dead);
+    if (game.boss && !game.boss.dead) enemies.push(game.boss);
+    let target = null;
+    let targetDistance = Infinity;
+    for (const enemy of enemies) {
+      const distance = Math.hypot(
+        enemy.x + enemy.width / 2 - (this.x + this.width / 2),
+        enemy.y + enemy.height / 2 - (this.y + this.height / 2)
+      );
+      if (distance < 520 && distance < targetDistance) {
+        target = enemy;
+        targetDistance = distance;
+      }
+    }
+
+    if (target) {
+      const tx = target.x + target.width / 2;
+      const ty = target.y + target.height / 2;
+      const dx = tx - (this.x + this.width / 2);
+      const dy = ty - (this.y + this.height / 2);
+      this.facing = dx < 0 ? -1 : 1;
+      if (targetDistance > 58) {
+        const step = Math.min(1, dt * 3.8);
+        this.x += dx * step;
+        this.y += dy * step;
+      } else if (this.attackCooldown <= 0) {
+        target.takeDamage(this.damage, game.sound, game.particles, false);
+        game.stats.damageDealt += this.damage;
+        this.attackCooldown = Math.max(0.32, 0.72 - this.level * 0.035);
+      }
+    } else {
+      const followX = player.x - (player.facing || 1) * 54;
+      const followY = player.y + player.height - this.height;
+      const dx = followX - this.x;
+      const dy = followY - this.y;
+      if (Math.hypot(dx, dy) > 500) {
+        this.x = followX;
+        this.y = followY;
+      } else {
+        this.x += dx * Math.min(1, dt * 2.8);
+        this.y += dy * Math.min(1, dt * 2.8);
+      }
+      if (Math.abs(dx) > 2) this.facing = dx < 0 ? -1 : 1;
+    }
+
+    if (this.hitCooldown <= 0) {
+      const attacker = enemies.find(enemy =>
+        Math.hypot(enemy.x + enemy.width / 2 - (this.x + this.width / 2),
+          enemy.y + enemy.height / 2 - (this.y + this.height / 2)) <
+        (enemy.width + this.width) * 0.38
+      );
+      if (attacker) {
+        this.takeDamage(attacker.damage || 40, game);
+        this.hitCooldown = 0.9;
+      }
+    }
+  }
+
+  render(ctx, camera) {
+    const x = this.x - camera.x;
+    const y = this.y - camera.y;
+    ctx.save();
+    ctx.translate(x, y);
+    if (this.facing < 0) {
+      ctx.translate(this.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(this.width / 2, this.height - 2, 27, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (this.dead) {
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(8, 27, 46, 8);
+      ctx.fillStyle = '#fca5a5';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('🦴', 22, 24);
+    } else {
+      ctx.fillStyle = this.tamed ? '#7f1d1d' : '#451a03';
+      ctx.fillRect(10, 17, 42, 19);
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillRect(14, 11, 34, 19);
+      for (let i = 0; i < 3; i++) {
+        const hx = 8 + i * 18;
+        ctx.fillStyle = '#f97316';
+        ctx.fillRect(hx + 4, 2 + Math.sin(this.animT * 7 + i) * 2, 3, 8);
+        ctx.fillStyle = '#fecaca';
+        ctx.fillRect(hx, 8, 14, 12);
+        ctx.fillStyle = '#7f1d1d';
+        ctx.fillRect(hx + 2, 11, 10, 5);
+        ctx.fillStyle = '#fde047';
+        ctx.fillRect(hx + 2, 11, 2, 2);
+        ctx.fillRect(hx + 9, 11, 2, 2);
+      }
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(17, 32, 7, 8);
+      ctx.fillRect(39, 32, 7, 8);
+      ctx.fillStyle = '#fb923c';
+      ctx.fillRect(4, 24, 7, 3);
+      ctx.fillRect(50, 24, 7, 3);
+    }
+    ctx.restore();
+    if (this.tamed) {
+      const barW = 62;
+      ctx.fillStyle = 'rgba(15,23,42,0.85)';
+      ctx.fillRect(x, y - 15, barW, 12);
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(x + 2, y - 13, (barW - 4) * this.hp / this.maxHp, 4);
+      ctx.fillStyle = '#fff7ed';
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`CERBERUS Lv.${this.level}`, x + barW / 2, y - 5);
+    } else if (!this.dead) {
+      ctx.font = '14px sans-serif';
+      ctx.fillText('🦴', x + 24, y - 5);
+    }
+  }
+}
+
 if (typeof window !== 'undefined') {
   window.UnderworldMonster = UnderworldMonster;
   window.DemonBoss = DemonBoss;
+  window.CerberusPet = CerberusPet;
   window.UNDERWORLD_TILE_IDS = UNDERWORLD_TILE_IDS;
 }
-

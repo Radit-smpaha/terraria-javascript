@@ -51,7 +51,7 @@ let rafCalls = 0;
 global.requestAnimationFrame = () => { rafCalls++; return 0; };
 global.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
-const files = ['audio.js','particles.js','world.js','weather.js','entities.js','underworld.js','space.js','juice.js','npcs.js','journey.js','terraria.js'];
+const files = ['audio.js','particles.js','world.js','weather.js','entities.js','underworld.js','space.js','juice.js','npcs.js','journey.js','multiplayer.js','terraria.js'];
 let ctx = vm.createContext(global);
 for (const f of files) {
   const code = fs.readFileSync(f, 'utf8');

@@ -102,7 +102,7 @@ World.prototype.generateSpaceArena = function() {
   };
 
   const arenaCX = Math.floor(w / 2);
-  const halfW = 56;                       // 112 tiles of duelling ground
+  const halfW = 64;                       // 128 tiles of duelling ground
   // The arena sits 52 rows above the world floor rather than 26. The world's
   // height is fixed and shared with the overworld, so the only honest way to
   // make the Ossuary deeper is to lift the crust and let the mine beneath it
@@ -113,7 +113,7 @@ World.prototype.generateSpaceArena = function() {
   const left = Math.max(3, arenaCX - halfW);
   const right = Math.min(w - 4, arenaCX + halfW);
   const span = right - left;
-  const ceilY = floorY - 46;              // ceiling of the fight box
+  const ceilY = floorY - 50;              // taller ceiling of the fight box
 
   // ---- The floor: a starstone crust over a mined-out ore body ----
   // Every seam sits BELOW the crust on purpose: mining the arena for meteor
@@ -303,11 +303,13 @@ World.prototype.generateSpaceArena = function() {
   // SkeletonDragonBoss.blocksDragon) while they stay real cover for you.
   const lattice = [
     [-6, [[0.05, 0.32], [0.41, 0.59], [0.68, 0.95]]],
+    [-9, [[0.24, 0.42], [0.58, 0.76]]],
     [-13, [[0.13, 0.38], [0.50, 0.66], [0.77, 0.93]]],
     [-20, [[0.04, 0.21], [0.30, 0.51], [0.61, 0.82], [0.90, 0.97]]],
     [-27, [[0.16, 0.36], [0.45, 0.67], [0.76, 0.90]]],
     [-34, [[0.06, 0.25], [0.37, 0.63], [0.73, 0.94]]],
-    [-41, [[0.26, 0.44], [0.56, 0.74]]]
+    [-41, [[0.26, 0.44], [0.56, 0.74]]],
+    [-46, [[0.18, 0.31], [0.69, 0.82]]]
   ];
   for (const [dy, runs] of lattice) {
     for (const [a, b] of runs) {
@@ -379,8 +381,8 @@ World.prototype.generateSpaceArena = function() {
   this.lightSources = [];
 
   this.spaceArena = {
-    left: left + 2,
-    right: right - 2,
+    left: left + 1,
+    right: right - 1,
     floorY,
     top: ceilY,
     // Rows the dragon is allowed to occupy. `ceil` and `crust` are the
@@ -2515,6 +2517,7 @@ class SkeletonDragonBoss {
    */
   updateSegments(dt) {
     const spacing = 22;
+    const bounds = this.arenaBounds(this.game && this.game.world);
     let px = this.x + this.width / 2;
     let py = this.y + this.height / 2;
     for (let i = 0; i < this.segments.length; i++) {
@@ -2526,6 +2529,12 @@ class SkeletonDragonBoss {
       const idealY = py + (dy / dist) * spacing;
       s.x += (idealX - s.x) * Math.min(1, dt * 15);
       s.y += (idealY - s.y) * Math.min(1, dt * 9) + Math.sin(this.animT * 3 - i * 0.55) * 0.7;
+      if (bounds) {
+        s.x = Math.max(bounds.left + this.width / 2,
+          Math.min(bounds.right + this.width / 2, s.x));
+        s.y = Math.max(bounds.top + this.height / 2,
+          Math.min(bounds.bottom + this.height / 2, s.y));
+      }
       s.angle = Math.atan2(s.y - py, s.x - px);
       px = s.x;
       py = s.y;

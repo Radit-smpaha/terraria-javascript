@@ -2,7 +2,7 @@
 //
 // Covers the things that are easy to break and invisible until someone opens
 // the page: the Terraria-styled buttons, the greyed-out Multiplayer row with
-// its "( Coming soon! )" note, the six credits entries, the rotating splash
+// its "( Coming soon! )" note, the credits entries, the rotating splash
 // line (including the rare "Shoutout to Terraria!" pull), the animated
 // background across a whole day/night cycle, and the three-save-file picker
 // behind Singleplayer.
@@ -157,23 +157,47 @@ if (g) {
   g.render = () => {};
 
   // ---- locate the title scene's draw callback ---------------------------
+  // The title draw paints the menu scene; the watchdog below identifies it by
+  // the one side effect only it has - rolling the splash line. The bug this
+  // test now pins down: the loop used to STOP scheduling itself the moment the
+  // player entered a world, so the menu came back over a frozen canvas. It must
+  // keep re-queueing while closed (and must NOT paint during that time).
   const savedOpen = g.titleScreenOpen;
-  g.titleScreenOpen = false;
+  const splash = document.getElementById('title-splash');
+
+  // Identify the title draw by running each candidate while the menu is OPEN:
+  // only the title draw sets a splash line.
   let drawFn = null;
   for (const fn of rafQueue.slice()) {
-    const before = rafQueue.length;
-    let threw = null;
-    try { fn(1000); } catch (e) { threw = e; }
-    if (threw) { errors.push(threw); continue; }
-    // Only the title draw early-returns on titleScreenOpen === false WITHOUT
-    // re-queueing itself; the game loop always re-queues.
-    if (rafQueue.length === before) { drawFn = fn; break; }
+    if (drawFn) break;
+    splash.textContent = '';
+    // A fresh splash rolls every 8s, so jump well past that: at t=1000 the
+    // title draw paints but does not yet touch the splash line.
+    try { fn(9000); } catch (e) { errors.push(e); continue; }
+    if (splash.textContent) drawFn = fn;
   }
-  g.titleScreenOpen = savedOpen;
   check('animated background draw loop is installed', !!drawFn);
 
+  // Now prove it survives a world: with the menu closed it must still re-queue
+  // (fix), and it must not draw over the game.
   if (drawFn) {
-    const splash = document.getElementById('title-splash');
+    g.titleScreenOpen = false;
+    const queueBefore = rafQueue.length;
+    const splashBefore = splash.textContent;
+    let threw = null;
+    try { drawFn(2000); } catch (e) { threw = e; }
+    const requeued = rafQueue.length > queueBefore;
+    const didNotPaint = splash.textContent === splashBefore;
+    g.titleScreenOpen = true;
+    check('background draw loop keeps running while a world is played', requeued,
+      'scheduled=' + requeued);
+    check('background does not paint over the game', didNotPaint && !threw,
+      threw ? threw.message : 'splash unchanged');
+  }
+  g.titleScreenOpen = savedOpen;
+
+  // ---- animated scene across a whole day/night cycle ----------------------
+  if (drawFn) {
     const seen = new Set();
     let frameErr = null;
     for (let i = 0; i <= 240 && !frameErr; i++) {
@@ -286,26 +310,42 @@ if (g) {
 // ---- static markup / style checks ----------------------------------------
 const html = fs.readFileSync(path.join(dir, 'terraria.html'), 'utf8');
 const css = fs.readFileSync(path.join(dir, 'terraria.css'), 'utf8');
+const terrariaJs = fs.readFileSync(path.join(dir, 'terraria.js'), 'utf8');
 
 const menuBlock = (html.match(/<main id="title-menu"[\s\S]*?<\/main>/) || [''])[0];
 check('menu has exactly Singleplayer, Multiplayer, Credits',
   (menuBlock.match(/<button/g) || []).length === 3 &&
   /Singleplayer/.test(menuBlock) && /Multiplayer/.test(menuBlock) && /Credits/.test(menuBlock),
   (menuBlock.match(/<button/g) || []).length + ' buttons');
-check('Multiplayer is greyed out and unclickable',
-  /title-button-disabled"[^>]*\sdisabled/.test(menuBlock));
-check('Multiplayer has the "( Coming soon! )" note',
-  /\( Coming soon! \)/.test(menuBlock));
-check('the note belongs to the Multiplayer row',
-  /class="title-multiplayer-row">[\s\S]*?\( Coming soon! \)[\s\S]*?Multiplayer/.test(menuBlock));
+check('Multiplayer is a real, clickable menu button',
+  /<button id="title-multiplayer" class="title-button">Multiplayer<\/button>/.test(menuBlock) &&
+  !/title-button-disabled/.test(menuBlock) && !/\( Coming soon! \)/.test(menuBlock),
+  menuBlock.replace(/\s+/g, ' ').slice(0, 160));
+check('the menu wires Multiplayer to its panel',
+  /getElementById\('title-multiplayer'\)\?\.addEventListener\('click', \(\) => showPanel\('multiplayer'\)\)/.test(terrariaJs));
+const mpBlock = (html.match(/<section id="title-multiplayer-panel"[\s\S]*?<\/section>/) || [''])[0];
+check('the multiplayer panel has name, room, server, host and join controls',
+  /id="mp-name"/.test(mpBlock) && /id="mp-room"/.test(mpBlock) && /id="mp-server"/.test(mpBlock) &&
+  /id="mp-host-btn"/.test(mpBlock) && /id="mp-join-btn"/.test(mpBlock) &&
+  /id="mp-status"/.test(mpBlock) && /id="title-multiplayer-back"/.test(mpBlock));
+check('the panel starts hidden and is revealed by showPanel',
+  /id="title-multiplayer-panel"[^>]*hidden/.test(html) &&
+  /mpPanel\.hidden = name !== 'multiplayer'/.test(terrariaJs));
+check('multiplayer.js is loaded before terraria.js',
+  html.indexOf('src="multiplayer.js') !== -1 &&
+  html.indexOf('src="multiplayer.js') < html.indexOf('src="terraria.js'));
+check('app.py inlines multiplayer.js', /"multiplayer\.js"/.test(fs.readFileSync(path.join(dir, 'app.py'), 'utf8')));
+check('the stylesheet styles the panel and the in-game HUD',
+  /\.title-mp \{/.test(css) && /\.mp-chip \{/.test(css) &&
+  /\.mp-chat-log \{/.test(css) && /\.mp-chat-input \{/.test(css));
 
 const creditsBlock = (html.match(/<section id="title-credits"[\s\S]*?<\/section>/) || [''])[0];
 const names = [];
 const nameRe = /<span class="credit-name">([^<]+)<\/span>/g;
 let nm;
 while ((nm = nameRe.exec(creditsBlock))) names.push(nm[1]);
-const expected = ['Terraria', 'Minecraft', 'FISH (Ano)', 'Mikey (Radit)', 'Cline', 'Codegpt'];
-check('credits lists the six names in order',
+const expected = ['Terraria', 'Minecraft', 'FISH (Ano)', 'Mikey (Radit)', 'Cline', 'Codegpt', 'Ghaniyy', 'Rasheed', 'Danish'];
+check('credits lists the names in order (incl. testers)',
   JSON.stringify(names) === JSON.stringify(expected), names.join(', '));
 
 check('menu markup has the save-file container',
@@ -324,15 +364,17 @@ check('the splash wraps inside its own box instead of running off-screen',
   /\.title-splash \{[^}]*white-space: normal/.test(css));
 check('the splash sits just past the logo edge',
   /\.title-splash \{[^}]*left: calc\(100% \+ 12px\)/.test(css));
-// No fixed width: the note shrink-wraps to its own text, so the offset really
-// is the gap. Placed on the RIGHT of Multiplayer, not the left.
-check('the ( Coming soon! ) note sits close on the RIGHT of Multiplayer',
-  /\.coming-soon \{[^}]*left: calc\(100% \+ 10px\)/.test(css) &&
-  !/\.coming-soon \{[^}]*width: 160px/.test(css) &&
-  !/\.coming-soon \{[^}]*right: calc\(100%/.test(css));
+// The ( Coming soon! ) note is gone — the button is live now. What replaced it
+// must keep its own spacing sane: the panel stacks its fields, and the status
+// line stays legible even when a room code has not been typed.
+check('the panel stacks its fields and centres its two actions',
+  /\.title-mp-field \{[^}]*flex-direction: column/.test(css) &&
+  /\.title-mp-actions \{[^}]*justify-content: center/.test(css));
+check('the retired ( Coming soon! ) note is really gone',
+  !/\( Coming soon! \)/.test(html) && !/\.coming-soon \{/.test(css));
 
-const needed = ['.title-button', '.coming-soon', '.title-world-card',
-  '.title-splash-rare', '.title-worlds', '.title-button-disabled',
+const needed = ['.title-button', '.title-world-card',
+  '.title-splash-rare', '.title-worlds',
   '#hunger-bar.hunger-fill'];
 for (const cls of needed) check('style defines ' + cls, css.indexOf(cls) !== -1);
 
@@ -355,5 +397,4 @@ if (failed.length) {
   process.exit(1);
 }
 console.log('RESULT: title screen OK');
-
 

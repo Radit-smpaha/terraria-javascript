@@ -1,6 +1,17 @@
 // World, Tiles, Forest Background, Day/Night Cycle, and Dynamic Lighting
 const TILE_SIZE = 24;
 const HOUSE_WALL = 23;
+const SUN_LIGHT_STOPS = [
+  { t: 0.00, lx: 0.05, rx: 0.05, top: 0.02, warm: [120, 160, 255], a: 0.10 },
+  { t: 0.08, lx: 0.10, rx: 0.00, top: 0.06, warm: [255, 170, 110], a: 0.12 },
+  { t: 0.20, lx: 0.08, rx: 0.00, top: 0.07, warm: [255, 190, 120], a: 0.12 },
+  { t: 0.35, lx: 0.00, rx: 0.00, top: 0.10, warm: [255, 250, 220], a: 0.08 },
+  { t: 0.48, lx: 0.00, rx: 0.10, top: 0.04, warm: [255, 150, 80], a: 0.14 },
+  { t: 0.58, lx: 0.00, rx: 0.07, top: 0.02, warm: [210, 100, 130], a: 0.12 },
+  { t: 0.68, lx: 0.05, rx: 0.05, top: 0.02, warm: [120, 130, 240], a: 0.10 },
+  { t: 0.95, lx: 0.05, rx: 0.05, top: 0.02, warm: [120, 160, 255], a: 0.10 },
+  { t: 1.00, lx: 0.05, rx: 0.05, top: 0.02, warm: [120, 160, 255], a: 0.10 }
+];
 // PERF: the static-tile render cache is aligned to this many tiles. The camera
 // can travel a whole chunk before the cached window has to be repainted.
 const TILE_CACHE_CHUNK = 8;
@@ -1390,10 +1401,24 @@ class World {
   // Morning = warm east light, noon = top, dusk = orange west, night = cool moon.
   sunShade() {
     const t = this.timeOfDay;
-    if (t < 0.2) return { lx: 0.10, rx: 0.0, top: 0.06, warm: [255, 190, 120], a: 0.12 };
-    if (t < 0.5) return { lx: 0.0, rx: 0.0, top: 0.10, warm: [255, 250, 220], a: 0.08 };
-    if (t < 0.6) return { lx: 0.0, rx: 0.10, top: 0.03, warm: [255, 140, 70], a: 0.14 };
-    return { lx: 0.05, rx: 0.05, top: 0.02, warm: [120, 160, 255], a: 0.10, night: true };
+    for (let i = 0; i < SUN_LIGHT_STOPS.length - 1; i++) {
+      const from = SUN_LIGHT_STOPS[i];
+      const to = SUN_LIGHT_STOPS[i + 1];
+      if (t > to.t) continue;
+      const p = Math.max(0, Math.min(1, (t - from.t) / (to.t - from.t)));
+      const blend = p * p * (3 - 2 * p);
+      const mix = (a, b) => a + (b - a) * blend;
+      return {
+        lx: mix(from.lx, to.lx),
+        rx: mix(from.rx, to.rx),
+        top: mix(from.top, to.top),
+        warm: from.warm.map((value, j) => Math.round(mix(value, to.warm[j]))),
+        a: mix(from.a, to.a),
+        night: 1 - this.daylightFactor()
+      };
+    }
+    const last = SUN_LIGHT_STOPS[SUN_LIGHT_STOPS.length - 1];
+    return { ...last, night: 1 - this.daylightFactor() };
   }
 
   // Terraria-style AO: dark strips where a solid neighbour touches,
@@ -1427,7 +1452,10 @@ class World {
     if (sun.top > 0) { ctx.fillStyle = `rgba(${wr},${wg},${wb},${sun.top * sun.a * 8})`; ctx.fillRect(sx, sy, S, 3); }
     if (sun.lx > 0) { ctx.fillStyle = `rgba(${wr},${wg},${wb},${sun.lx})`; ctx.fillRect(sx, sy, 3, S); }
     if (sun.rx > 0) { ctx.fillStyle = `rgba(${wr},${wg},${wb},${sun.rx})`; ctx.fillRect(sx + S - 3, sy, 3, S); }
-    if (sun.night) { ctx.fillStyle = 'rgba(40,60,160,0.08)'; ctx.fillRect(sx, sy, S, S); }
+    if (sun.night > 0) {
+      ctx.fillStyle = `rgba(40,60,160,${0.08 * sun.night})`;
+      ctx.fillRect(sx, sy, S, S);
+    }
     // Grain: 3 stable 2x2 speckles keyed off tile hash.
     const h = this.hash2(tx, ty);
     const gx = 3 + Math.floor(h * 15);
@@ -1482,33 +1510,45 @@ class World {
       // already showing stays intact behind it for the cross-fade.
       if (!this._bgCanvas) this._bgCanvas = document.createElement('canvas');
       if (!this._bgPrev) this._bgPrev = document.createElement('canvas');
-      const hasOld = !!this._bgCache && !!this._bgCache.key && this._bgCanvas.width > 0;
-      const resized = !!this._bgCache && (this._bgCache.w !== w || this._bgCache.h !== h);
+      const previous = this._bgCache;
+      const hasOld = !!previous && !!previous.key && this._bgCanvas.width > 0;
+      const resized = !!previous && (previous.w !== w || previous.h !== h);
+      const changingBiome = !!previous && previous.biome !== biome;
+      const fadeInProgress = !!this._bgFadeStart && now - this._bgFadeStart < BG_FADE_MS;
       if (hasOld && resized) {
         // Rare path: on a resize the old layer has to be STRETCHED onto the
         // new canvas, which a reference swap cannot do — pixel copy only here.
         this._copyCanvas(this._bgCanvas, this._bgPrev, w, h);
         this._bgFadeStart = now;
         if (this._renderBackgroundLayer(this._bgCanvas, w, h, camera, biome)) {
-          this._bgCache = { key, w, h };
+          this._bgCache = { key, w, h, biome };
         }
       } else if (hasOld) {
-        // PERF: the old layer used to be pixel-copied into the spare canvas
-        // before repainting — a FULL-SCREEN copy every time the key moved,
-        // which while walking meant every single frame. Painting into the
-        // spare and then SWAPPING the two canvas references is output-
-        // identical (the old pixels simply stay where they are, untouched)
-        // and costs nothing. On a failed paint nothing is swapped, so the
-        // live layer can never be replaced by a half-painted one.
-        if (this._renderBackgroundLayer(this._bgPrev, w, h, camera, biome)) {
+        // Cross-fade only real palette changes (biomes), not routine time or
+        // camera cache updates. Restarting a 900ms fade every cache tick meant
+        // the backdrop never reached full opacity and looked like it blinked.
+        // During a biome fade, refresh the new layer in place so the original
+        // backdrop remains stable until the transition completes.
+        if (fadeInProgress || changingBiome) {
+          const target = fadeInProgress ? this._bgCanvas : this._bgPrev;
+          if (this._renderBackgroundLayer(target, w, h, camera, biome)) {
+            if (!fadeInProgress) {
+              const old = this._bgCanvas;
+              this._bgCanvas = this._bgPrev;
+              this._bgPrev = old;
+              this._bgFadeStart = now;
+            }
+            this._bgCache = { key, w, h, biome };
+          }
+        } else if (this._renderBackgroundLayer(this._bgPrev, w, h, camera, biome)) {
           const old = this._bgCanvas;
           this._bgCanvas = this._bgPrev;
           this._bgPrev = old;
-          this._bgCache = { key, w, h };
-          this._bgFadeStart = now;
+          this._bgCache = { key, w, h, biome };
+          this._bgFadeStart = 0;
         }
       } else if (this._renderBackgroundLayer(this._bgCanvas, w, h, camera, biome)) {
-        this._bgCache = { key, w, h };
+        this._bgCache = { key, w, h, biome };
         this._bgFadeStart = 0;
       }
     }
@@ -2696,21 +2736,14 @@ class World {
     const bw = cw + 2;
     const bh = ch + 2;
     const solid = new Uint8Array(bw * bh);
-    for (let y = 0; y < bh; y++) {
-      for (let x = 0; x < bw; x++) {
-        const tl = this.getTile(minTileX + x - 1, minTileY + y - 1);
-        const p = TILE_PROPERTIES[tl];
-        solid[y * bw + x] = (p && p.solid) ? 1 : 0;
-      }
-    }
-    // Pre-resolve whether each tile in the chunk (plus its top border) is air.
-    // "Is there air directly above me?" is what turns a flat block into an
-    // actual ground surface, and reading it from a pre-built bit grid avoids a
-    // getTile() per tile in the inner loop.
     const openAir = new Uint8Array(bw * bh);
     for (let y = 0; y < bh; y++) {
       for (let x = 0; x < bw; x++) {
-        openAir[y * bw + x] = this.getTile(minTileX + x - 1, minTileY + y - 1) === TILES.AIR ? 1 : 0;
+        const tl = this.getTile(minTileX + x - 1, minTileY + y - 1);
+        const index = y * bw + x;
+        const p = TILE_PROPERTIES[tl];
+        solid[index] = (p && p.solid) ? 1 : 0;
+        openAir[index] = tl === TILES.AIR ? 1 : 0;
       }
     }
 
@@ -3825,7 +3858,11 @@ class World {
   _lightSprite(radius, maxAlpha) {
     const key = `${Math.round(radius)}|${maxAlpha.toFixed(2)}`;
     let sprite = this._lightSpriteCache.get(key);
-    if (sprite) return sprite;
+    if (sprite) {
+      this._lightSpriteCache.delete(key);
+      this._lightSpriteCache.set(key, sprite);
+      return sprite;
+    }
 
     const size = Math.max(2, Math.ceil(radius * 2));
     sprite = document.createElement('canvas');
@@ -3845,7 +3882,9 @@ class World {
     // Lights vary in radius and alpha, but there are only a handful of distinct
     // combinations on screen; cap the cache so a pathological case cannot grow
     // it without bound.
-    if (this._lightSpriteCache.size > 160) this._lightSpriteCache.clear();
+    if (this._lightSpriteCache.size >= 160) {
+      this._lightSpriteCache.delete(this._lightSpriteCache.keys().next().value);
+    }
     this._lightSpriteCache.set(key, sprite);
     return sprite;
   }
@@ -4035,7 +4074,11 @@ class World {
     const qa = Math.round(alpha * 20) / 20;
     const key = `${qr}|${r}|${g}|${b}|${qa}`;
     let sprite = this._glowSpriteCache.get(key);
-    if (sprite) return sprite;
+    if (sprite) {
+      this._glowSpriteCache.delete(key);
+      this._glowSpriteCache.set(key, sprite);
+      return sprite;
+    }
 
     const size = Math.max(2, Math.ceil(qr * 2));
     sprite = document.createElement('canvas');
@@ -4052,7 +4095,9 @@ class World {
     sctx.arc(c, c, qr, 0, Math.PI * 2);
     sctx.fill();
 
-    if (this._glowSpriteCache.size > 160) this._glowSpriteCache.clear();
+    if (this._glowSpriteCache.size >= 160) {
+      this._glowSpriteCache.delete(this._glowSpriteCache.keys().next().value);
+    }
     this._glowSpriteCache.set(key, sprite);
     return sprite;
   }

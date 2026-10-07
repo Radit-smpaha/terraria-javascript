@@ -38,7 +38,11 @@ class ParticleSystem {
     if (!this._glowSprites) this._glowSprites = new Map();
     const key = String(color);
     const hit = this._glowSprites.get(key);
-    if (hit !== undefined) return hit;
+    if (hit !== undefined) {
+      this._glowSprites.delete(key);
+      this._glowSprites.set(key, hit);
+      return hit;
+    }
     let sprite = null;
     // Guarded: a malformed colour must degrade to "no glow", never throw once
     // per particle per frame.
@@ -59,7 +63,9 @@ class ParticleSystem {
     } catch (_) {
       sprite = null;
     }
-    if (this._glowSprites.size > 64) this._glowSprites.clear();
+    if (this._glowSprites.size >= 64) {
+      this._glowSprites.delete(this._glowSprites.keys().next().value);
+    }
     this._glowSprites.set(key, sprite);
     return sprite;
   }

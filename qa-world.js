@@ -162,9 +162,11 @@ for (let x = 0; x < W.width; x++) {
 check('biomeMix only ever names real biomes with t in 0..1', blendBad === 0,
   blendBad + ' bad columns');
 
-// Plains have to actually be rougher-free than the neighbours, or "plains" is a
-// lie. Total span is phase-dependent noise (where in its sine a band sits), so
-// the honest measure is local roughness: how much the surface moves tile to tile.
+// Plains must be the CALMEST band, but they are no longer required to be dead
+// flat: a pancake of level ground around spawn read as an artificial runway, so
+// plains now carry a gentle long swell with a short ripple on top ("rolling
+// meadow"). The honest measure stays local roughness - how much the surface
+// moves tile to tile - and plains must still come in below every other band.
 const bandRough = (name) => {
   const cols = [];
   for (let x = 0; x < W.width; x++) if (W.getBiomeAtX(x) === name) cols.push(x);
@@ -193,11 +195,19 @@ check('plains are the quietest band in the world',
   plainsRough < Math.min(...othersRough),
   'plains=' + plainsRough.toFixed(3) + ' vs ' +
   othersRough.map(v => v.toFixed(3)).join('/'));
-check('plains are at least 3× smoother than the roughest band',
-  plainsRough * 3 < Math.max(...othersRough),
-  (plainsRough * 3).toFixed(3) + ' vs ' + Math.max(...othersRough).toFixed(3));
-check('the plot interior is dead level',
-  stats.plains.span <= 8, String(stats.plains.span));
+// The old bar was "3x smoother than the roughest" - that is the pancake. The
+// new bar is that plains are clearly the calmest without being inert: they must
+// be at least 30% smoother than the roughest band, and still visibly move.
+check('plains are markedly smoother than the roughest band',
+  plainsRough * 1.3 < Math.max(...othersRough),
+  (plainsRough * 1.3).toFixed(3) + ' vs ' + Math.max(...othersRough).toFixed(3));
+check('plains still have gentle rolling relief, not a flat pancake',
+  plainsRough > 0.02 && stats.plains.span > 2,
+  'rough=' + plainsRough.toFixed(3) + ' span=' + stats.plains.span);
+// The BUILD PLOT itself is still levelled - that is what the house needs - but
+// it is a small pad now, not the whole band.
+check('the plains build plot interior is level',
+  stats.plains.span <= 14, String(stats.plains.span));
 check('plains relief scale is damped, not absent',
   W.biomeReliefScale('plains') < 1 && W.biomeReliefScale('plains') > 0 &&
   W.biomeReliefScale('forest') === 1,

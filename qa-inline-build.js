@@ -17,7 +17,7 @@ const OUT = path.join(BASE, process.argv[2] || 'terraria.inlined.html');
 // Must match app.py GAME_SCRIPTS exactly.
 const GAME_SCRIPTS = [
   'audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'
+  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'multiplayer.js', 'terraria.js'
 ];
 
 let html = fs.readFileSync(path.join(BASE, 'terraria.html'), 'utf8');

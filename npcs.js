@@ -91,7 +91,7 @@ class NPCManager {
   findStandableSpot(preferredX) {
     const world = this.game.world;
     const start = Math.max(6, Math.min(world.width - 7, Math.round(preferredX)));
-    for (let d = 0; d < 30; d++) {
+    for (let d = 0; d < world.width; d++) {
       const candidates = d === 0 ? [start] : [start - d, start + d];
       for (const x of candidates) {
         if (x < 6 || x > world.width - 7) continue;

@@ -6,6 +6,7 @@ const ITEMS = {
   stone: { id: 'stone', name: 'Stone Block', type: 'tile', tile: TILES.STONE, icon: '🪨', stackMax: 999 },
   wood: { id: 'wood', name: 'Wood', type: 'tile', tile: TILES.WOOD, icon: '🪵', stackMax: 999 },
   acorn: { id: 'acorn', name: 'Forest Acorn', type: 'material', icon: '🌰', stackMax: 999 },
+  bone: { id: 'bone', name: 'Hell Bone', type: 'material', icon: '🦴', stackMax: 999 },
   iron_ore: { id: 'iron_ore', name: 'Iron Ore', type: 'material', icon: '⛏️', stackMax: 999 },
   gold_ore: { id: 'gold_ore', name: 'Gold Ore', type: 'material', icon: '🪙', stackMax: 999 },
   diamond: { id: 'diamond', name: 'Diamond', type: 'material', icon: '💎', stackMax: 999 },
@@ -926,6 +927,7 @@ class Game {
     // Entities
     this.monsters = [];
     this.critters = [];
+    this.cerberus = null;
     this.projectiles = [];
     this.drops = [];
     this.boss = null;
@@ -2059,7 +2061,6 @@ class Game {
       // SYNCHRONOUSLY, so without it the very first tap of a swing would use
       // the raw fingertip position while every later one was nudged.
       this.snapTouchAim();
-      this.input.mouseDown = true;
       // Tap = "do the right thing for what I am holding, right here".
       // Previously every tap swung the left button, so placing a block needed a
       // tap to aim PLUS a press of the use button - and because the aim could
@@ -2166,14 +2167,22 @@ class Game {
   handleTouchTap() {
     const held = this.inventory[this.player.selectedSlot];
     const itemData = held ? ITEMS[held.id] : null;
+    const worldX = this.input.mouseX + this.camera.x;
+    const worldY = this.input.mouseY + this.camera.y;
+    const petUse = held?.id === 'bone' && this.cerberus?.isNear(worldX, worldY);
     // Blocks and consumables are "use" actions (place / drink / cast the rod);
     // everything else is "swing" (mine, attack, interact, talk).
-    const isUse = !!itemData && (itemData.type === 'tile' || itemData.type === 'consumable');
+    const isUse = (!!itemData && (itemData.type === 'tile' || itemData.type === 'consumable')) || petUse;
     if (isUse) {
+      // A canvas tap is a single action. Leaving mouseDown set makes the game
+      // loop immediately run the left-click path too, which mines the tile
+      // just placed by the right-click path.
+      this.input.mouseDown = false;
       this.input.mouseRightDown = true;
       this.handleRightClick();
       this.input.mouseRightDown = false;
     } else {
+      this.input.mouseDown = true;
       this.handleLeftClick();
     }
   }
@@ -3900,6 +3909,14 @@ class Game {
         selectedSlot: this.player.selectedSlot
       },
       inventory: this.inventory,
+      cerberus: this.cerberus ? {
+        x: (inSpace && this.overworldReturnPos ? this.overworldReturnPos.x : this.cerberus.x),
+        y: (inSpace && this.overworldReturnPos ? this.overworldReturnPos.y : this.cerberus.y),
+        tamed: this.cerberus.tamed,
+        level: this.cerberus.level,
+        hp: this.cerberus.hp,
+        dead: this.cerberus.dead
+      } : null,
       // Chest furniture: each chest's 18 slots, keyed by the tile it sits on.
       // Additive key — saves written before chests existed simply lack it and
       // load with no stored chest contents.
@@ -3969,6 +3986,9 @@ class Game {
     this.world.timeOfDay = Number.isFinite(save.timeOfDay) ? save.timeOfDay : this.world.timeOfDay;
     this.world.dayCount = Number.isFinite(save.dayCount) ? save.dayCount : this.world.dayCount;
     this.world.tiles.set(save.tiles);
+    this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
+      ? new CerberusPet(this.player.x, this.player.y, save.cerberus)
+      : null;
     if (Array.isArray(save.walls) && save.walls.length === this.world.walls.length) {
       this.world.walls.set(save.walls);
     }
@@ -6211,6 +6231,8 @@ class Game {
     const mouseWorldX = this.input.mouseX + this.camera.x;
     const mouseWorldY = this.input.mouseY + this.camera.y;
 
+    if (this.tryCerberusInteraction(mouseWorldX, mouseWorldY, held)) return;
+
     // Fishing rod: right-click water to cast (left click still swings it).
     if (this.castFishingLine(Math.floor(mouseWorldX / TILE_SIZE), Math.floor(mouseWorldY / TILE_SIZE))) {
       return;
@@ -6280,6 +6302,22 @@ class Game {
         }
       }
     }
+  }
+
+  tryCerberusInteraction(worldX, worldY, held) {
+    const pet = this.cerberus;
+    if (!pet || !this.world.isUnderworldAtY(this.player.y / TILE_SIZE) ||
+        !pet.isNear(worldX, worldY)) return false;
+    if (held?.id !== 'bone') {
+      this.showToast(pet.dead
+        ? '🦴 Select bones and right-click Cerberus to revive it.'
+        : pet.tamed
+          ? `🦴 Select bones to upgrade Cerberus (level ${pet.level}/10).`
+          : '🦴 Select bones to tame Cerberus.');
+      return true;
+    }
+    pet.interact(this);
+    return true;
   }
 
   summonBoss(awakened = false) {
@@ -6894,6 +6932,24 @@ this.player.dodgeTime = 0;
     return bestOwnedArmor(this);
   }
 
+  updateCerberus(dt) {
+    const inUnderworld = !this.world.isInSpace() &&
+      this.world.isUnderworldAtY(this.player.y / TILE_SIZE);
+    if (!this.cerberus && inUnderworld && typeof CerberusPet !== 'undefined') {
+      this.cerberus = new CerberusPet(
+        this.player.x + 96,
+        this.player.y + this.player.height - 42
+      );
+      this.showToast('🔥 A wild Cerberus is nearby. Offer it 5 bones to tame it.');
+    }
+    if (this.cerberus && !this.cerberus.tamed && !inUnderworld) {
+      this.cerberus = null;
+    }
+    if (this.cerberus && !(this.mp && this.mp.isClient)) {
+      this.cerberus.update(dt, this);
+    }
+  }
+
   update(dt) {
     // Networking runs before the pause guard: a hosted room must keep its
     // heartbeat and welcome handshake alive while the title screen is up.
@@ -7334,6 +7390,9 @@ this.player.dodgeTime = 0;
         }
         if (m.underworld) {
           this.drops.push(new DropItem(m.x + 4, m.y - 4, 'hellstone', m.species === 'bone_serpent' ? 3 : 2));
+          if (m.species === 'bone_serpent' || Math.random() < 0.65) {
+            this.drops.push(new DropItem(m.x + 8, m.y - 6, 'bone', m.species === 'bone_serpent' ? 2 : 1));
+          }
           if (m.species === 'imp' || Math.random() < 0.38) this.drops.push(new DropItem(m.x + 12, m.y, 'demon_soul', 1));
         }
         this.monsters.splice(i, 1);
@@ -7588,6 +7647,8 @@ this.player.dodgeTime = 0;
         this.mp?.markLocalDrops(mpBoss2DropStart);
       }
     }
+
+    this.updateCerberus(dt);
 
     // 8. Update Projectiles
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -8047,6 +8108,7 @@ this.player.dodgeTime = 0;
     for (const critter of this.critters) {
       critter.render(ctx, this.camera);
     }
+    if (this.cerberus) this.cerberus.render(ctx, this.camera);
     // 4b. Quest-giving villagers
     if (this.npcs) this.npcs.render(ctx, this.camera);
 
@@ -8335,4 +8397,3 @@ if (document.readyState === 'loading') {
 } else {
   bootTerracraft();
 }
-
