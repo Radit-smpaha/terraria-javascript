@@ -145,6 +145,17 @@ check('the portal is framed by a generated stone-and-marble temple',
   [TILES.MARBLE, TILES.COPPER_BLOCK].includes(
     W.getTile(W.reefTemple.portalX - 3, W.reefTemple.portalY - 4)
   ));
+check('the temple has a level, solid floor across its full footprint',
+  Array.from({ length: W.reefTemple.right - W.reefTemple.left + 1 }, (_, i) => {
+    const x = W.reefTemple.left + i;
+    const floorTile = W.getTile(x, W.reefTemple.floorY);
+    return W.surfaceHeights[x] === W.reefTemple.floorY &&
+      !!global.TILE_PROPERTIES[floorTile]?.solid;
+  }).every(Boolean));
+check('all four offering podiums sit directly on the temple floor',
+  W.reefPodiums.length === 4 && W.reefPodiums.every(p =>
+    p.y === W.reefTemple.floorY - 1 &&
+    !!global.TILE_PROPERTIES[W.getTile(p.x, p.y + 1)]?.solid));
 check('legacy shrine metadata remains available to existing game code',
   W.reefShrines === W.reefPodiums);
 let pearlCount = 0;
@@ -182,7 +193,7 @@ for (const x of reefCols) {
     } else run = 0;
   }
 }
-check('reef coral grows into larger multi-tile branches', tallestCoral >= 4, String(tallestCoral));
+check('reef coral grows into taller multi-tile branches', tallestCoral >= 16, String(tallestCoral));
 const room = W.reefTemple.interior;
 let dirtyTempleTiles = 0;
 for (let y = room.top; y < room.bottom; y++) {
@@ -349,8 +360,19 @@ check('fishing in the reef yields reef-only species',
 const species = [];
 for (let i = 0; i < 8; i++) species.push(new global.OceanFish(100, 100, i).color);
 check('eight ambient fish breeds, every one coloured',
-  species.every(Boolean) && new Set(species).size >= 6,
+  species.every(Boolean) && new Set(species).size >= 6 &&
+  new global.OceanFish(100, 100, 0).size >= 11,
   species.join(','));
+const originalSpaceCheck = W.isInSpace;
+const originalFishList = g.reefFish;
+W.isInSpace = () => true;
+g.reefFish = [{}];
+g.updateOceanFish(0.2);
+const fishClearedInOssuary = g.reefFish.length === 0;
+W.isInSpace = originalSpaceCheck;
+g.reefFish = originalFishList;
+check('reef fish are cleared instead of spawning in the Ossuary',
+  fishClearedInOssuary && srcT.includes('if (!this.world.isInSpace() &&'));
 const pirate = new global.Monster(200, 200, 'pirate');
 check('the Reef Pirate monster exists',
   pirate.type === 'pirate' && pirate.width > 0);
@@ -359,7 +381,7 @@ check('reef spawn table rolls pirates (more often at night)',
 check('pirates drop coral', srcT.includes("m.type === 'pirate'"));
 const shark = new global.Monster(200, 200, 'shark');
 check('reef sharks are full-size, damageable swimming monsters',
-  shark.type === 'shark' && shark.width >= 48 && shark.hp > 0 &&
+  shark.type === 'shark' && shark.width >= 70 && shark.hp > 0 &&
   srcT.includes('findOpenReefSwimSpawn'));
 check('reef sharks drop coral and may drop a Manta',
   srcT.includes("m.type === 'shark'") && srcT.includes("'fish_manta', 1"));
@@ -423,12 +445,22 @@ check('the guide modal documents the reef ritual',
   html.includes('THREE-HEADED SEA LEVIATHAN'));
 check('the guide modal still documents the Ossuary ritual',
   html.includes('WAKING THE SOVEREIGN'));
+check('the creative menu offers dimension teleport and needs-free god mode',
+  html.includes('id="creative-dimension"') &&
+  html.includes('id="creative-teleport"') &&
+  html.includes('id="creative-godmode"') &&
+  srcT.includes('creativeTeleportTo(target)') &&
+  srcT.includes('setCreativeGodMode(enabled)'));
+check('the tide portal has an enlarged active and dormant temple rendering',
+  srcO.includes('renderReefTemplePortal') &&
+  srcO.includes('portalGradient.addColorStop') &&
+  srcT.includes('world.renderReefTemplePortal'));
 
 // ==========================================================================
 step('9. Save migration');
-check('saves are written as version 17', srcT.includes('version: 17'));
-check('version 17 saves are accepted',
-  srcT.includes('save.version >= 1 && save.version <= 17'));
+check('saves are written as version 19', srcT.includes('version: 19'));
+check('version 19 saves are accepted',
+  srcT.includes('save.version >= 1 && save.version <= 19'));
 check('v12-v14 saves get their legacy reef repaired before recarving',
   srcT.includes('save.version >= 12 && save.version <= 14') &&
   srcT.includes('save.version < 15') &&
@@ -437,6 +469,9 @@ check('v15 saves migrate their shrine offerings into the temple podiums',
   srcT.includes('save.version === 15') && srcO.includes('migrateLegacyReefTemple'));
 check('older saves relocate only their remaining pearl tiles',
   srcT.includes('save.version < 17') && srcO.includes('migrateDistributedReefPearls'));
+check('pre-v19 saves rebuild the level temple floor and coral without losing offerings',
+  srcT.includes('save.version < 19') && srcO.includes('migrateReefTempleFloor') &&
+  srcO.includes('upgradeReefCoral'));
 
 console.log('');
 if (failures) {

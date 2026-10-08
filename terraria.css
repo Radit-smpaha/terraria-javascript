@@ -1727,6 +1727,49 @@ kbd {
 .creative-slotmode { color: #94a3b8; font-size: 14px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .creative-slotmode input { cursor: pointer; }
 
+.creative-adventure-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: linear-gradient(110deg, rgba(120, 53, 15, .32), rgba(8, 47, 73, .5));
+  border: 1px solid #475569;
+  border-radius: 6px;
+}
+.creative-godmode-toggle {
+  display: grid;
+  grid-template-columns: 20px auto;
+  align-items: center;
+  gap: 2px 7px;
+  color: #fde68a;
+  font: 10px 'Press Start 2P', monospace;
+  cursor: pointer;
+}
+.creative-godmode-toggle input { grid-row: span 2; accent-color: #fbbf24; }
+.creative-godmode-toggle small {
+  grid-column: 2;
+  color: #cbd5e1;
+  font: 13px 'VT323', monospace;
+}
+.creative-teleport-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.creative-teleport-tools label {
+  color: #bae6fd;
+  font: 9px 'Press Start 2P', monospace;
+}
+.creative-dimension {
+  max-width: 190px;
+  padding: 8px;
+  color: #f8fafc;
+  background: #020617;
+  border: 1px solid #0e7490;
+  border-radius: 4px;
+  font: 14px 'VT323', monospace;
+}
+.creative-teleport-btn { padding: 8px 12px; color: #cffafe; border-color: #0e7490; }
+
 .creative-count { color: #64748b; font-size: 14px; margin: 10px 2px 6px; }
 
 .creative-grid {

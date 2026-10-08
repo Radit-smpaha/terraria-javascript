@@ -70,42 +70,66 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(sx + 10, sy + 8, 3, 3);
   } else if (tile === OCEAN_TILES.SHRINE || tile === OCEAN_TILES.SHRINE_ACTIVE) {
-    ctx.fillStyle = '#102d3b';
+    ctx.fillStyle = '#071b2b';
     ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(sx + 2, sy + 17, 20, 5);
-    ctx.fillRect(sx + 5, sy + 12, 14, 5);
+    const lit = tile === OCEAN_TILES.SHRINE_ACTIVE;
+    const glow = lit ? pulse : 0.34;
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(sx + 1, sy + 19, 22, 4);
     ctx.fillStyle = '#94a3b8';
-    ctx.fillRect(sx + 4, sy + 17, 16, 2);
-    ctx.fillRect(sx + 7, sy + 12, 10, 2);
+    ctx.fillRect(sx + 3, sy + 17, 18, 3);
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(sx + 5, sy + 12, 14, 5);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(sx + 4, sy + 16, 16, 2);
     ctx.fillStyle = '#0e7490';
-    ctx.fillRect(sx + 8, sy + 7, 8, 5);
-    ctx.fillStyle = tile === OCEAN_TILES.SHRINE_ACTIVE
-      ? `rgba(103,232,249,${pulse})` : '#67e8f9';
-    ctx.fillRect(sx + 10, sy + 5, 4, 3);
+    ctx.fillRect(sx + 7, sy + 7, 10, 5);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(sx + 6, sy + 8, 2, 3);
+    ctx.fillRect(sx + 16, sy + 8, 2, 3);
+    ctx.fillStyle = lit ? `rgba(103,232,249,${glow})` : '#67e8f9';
+    ctx.beginPath();
+    ctx.ellipse(sx + 12, sy + 6, 7, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = lit ? '#ffffff' : '#cffafe';
+    ctx.beginPath();
+    ctx.arc(sx + 12, sy + 5, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(sx + 11, sy + 3, 2, 2);
     if (tile === OCEAN_TILES.SHRINE_ACTIVE) {
       ctx.fillStyle = `rgba(103,232,249,${pulse * 0.45})`;
-      ctx.fillRect(sx + 5, sy + 2, 14, 3);
+      ctx.fillRect(sx + 2, sy + 1, 20, 2);
+      ctx.fillRect(sx + 3, sy + 4, 2, 8);
+      ctx.fillRect(sx + 19, sy + 4, 2, 8);
     }
   } else if (tile === OCEAN_TILES.PORTAL) {
-    ctx.fillStyle = `rgba(8,145,178,${0.55 + pulse * 0.3})`;
-    ctx.fillRect(sx + 1, sy, 22, TILE_SIZE);
-    ctx.fillStyle = `rgba(34,211,238,${0.14 + pulse * 0.16})`;
+    ctx.fillStyle = '#071b2b';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = `rgba(8,145,178,${0.68 + pulse * 0.25})`;
+    ctx.fillRect(sx + 2, sy, 20, TILE_SIZE);
+    ctx.fillStyle = `rgba(34,211,238,${0.2 + pulse * 0.22})`;
     ctx.beginPath();
-    ctx.ellipse(sx + 12, sy + 12, 8, 11, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx + 12, sy + 12, 9, 12, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#cffafe';
+    ctx.fillStyle = `rgba(165,243,252,${0.12 + pulse * 0.12})`;
+    ctx.beginPath();
+    ctx.ellipse(sx + 12, sy + 12, 6, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fef3c7';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(sx + 12, sy + 12, 8 + pulse, 11, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(103,232,249,${0.55 + pulse * 0.4})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.ellipse(sx + 12, sy + 12, 7 + pulse * 2, 10, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(103,232,249,${pulse})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.ellipse(sx + 12, sy + 12, 4, 7, 0.35, 0, Math.PI * 2);
+    ctx.ellipse(sx + 12, sy + 12, 4, 8, 0.35, 0, Math.PI * 2);
     ctx.stroke();
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(sx + 11, sy + 6, 2, 2);
+    ctx.fillRect(sx + 11, sy + 4, 3, 4);
+    ctx.fillRect(sx + 6, sy + 10, 2, 2);
+    ctx.fillRect(sx + 17, sy + 16, 2, 2);
   } else if (tile === OCEAN_TILES.DORMANT_PORTAL) {
     ctx.fillStyle = 'rgba(2,6,23,0.82)';
     ctx.fillRect(sx + 3, sy + 1, 18, 22);
@@ -164,6 +188,76 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
   }
 };
 
+World.prototype.renderReefTemplePortal = function(ctx, camera) {
+  const temple = this.reefTemple;
+  if (!temple || this.isInOcean() || this.isInSpace()) return;
+  const { x, y } = this.reefPortal;
+  const tile = this.getTile(x, y);
+  const active = tile === OCEAN_TILES.PORTAL;
+  if (!active && tile !== OCEAN_TILES.DORMANT_PORTAL) return;
+
+  const cx = (x + 0.5) * TILE_SIZE - camera.x;
+  const cy = (y + 0.5) * TILE_SIZE - camera.y;
+  const pulse = 0.72 + Math.sin(Date.now() * 0.003) * 0.18;
+  const rx = TILE_SIZE * 1.25;
+  const ry = TILE_SIZE * 1.8;
+  ctx.save();
+  ctx.globalAlpha = active ? 1 : 0.92;
+  ctx.fillStyle = '#071b2b';
+  ctx.beginPath();
+  ctx.moveTo(cx - rx, cy + ry);
+  ctx.lineTo(cx - rx, cy - ry * 0.38);
+  ctx.quadraticCurveTo(cx - rx, cy - ry, cx, cy - ry);
+  ctx.quadraticCurveTo(cx + rx, cy - ry, cx + rx, cy - ry * 0.38);
+  ctx.lineTo(cx + rx, cy + ry);
+  ctx.closePath();
+  ctx.fill();
+
+  const portalGradient = ctx.createLinearGradient(cx - rx, cy, cx + rx, cy);
+  if (active) {
+    portalGradient.addColorStop(0, '#075985');
+    portalGradient.addColorStop(0.5, '#22d3ee');
+    portalGradient.addColorStop(1, '#164e63');
+  } else {
+    portalGradient.addColorStop(0, '#0f172a');
+    portalGradient.addColorStop(0.5, '#1e293b');
+    portalGradient.addColorStop(1, '#0f172a');
+  }
+  ctx.fillStyle = portalGradient;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = active ? `rgba(103,232,249,${pulse})` : '#94a3b8';
+  ctx.beginPath();
+  ctx.moveTo(cx - rx, cy + ry);
+  ctx.lineTo(cx - rx, cy - ry * 0.38);
+  ctx.quadraticCurveTo(cx - rx, cy - ry, cx, cy - ry);
+  ctx.quadraticCurveTo(cx + rx, cy - ry, cx + rx, cy - ry * 0.38);
+  ctx.lineTo(cx + rx, cy + ry);
+  ctx.stroke();
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = active ? `rgba(255,255,255,${pulse})` : '#0e7490';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = active ? '#ffffff' : '#cbd5e1';
+  for (const [dx, dy] of [[0, -ry + 8], [-rx + 5, 0], [rx - 5, 0], [0, ry - 6]]) {
+    ctx.fillRect(cx + dx - 2, cy + dy - 2, 4, 4);
+  }
+  if (active) {
+    ctx.fillStyle = `rgba(207,250,254,${pulse * 0.55})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.45, ry * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 2, cy - ry * 0.55, 4, 8);
+  }
+  ctx.restore();
+};
+
 const OCEAN_BASE_ANIMATED_TILE = World.prototype.isAnimatedTile;
 World.prototype.isAnimatedTile = function(tile) {
   return OCEAN_BASE_ANIMATED_TILE.call(this, tile) ||
@@ -182,7 +276,7 @@ World.prototype.isReefAtX = function(tileX) {
 
 World.prototype.isInsideReefTemple = function(tileX, tileY) {
   const room = this.reefTemple && this.reefTemple.interior;
-  return this.dimension !== 'ocean' && !!room &&
+  return this.dimension !== 'ocean' && this.dimension !== 'space' && !!room &&
     tileX >= room.left && tileX <= room.right &&
     tileY >= room.top && tileY < room.bottom;
 };
@@ -314,21 +408,21 @@ World.prototype.generateReef = function() {
     if (floor >= seaY) this.setTile(x, floor, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
   }
 
-  for (let x = left + 4; x < mainRight - 3; x += 5) {
+  for (let x = left + 4; x < mainRight - 3; x += 4) {
     const floor = this.surfaceHeights[x];
     const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
-    const height = 9 + Math.floor(roll * 7);
+    const height = 18 + Math.floor(roll * 9);
     const waterDepth = floor - seaY;
     if (waterDepth >= height + 1 && !legacyShrineColumns.includes(x) &&
         !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 4) &&
         Math.abs(x - portalX) > 17) {
       for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.CORAL);
-      for (const level of [2, 4, 6, 8]) {
-        const branchY = floor - height + level;
+      for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
+        const branchY = floor - Math.round(height * fraction);
         for (const side of [-1, 1]) {
-          for (let length = 1; length <= 4; length++) {
+          for (let length = 1; length <= 6; length++) {
             const branchX = x + side * length;
-            const branchTileY = branchY - (length > 1 ? 1 : 0);
+            const branchTileY = branchY - (length > 2 ? Math.ceil((length - 2) / 2) : 0);
             if (branchX > left && branchX < mainRight &&
                 !legacyShrineColumns.includes(branchX) &&
                 !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 3) &&
@@ -342,6 +436,10 @@ World.prototype.generateReef = function() {
     }
   }
 
+  const templeLeft = portalX - 16;
+  const templeRight = portalX + 16;
+  const templeFloorY = Math.max(...this.surfaceHeights.slice(templeLeft, templeRight + 1));
+  for (let x = templeLeft; x <= templeRight; x++) this.surfaceHeights[x] = templeFloorY;
   this.reefBounds = { left, right: edgeRight, mainRight, seaY };
   this.reefPortal = {
     x: portalX,
@@ -349,16 +447,16 @@ World.prototype.generateReef = function() {
   };
   this.reefPodiums = podiumColumns.map((x, i) => ({
     x,
-    y: this.surfaceHeights[x] - 1,
+    y: templeFloorY - 1,
     pearlIndex: i,
     side: i < 2 ? 'left' : 'right'
   }));
   this.reefShrines = this.reefPodiums;
   this.reefTemple = {
-    left: portalX - 16,
-    right: portalX + 16,
+    left: templeLeft,
+    right: templeRight,
     top: seaY + 8,
-    floorY: this.surfaceHeights[portalX],
+    floorY: templeFloorY,
     portalX,
     portalY: this.reefPortal.y,
     interior: {
@@ -392,17 +490,13 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
   const place = (x, y, tile, floor = false) =>
     this.placeReefTempleTile(x, y, tile, floor);
   const { left, right, top, portalX, portalY } = temple;
-  const baseRow = this.surfaceHeights;
 
   // The inner sanctuary is a dry, house-walled chamber, not another flooded
   // cave. Clear generated coral and stray terrain before rebuilding its shell.
   for (let x = temple.interior.left; x <= temple.interior.right; x++) {
     for (let y = temple.interior.top; y < temple.interior.bottom; y++) {
       const tile = this.getTile(x, y);
-      if ((clearInterior || tile === TILES.WATER || tile === TILES.CORAL) &&
-          tile !== OCEAN_TILES.PEARL && tile !== OCEAN_TILES.SHRINE &&
-          tile !== OCEAN_TILES.SHRINE_ACTIVE && tile !== OCEAN_TILES.PORTAL &&
-          tile !== OCEAN_TILES.DORMANT_PORTAL) {
+      if (clearInterior || tile === TILES.WATER || tile === TILES.CORAL) {
         this.setTile(x, y, TILES.AIR);
       }
       this.walls[y * this.width + x] = 23;
@@ -419,30 +513,38 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
   for (let x = portalX - 5; x <= portalX + 5; x++) place(x, top + 2, TILES.MARBLE);
   for (let x = portalX - 2; x <= portalX + 2; x++) place(x, top + 1, TILES.COPPER_BLOCK);
   for (const side of [-1, 1]) {
+    for (let x = portalX + side * 15; x !== portalX + side * 8; x -= side) {
+      place(x, top + 4, TILES.MARBLE);
+    }
+    place(portalX + side * 16, top + 3, TILES.COPPER_BLOCK);
+  }
+  for (const side of [-1, 1]) {
     const pilaster = portalX + side * 11;
-    for (let y = top + 7; y < temple.floorY - 2; y += 3) {
+    for (let y = top + 7; y < temple.floorY; y++) {
+      place(pilaster - 1, y, y % 5 === 0 ? TILES.COPPER_BLOCK : TILES.POLISHED_STONE);
       place(pilaster, y, TILES.COPPER_BLOCK);
+      place(pilaster + 1, y, y % 5 === 0 ? TILES.COPPER_BLOCK : TILES.POLISHED_STONE);
     }
     place(portalX + side * 14, top + 6, TILES.MARBLE);
     place(portalX + side * 14, top + 7, TILES.COPPER_BLOCK);
-  }
-  for (let x = portalX - 9; x <= portalX + 9; x++) {
-    if (x % 3 === 0) place(x, temple.floorY - 1, TILES.MARBLE);
+    place(portalX + side * 14, top + 8, TILES.POLISHED_STONE);
   }
 
   for (const side of [-1, 1]) {
     const towerX = portalX + side * 13;
     const outerX = portalX + side * 15;
-    for (let y = top + 6; y <= temple.floorY - 1; y++) {
+    for (let y = top + 6; y < temple.floorY; y++) {
       place(towerX, y, y % 4 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE);
       if (y >= top + 9) place(outerX, y, TILES.STONE_BRICK);
     }
     place(towerX, top + 5, TILES.COPPER_BLOCK);
     place(towerX, top + 8, TILES.COPPER_BLOCK);
     place(outerX, top + 8, TILES.MARBLE);
+    place(towerX, top + 4, TILES.MARBLE);
+    place(outerX, top + 5, TILES.COPPER_BLOCK);
 
     const archX = portalX + side * 3;
-    for (let y = portalY - 4; y <= portalY + 4; y++) {
+    for (let y = portalY - 6; y <= portalY + 4; y++) {
       place(archX, y, y % 3 === 0 ? TILES.COPPER_BLOCK : TILES.MARBLE);
     }
   }
@@ -457,15 +559,13 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
   }
   place(portalX, portalY - 5, TILES.MARBLE);
 
-  for (let x = left + 2; x <= right - 2; x++) {
-    place(x, baseRow[x], TILES.STONE_BRICK, true);
+  for (let x = left; x <= right; x++) {
+    const tile = (x - left) % 4 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE;
+    this.setTile(x, temple.floorY, tile);
   }
   for (let i = 0; i < this.reefPodiums.length; i++) {
     const podium = this.reefPodiums[i];
-    const floorY = this.surfaceHeights[podium.x];
-    place(podium.x - 1, floorY - 2, TILES.POLISHED_STONE);
-    place(podium.x, floorY - 3, TILES.MARBLE);
-    place(podium.x, floorY - 2, TILES.COPPER_BLOCK);
+    podium.y = temple.floorY - 1;
     this.setTile(podium.x, podium.y,
       activePodiums.has(i) ? OCEAN_TILES.SHRINE_ACTIVE : OCEAN_TILES.SHRINE);
   }
@@ -488,21 +588,32 @@ World.prototype.migrateLegacyReefTemple = function() {
     Math.round(this.reefBounds.left + deepLen * f));
   const oldShrineColumns = pearlColumns.map(x =>
     Math.min(x + 4, this.reefBounds.mainRight - 4));
-  const oldActive = oldShrineColumns.map((x) =>
-    this.getTile(x, this.surfaceHeights[x] - 1) === OCEAN_TILES.SHRINE_ACTIVE);
-  for (let i = 0; i < oldShrineColumns.length; i++) {
-    const x = oldShrineColumns[i];
-    const y = this.surfaceHeights[x] - 1;
-    if (this.reefPodiums.some(podium => podium.x === x && podium.y === y)) continue;
-    if (this.getTile(x, y) === OCEAN_TILES.SHRINE ||
-        this.getTile(x, y) === OCEAN_TILES.SHRINE_ACTIVE) {
-      this.setTile(x, y, TILES.WATER);
+  const oldShrines = oldShrineColumns.map(x => {
+    for (let y = Math.max(this.reefBounds.seaY, this.reefTemple.floorY - 9);
+      y <= this.reefTemple.floorY + 1; y++) {
+      const tile = this.getTile(x, y);
+      if (tile === OCEAN_TILES.SHRINE || tile === OCEAN_TILES.SHRINE_ACTIVE) {
+        return { x, y, active: tile === OCEAN_TILES.SHRINE_ACTIVE };
+      }
     }
+    return { x, y: -1, active: false };
+  });
+  const oldActive = oldShrines.map(shrine => shrine.active);
+  for (let i = 0; i < oldShrineColumns.length; i++) {
+    const { x, y } = oldShrines[i];
+    if (y < 0) continue;
+    if (this.reefPodiums.some(podium => podium.x === x && podium.y === y)) continue;
+    this.setTile(x, y, TILES.WATER);
   }
-  const gateWasOpen = this.getTile(this.reefPortal.x, this.reefPortal.y) === OCEAN_TILES.PORTAL;
-  if (this.getTile(this.reefPortal.x, this.reefPortal.y) === OCEAN_TILES.DORMANT_PORTAL ||
-      gateWasOpen) {
-    this.setTile(this.reefPortal.x, this.reefPortal.y, TILES.WATER);
+  let gateWasOpen = false;
+  for (let y = Math.max(this.reefBounds.seaY, this.reefPortal.y - 5);
+    y <= this.reefPortal.y + 5; y++) {
+    const tile = this.getTile(this.reefPortal.x, y);
+    if (tile === OCEAN_TILES.PORTAL || tile === OCEAN_TILES.DORMANT_PORTAL) {
+      gateWasOpen = tile === OCEAN_TILES.PORTAL;
+      this.setTile(this.reefPortal.x, y, TILES.WATER);
+      break;
+    }
   }
   const activePodiums = new Set(oldActive.map((active, index) => active ? index : -1).filter(index => index >= 0));
   if (gateWasOpen && activePodiums.size < this.reefPodiums.length) {
@@ -510,6 +621,77 @@ World.prototype.migrateLegacyReefTemple = function() {
   }
   this.buildReefTemple(activePodiums, true);
   this.migrateDistributedReefPearls();
+  this._tileCacheDirty = true;
+  return true;
+};
+
+World.prototype.migrateReefTempleFloor = function() {
+  const temple = this.reefTemple;
+  if (!temple || !this.reefPodiums || !this.reefPortal) return false;
+  const activePodiums = new Set();
+  for (let i = 0; i < this.reefPodiums.length; i++) {
+    const podium = this.reefPodiums[i];
+    for (let y = Math.max(this.reefBounds.seaY, temple.floorY - 9);
+      y <= temple.floorY + 1; y++) {
+      if (this.getTile(podium.x, y) === OCEAN_TILES.SHRINE_ACTIVE) {
+        activePodiums.add(i);
+        break;
+      }
+    }
+  }
+  let gateWasOpen = false;
+  for (let y = Math.max(this.reefBounds.seaY, this.reefPortal.y - 5);
+    y <= this.reefPortal.y + 5; y++) {
+    if (this.getTile(this.reefPortal.x, y) === OCEAN_TILES.PORTAL) {
+      gateWasOpen = true;
+      break;
+    }
+  }
+  if (gateWasOpen) {
+    for (let i = 0; i < this.reefPodiums.length; i++) activePodiums.add(i);
+  }
+  for (let x = temple.left; x <= temple.right; x++) {
+    this.surfaceHeights[x] = temple.floorY;
+  }
+  this.buildReefTemple(activePodiums, true);
+  this.upgradeReefCoral();
+  return true;
+};
+
+World.prototype.upgradeReefCoral = function() {
+  if (!this.reefBounds) return false;
+  const { left, mainRight, seaY } = this.reefBounds;
+  for (let x = left + 4; x < mainRight - 3; x++) {
+    const floorY = this.surfaceHeights[x];
+    if (floorY - seaY < 20 || Math.abs(x - this.reefTemple.portalX) <= 17) continue;
+    let topY = floorY - 1;
+    while (topY >= seaY && this.getTile(x, topY) !== TILES.CORAL) topY--;
+    if (topY < seaY) continue;
+    let currentTop = topY;
+    while (currentTop > seaY && this.getTile(x, currentTop - 1) === TILES.CORAL) currentTop--;
+    const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
+    const desiredHeight = Math.min(floorY - seaY - 2, 18 + Math.floor(roll * 9));
+    const desiredTop = floorY - desiredHeight;
+    for (let y = currentTop - 1; y >= desiredTop; y--) {
+      if (this.getTile(x, y) !== TILES.WATER) break;
+      this.setTile(x, y, TILES.CORAL);
+    }
+    for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
+      const branchY = floorY - Math.round(desiredHeight * fraction);
+      for (const side of [-1, 1]) {
+        for (let length = 1; length <= 6; length++) {
+          const branchX = x + side * length;
+          const branchTileY = branchY -
+            (length > 2 ? Math.ceil((length - 2) / 2) : 0);
+          if (branchX > left && branchX < mainRight &&
+              Math.abs(branchX - this.reefTemple.portalX) > 17 &&
+              this.getTile(branchX, branchTileY) === TILES.WATER) {
+            this.setTile(branchX, branchTileY, TILES.CORAL);
+          }
+        }
+      }
+    }
+  }
   this._tileCacheDirty = true;
   return true;
 };
@@ -724,7 +906,7 @@ class OceanFish {
     this.phase = Math.random() * Math.PI * 2;
     this.color = ['#f472b6', '#facc15', '#2dd4bf', '#fb923c', '#c084fc', '#e2e8f0',
       '#60a5fa', '#f87171'][species % 8];
-    this.size = 5 + (species % 3) * 2;
+    this.size = 11 + (species % 3) * 3;
   }
 
   update(dt, world) {
@@ -743,21 +925,62 @@ class OceanFish {
   render(ctx, camera) {
     const x = this.x - camera.x;
     const y = this.y - camera.y;
+    const flick = Math.sin(this.phase * 2.5) * 2;
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(this.vx < 0 ? -1 : 1, 1);
-    ctx.fillStyle = this.color;
+
+    // Broad, bright body with separate fins makes each little fish readable
+    // against the tiled water instead of disappearing into a tiny oval.
+    ctx.fillStyle = '#083548';
     ctx.beginPath();
-    ctx.ellipse(0, 0, this.size, this.size * 0.62, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(-this.size + 1, 0);
-    ctx.lineTo(-this.size - 4, -3);
-    ctx.lineTo(-this.size - 4, 3);
+    ctx.moveTo(-this.size * 0.72, -1);
+    ctx.lineTo(-this.size * 1.35, -this.size * 0.8 + flick);
+    ctx.lineTo(-this.size * 1.25, this.size * 0.85 + flick);
     ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.size * 1.12, this.size * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.ellipse(this.size * 0.12, this.size * 0.28, this.size * 0.72,
+      this.size * 0.25, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.moveTo(-this.size * 0.15, -this.size * 0.45);
+    ctx.lineTo(this.size * 0.12, -this.size * 1.05);
+    ctx.lineTo(this.size * 0.5, -this.size * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-this.size * 0.1, this.size * 0.35);
+    ctx.lineTo(this.size * 0.28, this.size * 0.88);
+    ctx.lineTo(this.size * 0.48, this.size * 0.32);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    for (let stripe = 0; stripe < 2 + (this.species % 2); stripe++) {
+      const sx = -this.size * 0.45 + stripe * this.size * 0.42;
+      ctx.fillRect(sx, -this.size * 0.34, this.size * 0.13, this.size * 0.68);
+    }
+    ctx.strokeStyle = 'rgba(8,47,73,0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(this.size * 0.45, 0, this.size * 0.34, -0.85, 0.85);
+    ctx.stroke();
+    ctx.fillStyle = '#fff7ed';
+    ctx.beginPath();
+    ctx.arc(this.size * 0.73, -this.size * 0.13, this.size * 0.15, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = '#082f49';
-    ctx.fillRect(this.size * 0.38, -1, 1.5, 1.5);
+    ctx.beginPath();
+    ctx.arc(this.size * 0.78, -this.size * 0.13, this.size * 0.075, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(this.size * 0.72, -this.size * 0.2, 2, 2);
     ctx.restore();
   }
 }

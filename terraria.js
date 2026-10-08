@@ -1022,6 +1022,7 @@ class Game {
     this.oxygenDamageTimer = 0;
     this.reefFish = [];
     this.reefFishSpawnTimer = 0;
+    this.creativeGodMode = false;
     this.leviathanHP = null;
     this.leviathanSlain = false;
     this.equippedArmorId = null;
@@ -3419,6 +3420,13 @@ class Game {
       }
       const fillHotbar = document.getElementById('creative-fill-hotbar');
       if (fillHotbar) fillHotbar.addEventListener('change', () => this.renderCreativeMenu());
+      document.getElementById('creative-godmode')?.addEventListener('change', (event) => {
+        this.setCreativeGodMode(event.target.checked);
+      });
+      document.getElementById('creative-teleport')?.addEventListener('click', () => {
+        const target = document.getElementById('creative-dimension')?.value;
+        this.creativeTeleportTo(target);
+      });
       // ADD 1 / ADD STACK / ADD 999 apply to every item currently listed.
       for (const btn of document.querySelectorAll('.creative-quick-btn')) {
         btn.addEventListener('click', () => {
@@ -4129,7 +4137,7 @@ class Game {
     const savedDrops = (inSpecialDimension && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
-      version: 17,
+      version: 19,
       timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
       tiles: Array.from(this.world.persistTiles()),
@@ -4219,7 +4227,7 @@ class Game {
       return false;
     }
 
-    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 17;
+    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 19;
     if (!supportedVersion || !Array.isArray(save.tiles) || save.tiles.length !== this.world.tiles.length) {
       this.showToast('⚠️ Save data is incompatible.');
       return false;
@@ -4239,16 +4247,8 @@ class Game {
       this.world.walls.set(save.walls);
     }
     if (save.version === 15) this.world.migrateLegacyReefTemple();
-    if (save.version < 17) {
-      this.world.migrateDistributedReefPearls();
-      if (save.version !== 15) {
-        const activePodiums = new Set(this.world.reefPodiums
-          .map((podium, index) => this.world.getTile(podium.x, podium.y) === TILES.REEF_SHRINE_ACTIVE
-            ? index : -1)
-          .filter(index => index >= 0));
-        this.world.buildReefTemple(activePodiums, true);
-      }
-    }
+    if (save.version < 17) this.world.migrateDistributedReefPearls();
+    if (save.version < 19) this.world.migrateReefTempleFloor();
     // Both the static tile cache and the minimap's baked texture describe the
     // world that was just replaced; a warm cache would otherwise keep showing
     // the pre-load world until something happened to touch a tile.
@@ -4515,12 +4515,64 @@ class Game {
     if (show) {
       modal.classList.remove('hidden');
       if (this.creativeCategory === undefined) this.creativeCategory = 'all';
+      const godMode = document.getElementById('creative-godmode');
+      if (godMode) godMode.checked = this.creativeGodMode;
+      const dimension = document.getElementById('creative-dimension');
+      if (dimension) {
+        dimension.value = this.world.isInSpace() ? 'space'
+          : this.world.isInOcean() ? 'ocean' : 'overworld';
+      }
       this.renderCreativeMenu();
       // Focus the search box so you can just start typing.
       setTimeout(() => document.getElementById('creative-search')?.focus(), 30);
     } else {
       modal.classList.add('hidden');
     }
+  }
+
+  setCreativeGodMode(enabled) {
+    this.creativeGodMode = !!enabled;
+    if (this.creativeGodMode) this.refillCreativeVitals();
+    this.showToast(this.creativeGodMode
+      ? '✨ Creative invulnerability and infinite health, hunger, and stamina enabled.'
+      : 'Creative invulnerability and infinite needs disabled.');
+  }
+
+  refillCreativeVitals() {
+    if (!this.player) return;
+    this.player.hp = this.player.maxHp;
+    this.player.hunger = this.player.maxHunger;
+    this.player.stamina = this.player.maxStamina;
+    this.player.starving = false;
+  }
+
+  creativeTeleportTo(target) {
+    const destinations = new Set(['overworld', 'space', 'ocean']);
+    if (!destinations.has(target)) {
+      this.showToast('Choose a valid destination dimension.');
+      return false;
+    }
+    if (this.mp && this.mp.status !== 'idle') {
+      this.showToast('Creative dimension travel is unavailable in a multiplayer session.');
+      return false;
+    }
+    const current = this.world.isInSpace() ? 'space'
+      : this.world.isInOcean() ? 'ocean' : 'overworld';
+    if (target === current) {
+      this.showToast(`You are already in ${target === 'space' ? 'the Ossuary'
+        : target === 'ocean' ? 'the Abyssal Planet' : 'the Overworld'}.`);
+      return true;
+    }
+    if (current !== 'overworld') this.returnToOverworld();
+    if (target === 'space') this.enterSpaceDimension();
+    else if (target === 'ocean') this.enterOceanDimension();
+    this.camera.x = Math.max(0, Math.min(this.world.pixelWidth - this.camera.viewportWidth,
+      this.player.x + this.player.width / 2 - this.camera.viewportWidth / 2));
+    this.camera.y = Math.max(0, Math.min(this.world.pixelHeight - this.camera.viewportHeight,
+      this.player.y + this.player.height / 2 - this.camera.viewportHeight / 2));
+    this.showToast(`✨ Teleported to ${target === 'space' ? 'the Ossuary'
+      : target === 'ocean' ? 'the Abyssal Planet' : 'the Overworld'}.`);
+    return true;
   }
 
   /** Which category chip an item belongs to, for the filter row. */
@@ -5431,6 +5483,10 @@ class Game {
    * points with no source (lava, starvation) always stay on the host.
    */
   damagePlayer(amount, sourceX, cause, isBoss = false, sourceY = null) {
+    if (this.creativeGodMode) {
+      this.refillCreativeVitals();
+      return 0;
+    }
     if (this.mp && this.mp.routeDamage(amount, sourceX, sourceY, cause, isBoss)) return 0;
     const capped = this.trashDamageCeiling(amount, isBoss);
     const taken = this.player.takeDamage(capped, this.sound, this.particles, sourceX);
@@ -7440,7 +7496,8 @@ this.player.dodgeTime = 0;
 
   updateOceanFish(dt) {
     const cx = (this.player.x + this.player.width / 2) / TILE_SIZE;
-    const active = this.world.isInOcean() || this.world.isReefAtX(cx);
+    const active = !this.world.isInSpace() &&
+      (this.world.isInOcean() || this.world.isReefAtX(cx));
     if (!active || typeof OceanFish === 'undefined') {
       this.reefFish.length = 0;
       return;
@@ -7474,6 +7531,7 @@ this.player.dodgeTime = 0;
     // heartbeat and welcome handshake alive while the title screen is up.
     if (this.mp) this.mp.tick(dt);
     if (this.paused) return;
+    if (this.creativeGodMode) this.refillCreativeVitals();
 
     // Touch aim gets its fingertip-forgiveness nudge before anything reads the
     // aim point, so handleLeftClick (below, and in the held-button branch near
@@ -8357,6 +8415,7 @@ this.player.dodgeTime = 0;
     if (this.savedDirty) this.saveSharedInventory();
 
     // 12. Update HUD Bars, buff rack & clock
+    if (this.creativeGodMode) this.refillCreativeVitals();
     this.updateHUD();
 
     // 13. Death check (covers starvation and any other stray damage source)
@@ -8641,12 +8700,16 @@ this.player.dodgeTime = 0;
 
     // 2. World Solid & Wall Tiles
     this.world.renderTiles(ctx, this.camera);
+    this.world.renderReefTemplePortal(ctx, this.camera);
 
     // 2b. Ambient weather layer (rain / snow / sand / fog) sits behind entities
     // (there is no weather in the Ossuary — it is a vacuum.)
     if (this.weather && !this.world.isInSpace() && !this.world.isInOcean()) this.weather.render(this, ctx, this.camera, 'back');
 
-    for (const fish of this.reefFish) fish.render(ctx, this.camera);
+    if (!this.world.isInSpace() &&
+        (this.world.isInOcean() || this.world.isReefAtX((this.player.x + this.player.width / 2) / TILE_SIZE))) {
+      for (const fish of this.reefFish) fish.render(ctx, this.camera);
+    }
 
     // 3. Drop Items
     for (const d of this.drops) {

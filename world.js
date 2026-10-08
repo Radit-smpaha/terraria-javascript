@@ -3838,11 +3838,16 @@ class World {
   renderLighting(lightCtx, camera, player, entities) {
     const w = camera.viewportWidth;
     const h = camera.viewportHeight;
+    const inTemple = typeof this.isInsideReefTemple === 'function' &&
+      this.isInsideReefTemple(
+        Math.floor((player.x + player.width / 2) / TILE_SIZE),
+        Math.floor((player.y + player.height / 2) / TILE_SIZE)
+      );
 
     // Blend surface ambient light through the same smooth dawn/dusk curve as
     // the sky. Keep a cool moonlit floor so nights remain readable.
     const daylight = this.daylightFactor();
-    const ambientLuminance = 0.24 + 0.76 * daylight;
+    const ambientLuminance = inTemple ? 0.96 : 0.24 + 0.76 * daylight;
 
     // Fill dark mask on lighting canvas (warm at dusk, cold at night)
     lightCtx.clearRect(0, 0, w, h);
@@ -3859,7 +3864,7 @@ class World {
     // Underground darkness bonus
     const minTileY = Math.floor(camera.y / TILE_SIZE);
     const undergroundStart = 56;
-    if (minTileY > undergroundStart - 10) {
+    if (!inTemple && minTileY > undergroundStart - 10) {
       const depthFactor = Math.min(1.0, (minTileY - undergroundStart + 10) / 15);
       lightCtx.fillStyle = `rgba(0, 0, 0, ${depthFactor * 0.92})`;
       lightCtx.fillRect(0, 0, w, h);
