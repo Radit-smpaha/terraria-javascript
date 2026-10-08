@@ -44,6 +44,35 @@ const NPC_DEFS = [
       { type: 'collect', items: [{ id: 'stone', count: 25 }], desc: 'Bring 25 Stone', reward: [{ id: 'miners_potion', count: 1 }, { id: 'bomb', count: 2 }] },
       { type: 'collect', items: [{ id: 'wool', count: 6 }], desc: 'Bring 6 Soft Wool', reward: [{ id: 'regeneration_potion', count: 1 }] }
     ]
+  },
+  // ---- Lore carriers ----------------------------------------------------
+  // The reef progression (4 pearls -> 4 shrines -> Tide Gate -> Leviathan)
+  // and the space progression (Void Rift Beacon -> Ossuary Sovereign) both
+  // need clues the player can actually find. Two dedicated talkers stand at
+  // the spawn camp: the Old Sailor knows the sea, the Star Watcher knows the
+  // sky. The Guide's greeting points at both.
+  {
+    id: 'sailor',
+    name: 'Old Sailor',
+    icon: '🎣',
+    dx: -16,
+    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. Four Sacred Pearls hang glowing in the deep; carry each one to a shrine on the sea floor. Wake all four and the Tide Gate between them opens. Mind the pirates... and whatever it is that sleeps beyond the gate.',
+    quests: [
+      { type: 'collect', items: [{ id: 'fish_clownfish', count: 3 }], desc: 'Bring 3 Reef Clownfish', reward: [{ id: 'healing_potion', count: 2 }] },
+      { type: 'collect', items: [{ id: 'coral_fragment', count: 8 }], desc: 'Bring 8 Coral Fragments', reward: [{ id: 'swiftness_potion', count: 1 }, { id: 'apple', count: 2 }] },
+      { type: 'collect', items: [{ id: 'sacred_pearl', count: 1 }], desc: 'Show a Sacred Pearl', reward: [{ id: 'life_crystal', count: 1 }] }
+    ]
+  },
+  {
+    id: 'starwatcher',
+    name: 'Star Watcher',
+    icon: '🔭',
+    dx: 21,
+    greeting: 'Count the stars at night and one of them is a door. Craft a Void Rift Beacon — demon souls, hellstone, crystal and gold — then right-click it under open sky. The sky tears, the Ossuary waits, and the Sovereign beyond remembers every wound you give it. Go armored.',
+    quests: [
+      { type: 'collect', items: [{ id: 'crystal', count: 5 }], desc: 'Bring 5 Cave Crystals', reward: [{ id: 'mana_crystal', count: 1 }] },
+      { type: 'kill', desc: 'Slay 8 monsters', target: 8, reward: [{ id: 'healing_potion', count: 2 }, { id: 'arrow', count: 20 }] }
+    ]
   }
 ];
 

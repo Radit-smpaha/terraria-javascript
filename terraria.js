@@ -4130,7 +4130,7 @@ class Game {
     const savedDrops = (inSpecialDimension && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
-      version: 12,
+      version: 15,
       timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
       tiles: Array.from(this.world.persistTiles()),
@@ -4220,7 +4220,7 @@ class Game {
       return false;
     }
 
-    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 12;
+    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 15;
     if (!supportedVersion || !Array.isArray(save.tiles) || save.tiles.length !== this.world.tiles.length) {
       this.showToast('⚠️ Save data is incompatible.');
       return false;
@@ -4229,7 +4229,8 @@ class Game {
     this.world.timeOfDay = Number.isFinite(save.timeOfDay) ? save.timeOfDay : this.world.timeOfDay;
     this.world.dayCount = Number.isFinite(save.dayCount) ? save.dayCount : this.world.dayCount;
     this.world.tiles.set(save.tiles);
-    if (save.version < 12) this.world.generateReef();
+    if (save.version >= 12 && save.version <= 14) this.world.repairLegacyReef(save.version);
+    if (save.version < 15) this.world.generateReef();
     this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(110000, save.leviathanHP)) : null;
     this.leviathanSlain = save.leviathanSlain === true;
     this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
@@ -7399,7 +7400,9 @@ this.player.dodgeTime = 0;
       const fishX = this.world.isInOcean()
         ? Math.random() * this.world.pixelWidth
         : Math.max(3, Math.min(reefRight - 3, cx + (Math.random() - 0.5) * 75)) * TILE_SIZE;
-      const minY = this.world.isInOcean() ? this.world.oceanArena.seaY + 2 : 42;
+      const minY = this.world.isInOcean()
+        ? this.world.oceanArena.seaY + 2
+        : (this.world.reefBounds ? this.world.reefBounds.seaY + 2 : 42);
       let fishY = minY * TILE_SIZE;
       for (let tries = 0; tries < 24; tries++) {
         const candidate = (minY + Math.floor(Math.random() * Math.max(2, this.world.height - minY - 10))) * TILE_SIZE;
@@ -7408,7 +7411,7 @@ this.player.dodgeTime = 0;
           break;
         }
       }
-      this.reefFish.push(new OceanFish(fishX, fishY, Math.floor(Math.random() * 6)));
+      this.reefFish.push(new OceanFish(fishX, fishY, Math.floor(Math.random() * 8)));
     }
     for (const fish of this.reefFish) fish.update(dt, this.world);
   }
@@ -7713,7 +7716,7 @@ this.player.dodgeTime = 0;
             else mType = 'zombie';
           } else if (underground) {
             mType = 'zombie';
-          } else if (reefColumn && Math.random() < 0.28) {
+          } else if (reefColumn && Math.random() < (night ? 0.45 : 0.28)) {
             mType = 'pirate';
           } else if (night) {
             const roll = Math.random();
@@ -8577,7 +8580,9 @@ this.player.dodgeTime = 0;
     // deep space after a return trip.
     if (this.world.isInSpace()) this.world.renderSpaceBackground(ctx, this.camera);
     else if (this.world.isInOcean()) this.world.renderOceanBackground(ctx, this.camera);
-    else this.world.renderForestBackground(ctx, this.camera);
+    else if (this.world.isReefAtX((this.camera.x + this.camera.viewportWidth / 2) / TILE_SIZE)) {
+      this.world.renderOceanBackground(ctx, this.camera);
+    } else this.world.renderForestBackground(ctx, this.camera);
 
     // 2. World Solid & Wall Tiles
     this.world.renderTiles(ctx, this.camera);

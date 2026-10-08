@@ -87,62 +87,178 @@ World.prototype.isInOcean = function() {
 };
 
 World.prototype.isReefAtX = function(tileX) {
-  const reefRight = this.reefBounds ? this.reefBounds.right : Math.floor(this.width * 0.32);
-  return this.dimension !== 'ocean' && tileX >= 0 && tileX < reefRight;
+  return this.dimension !== 'ocean' && !!this.reefBounds &&
+    tileX >= this.reefBounds.left && tileX < this.reefBounds.right;
 };
 
 World.prototype.generateReef = function() {
-  const left = 2;
-  const right = Math.max(left + 20, Math.floor(this.width * 0.32));
-  const edgeRight = Math.min(this.width - 3, right + 12);
-  const seaY = Math.max(24, Math.min(48, Math.floor(this.height * 0.24)));
-  const baseFloor = Math.min(this.height - 8, seaY + 48);
+  if (!this.naturalTerrainTiles) this.naturalTerrainTiles = this.tiles.slice();
+  if (!this.naturalSurfaceHeights) this.naturalSurfaceHeights = this.surfaceHeights.slice();
+  // The reef owns the ENTIRE reef band: the west edge of the world is open
+  // sea and the last ~28 columns ramp up into a beach on the snow band's
+  // doorstep. Band-derived, so the ocean can never overlap the snow biome —
+  // that overlap was the original bug.
+  const borders = this.biomeBorders();
+  const left = 0;
+  const edgeRight = Math.max(left + 40, Math.min(this.width - 3, Math.ceil(borders[0])));
+  const mainRight = Math.max(left + 20, edgeRight - 28);
+  const seaY = Math.max(24, Math.min(this.height - 45,
+    Math.round(this.naturalSurfaceHeights[left])));
+  const deepFloor = Math.min(this.height - 8, seaY + 30);
   const shrines = [];
+  // Four pearls hang at rising depths through the deep zone, each with its
+  // shrine standing on the sea floor four columns to its east, and the dormant
+  // Tide Gate floats between the inner pair.
+  const deepLen = mainRight - left;
+  const pearlColumns = [0.16, 0.36, 0.62, 0.84].map(f => Math.round(left + deepLen * f));
+  const shrineColumns = pearlColumns.map(x => Math.min(x + 4, mainRight - 4));
+  const portalX = Math.round((shrineColumns[1] + shrineColumns[2]) / 2);
 
+  // Flatten the waterline. Worldgen vegetation and any hill standing above
+  // sea level would float once the column is flooded, so they are shaved back
+  // to seaY — but ONLY where the tile still matches the natural-generation
+  // snapshot, which means player builds survive the save migration intact.
+  const veg = new Set([TILES.FLOWER, TILES.TALL_GRASS, TILES.LILY, TILES.CACTUS,
+    TILES.SNOWBUSH, TILES.ICICLE, TILES.LEAVES, TILES.SNOW_PINE_LEAVES,
+    TILES.ACACIA_LEAVES, TILES.MANGROVE_LEAVES, TILES.WOOD]);
   for (let x = left; x < edgeRight; x++) {
-    const edge = Math.min(1, (right - x) / 14);
-    const floor = x < right
-      ? Math.min(this.height - 6,
-        baseFloor - Math.floor((1 - edge) * 22) + Math.round(Math.sin(x * 0.11) * 3))
-      : Math.min(this.height - 6, seaY + (edgeRight - x) * 2);
-    this.surfaceHeights[x] = floor;
-    for (let y = seaY; y < floor; y++) this.setTile(x, y, TILES.WATER);
-    this.setTile(x, floor, TILES.SANDSTONE);
-    for (let y = floor + 1; y < this.height; y++) {
-      if (this.getTile(x, y) === TILES.AIR || this.getTile(x, y) === TILES.WATER) {
-        this.setTile(x, y, TILES.SANDSTONE);
-      }
-    }
-    if (x > left + 4 && x < right - 5 && x % 3 === 0) {
-      this.setTile(x, floor - 1, TILES.CORAL);
-      if (x % 9 === 0) this.setTile(x + 1, floor - 2, TILES.CORAL);
+    const natSurf = this.naturalSurfaceHeights[x];
+    for (let y = 1; y < seaY; y++) {
+      const idx = y * this.width + x;
+      const nat = this.naturalTerrainTiles[idx];
+      if (this.tiles[idx] !== nat || nat === TILES.AIR) continue;
+      if (veg.has(nat) || y >= natSurf) this.tiles[idx] = TILES.AIR;
     }
   }
 
-  const pearlColumns = [
-    Math.floor(right * 0.13),
-    Math.floor(right * 0.35),
-    Math.floor(right * 0.59),
-    Math.floor(right * 0.82)
-  ];
+  for (let x = left; x < edgeRight; x++) {
+    let floor;
+    if (x < mainRight) {
+      floor = Math.round(deepFloor + Math.sin(x * 0.19) * 1.5 + Math.sin(x * 0.07) * 1.5);
+    } else {
+      // East shore: smooth ramp from the abyss back up to the waterline, so
+      // the reef ends in a walkable beach exactly at the snow border.
+      const t = (x - mainRight) / Math.max(1, edgeRight - mainRight);
+      const smooth = t * t * (3 - 2 * t);
+      floor = Math.round(deepFloor + (seaY - deepFloor) * smooth);
+    }
+    this.surfaceHeights[x] = floor;
+    for (let y = seaY; y < floor; y++) this.setTile(x, y, TILES.WATER);
+    if (floor >= seaY) this.setTile(x, floor, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
+  }
+
+  for (let x = left + 4; x < mainRight - 3; x += 5) {
+    const floor = this.surfaceHeights[x];
+    const height = 2 + Math.floor((Math.sin(x * 12.9898) * 43758.5453 % 1 + 1) % 1 * 3);
+    const waterDepth = floor - seaY;
+    if (waterDepth >= height + 1 && !shrineColumns.includes(x)) {
+      for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.CORAL);
+      if (height >= 3) {
+        const branchY = floor - height + 1;
+        for (const side of [-1, 1]) {
+          const branchX = x + side;
+          if (branchX > left && branchX < mainRight && !shrineColumns.includes(branchX) &&
+              branchY < this.surfaceHeights[branchX] && branchY > seaY) {
+            this.setTile(branchX, branchY, TILES.CORAL);
+          }
+        }
+      }
+    }
+  }
+
   for (let i = 0; i < 4; i++) {
     const x = pearlColumns[i];
     const floor = this.surfaceHeights[x];
-    this.setTile(x, floor - 4, OCEAN_TILES.PEARL);
-    const shrineX = Math.min(right - 8, x + 6);
+    const pearlY = seaY + Math.max(1, Math.floor((floor - seaY) * (0.35 + i * 0.08)));
+    this.setTile(x, Math.min(floor - 1, pearlY), OCEAN_TILES.PEARL);
+    const shrineX = shrineColumns[i];
     this.setTile(shrineX, this.surfaceHeights[shrineX] - 1, OCEAN_TILES.SHRINE);
     shrines.push({ x: shrineX, y: this.surfaceHeights[shrineX] - 1, pearlIndex: i });
   }
 
   this.reefShrines = shrines;
-  this.reefBounds = { left, right: edgeRight, mainRight: right, seaY };
+  this.reefBounds = { left, right: edgeRight, mainRight, seaY };
   this.reefPortal = {
-    x: Math.floor(right * 0.51),
-    y: this.surfaceHeights[Math.floor(right * 0.51)] - 4
+    x: portalX,
+    y: seaY + Math.max(1, Math.floor((this.surfaceHeights[portalX] - seaY) * 0.6))
   };
   this.setTile(this.reefPortal.x, this.reefPortal.y, TILES.DORMANT_OCEAN_PORTAL);
   this._tileCacheDirty = true;
-  return { left, right: edgeRight, mainRight: right, seaY, floorY: baseFloor, shrines, portal: this.reefPortal };
+  return { left, right: edgeRight, mainRight, seaY, floorY: deepFloor, shrines, portal: this.reefPortal };
+};
+
+World.prototype.repairLegacyReef = function(version) {
+  if (!this.naturalTerrainTiles || !this.reefBounds) return false;
+  if (version === 14) {
+    // v14 was the interim forest-band layout: a reef carved from ceil(w/5)
+    // east for 80 columns. That stretch held no natural water or sand, so
+    // every drop of water, grain of sand and ocean tile in it goes straight
+    // back to the freshly generated natural terrain before the band-derived
+    // reef is carved over the west edge.
+    const left = Math.ceil(this.width / 5);
+    const v14Right = Math.min(this.width - 35, left + 52);
+    const v14Edge = Math.min(this.width - 3, v14Right + 28);
+    for (let x = left; x < v14Edge; x++) {
+      for (let y = 0; y < this.height; y++) {
+        const idx = y * this.width + x;
+        const t = this.tiles[idx];
+        if ((t >= OCEAN_TILES.PEARL && t <= OCEAN_TILES.DORMANT_PORTAL) ||
+            t === TILES.WATER || t === TILES.SAND || t === TILES.SANDSTONE) {
+          this.tiles[idx] = this.naturalTerrainTiles[idx];
+        }
+      }
+    }
+    this._tileCacheDirty = true;
+    return true;
+  }
+  const legacyV12 = version === 12;
+  const oldRight = legacyV12
+    ? Math.max(22, Math.floor(this.width * 0.32))
+    : Math.max(54, Math.floor(this.width * 0.14));
+  const oldLeft = legacyV12 ? 2 : 0;
+  const oldEdgeRight = Math.min(this.width - 3, oldRight + 12);
+  const oldSeaY = legacyV12
+    ? Math.max(24, Math.min(48, Math.floor(this.height * 0.24)))
+    : Math.max(24, Math.min(this.height - 24, this.naturalSurfaceHeights[oldEdgeRight]));
+  const oldBaseFloor = Math.min(this.height - 8, oldSeaY + 48);
+
+  for (let x = oldLeft; x < oldEdgeRight; x++) {
+    let oldFloor;
+    if (legacyV12) {
+      const edge = Math.min(1, (oldRight - x) / 14);
+      oldFloor = x < oldRight
+        ? Math.min(this.height - 6,
+          oldBaseFloor - Math.floor((1 - edge) * 22) + Math.round(Math.sin(x * 0.11) * 3))
+        : Math.min(this.height - 6, oldSeaY + (oldEdgeRight - x) * 2);
+    } else if (x <= oldRight) {
+      const t = x / oldRight;
+      const smooth = t * t * (3 - 2 * t);
+      oldFloor = Math.round(oldSeaY + 12 * (1 - smooth));
+    } else {
+      const t = (x - oldRight) / (oldEdgeRight - oldRight);
+      const smooth = t * t * (3 - 2 * t);
+      oldFloor = Math.round(oldSeaY + (this.naturalSurfaceHeights[x] - oldSeaY) * smooth);
+    }
+    for (let y = 0; y < this.height; y++) {
+      const index = y * this.width + x;
+      const current = this.tiles[index];
+      const natural = this.naturalTerrainTiles[index];
+      if (current >= OCEAN_TILES.PEARL && current <= OCEAN_TILES.DORMANT_PORTAL) {
+        this.tiles[index] = natural;
+      } else if (current === TILES.WATER && natural !== TILES.WATER &&
+          y >= oldSeaY && y < oldFloor) {
+        this.tiles[index] = natural;
+      } else if ((current === TILES.SAND || current === TILES.SANDSTONE) &&
+          y === oldFloor && natural !== current) {
+        this.tiles[index] = natural;
+      } else if (legacyV12 && y > oldFloor && current === TILES.SANDSTONE &&
+          (this.naturalTerrainTiles[index] === TILES.AIR || this.naturalTerrainTiles[index] === TILES.WATER)) {
+        this.tiles[index] = natural;
+      }
+    }
+  }
+  this._tileCacheDirty = true;
+  return true;
 };
 
 World.prototype.generateOceanPlanet = function() {
@@ -269,7 +385,8 @@ class OceanFish {
     this.species = species;
     this.vx = (Math.random() < 0.5 ? -1 : 1) * (0.35 + Math.random() * 0.55);
     this.phase = Math.random() * Math.PI * 2;
-    this.color = ['#f472b6', '#facc15', '#2dd4bf', '#fb923c', '#c084fc', '#e2e8f0'][species];
+    this.color = ['#f472b6', '#facc15', '#2dd4bf', '#fb923c', '#c084fc', '#e2e8f0',
+      '#60a5fa', '#f87171'][species % 8];
     this.size = 5 + (species % 3) * 2;
   }
 
@@ -280,7 +397,7 @@ class OceanFish {
     const tx = Math.floor(this.x / TILE_SIZE);
     const limit = world.isInOcean() ? world.width
       : world.reefBounds ? world.reefBounds.right : world.width * 0.32;
-    if (tx < 2 || tx >= limit || world.getTile(tx, Math.floor(this.y / TILE_SIZE)) !== TILES.WATER) {
+    if (tx < 1 || tx >= limit || world.getTile(tx, Math.floor(this.y / TILE_SIZE)) !== TILES.WATER) {
       this.vx *= -1;
       this.x += this.vx * dt * 60 * 2;
     }
@@ -355,7 +472,11 @@ class OceanLeviathan {
   }
 
   scaleDamageFor(target, damage) {
-    return Math.max(1, Math.round(damage * (target && target.index === 1 ? 1 : 0.72)));
+    // The crowned middle head is the apex of the fight: it shrugs off nearly
+    // a third of what the flanks eat, so players break the two side heads
+    // first and face the core last. The middle head also lands harder (its
+    // beams carry a centre bonus) and attacks far more often.
+    return Math.max(1, Math.round(damage * (target && target.index === 1 ? 0.72 : 1)));
   }
 
   takeDamage(amount, sound, particles, critical = false) {
@@ -425,7 +546,10 @@ class OceanLeviathan {
       }
     }
     if (this.attackTimer <= 0 && target && !this.beam && !this.surge) {
-      const head = this.headTargets()[Math.floor(Math.random() * 3)];
+      // Nearly half the attacks come from the middle head — the most op one.
+      const heads = this.headTargets();
+      const roll = Math.random();
+      const head = roll < 0.45 ? heads[1] : roll < 0.725 ? heads[0] : heads[2];
       const px = target.x + target.width / 2;
       const py = target.y + target.height / 2;
       if (Math.random() < 0.32) {

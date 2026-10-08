@@ -14,6 +14,8 @@ const JOURNEY_RANKS = [
 
 const JOURNEY_BIOMES = {
   forest: { name: 'Verdant Reach', icon: '🌲', color: '#4ade80' },
+  // The huge ocean on the far west edge of the world.
+  reef: { name: 'Azure Reef', icon: '🪸', color: '#22d3ee' },
   snow: { name: 'Frostpine Expanse', icon: '❄️', color: '#bae6fd' },
   // The one biome with a levelled building plot in it, so its name says so.
   plains: { name: 'Open Meadow', icon: '🌾', color: '#a3e635' },

@@ -153,8 +153,20 @@ const TILE_PROPERTIES = {
 // The world is laid out as equal west→east bands, one per entry, in this order.
 // EVERYTHING biome-shaped reads this list: getBiomeAtX, the border blends, the
 // sky palettes, weather and the spawn tables. Insert a name and the whole world
-// re-divides evenly; there are no hard-coded quarter fractions left to update.
-const BIOME_ORDER = ['snow', 'forest', 'plains', 'savanna', 'swamp'];
+// re-divides across the weighted bands below; there are no hard-coded quarter
+// fractions left to update.
+//
+// The reef comes FIRST (far west) so the ocean owns the left edge of the
+// world and never overlaps the snow band — that overlap was the "ocean is in
+// the snow biome" bug. BIOME_WEIGHTS decides how wide each band is; the sum
+// must be 1. Everything (borders, blends, palettes, structure placement)
+// derives from these two tables.
+const BIOME_ORDER = ['reef', 'snow', 'forest', 'plains', 'savanna', 'swamp'];
+// Reef is deliberately huge (~29% of the map). Plains/savanna/swamp keep the
+// exact fractions the old equal-band layout gave them east of x≈196 on a
+// 440-tile world, so spawn, the building plot, the shrines and the drowned
+// chapel all stay in their biomes.
+const BIOME_WEIGHTS = [0.29, 0.08, 0.075, 0.155, 0.2, 0.2];
 
 class World {
   // `seed` 0 means "the original world": every generation roll falls through to
@@ -267,24 +279,31 @@ class World {
   // Biome id at a tile column. Fractional blending near borders is handled
   // by biomeMix() below; hard borders remain for gameplay (trees, weather).
   //
-  // The world is a single west→east strip of equal bands, so the biome table
-  // itself is the only place the layout is described. Adding a biome means
-  // adding it to BIOME_ORDER; every border, blend and palette lookup below
-  // derives from that list rather than from four hard-coded fractions.
+  // The world is a single west→east strip of weighted bands, so the biome
+  // tables are the only place the layout is described. Adding a biome means
+  // adding it to BIOME_ORDER (with a weight); every border, blend and palette
+  // lookup below derives from those tables rather than from hard fractions.
   getBiomeAtX(tileX) {
     const x = Math.max(0, Math.min(this.width - 1, Math.floor(tileX)));
-    const band = Math.min(BIOME_ORDER.length - 1,
-      Math.floor((x / this.width) * BIOME_ORDER.length));
-    return BIOME_ORDER[band];
+    const edges = this._biomeEdges || (this._biomeEdges = this.biomeBorders());
+    let band = 0;
+    while (band < edges.length && x >= edges[band]) band++;
+    return BIOME_ORDER[Math.min(band, BIOME_ORDER.length - 1)];
   }
 
-  // Equal-band border positions, west→east. For 5 biomes on a 440-tile world:
-  // 88, 176, 264, 352.
+  // Weighted band border positions, west→east (cached: this is called for
+  // every visible column every frame). For the default 440-tile world:
+  // 127.6, 162.8, 195.8, 264, 352 — the east three match the old equal-band
+  // borders exactly.
   biomeBorders() {
-    const n = BIOME_ORDER.length;
+    if (this._biomeEdges) return this._biomeEdges;
     const borders = [];
-    for (let i = 1; i < n; i++) borders.push(this.width * (i / n));
-    return borders;
+    let acc = 0;
+    for (let i = 0; i < BIOME_ORDER.length - 1; i++) {
+      acc += BIOME_WEIGHTS[i];
+      borders.push(this.width * acc);
+    }
+    return (this._biomeEdges = borders);
   }
 
   // 0..1 blend weights for the two biomes meeting at the nearest border.
@@ -310,6 +329,9 @@ class World {
   // plains are deliberately almost level — the flat one you can build on.
   biomeRelief(biome, x, ph = { a: 0, b: 0, c: 0, d: 0 }) {
     switch (biome) {
+      // The reef band is generated as land first and then flooded, so keep its
+      // ground almost level — deep valleys here would poke through the waterline.
+      case 'reef': return Math.sin(x * 0.05 + 1.1 + ph.a) * 1.5;
       case 'snow': return Math.sin(x * 0.11 + ph.d) * 4 + Math.sin(x * 0.31) * 1.5;
       case 'forest': return Math.sin(x * 0.06 + ph.a) * 6 + Math.sin(x * 0.21) * 1.5;
       // Rolling meadow. The whole landform is carried by ONE very long, lazy
@@ -335,7 +357,9 @@ class World {
     // "bumpy"). The open, rolling shape of the plains comes from the very
     // long biomeRelief swell instead, so the band keeps real landform while
     // staying the calmest surface in the world to walk and build on.
-    return biome === 'plains' ? 0.26 : 1;
+    // The reef is damped for the same reason at the opposite extreme: it is
+    // about to be dug out and flooded, and a calm base keeps the waterline flat.
+    return biome === 'plains' ? 0.26 : biome === 'reef' ? 0.35 : 1;
   }
 
   generateTerrain() {
@@ -923,9 +947,18 @@ class World {
 
   generateLandmarks() {
     // Small stone shrines give surface exploration recognizable destinations.
-    // Spread one per biome band (snow, forest, plains, swamp), with the plains one
-    // sitting clear of the building plot so the meadow stays an open field.
-    const shrineXs = [24, 78, 260, 360];
+    // Spread one per land biome band (snow, forest, plains, swamp), with the
+    // plains one sitting clear of the building plot so the meadow stays an
+    // open field. Positions derive from the band borders so they always land
+    // in their own biome — the old fixed x values would have drowned inside
+    // the reef band once the ocean took the west edge of the world.
+    const b = this.biomeBorders();
+    const shrineXs = [
+      Math.round(b[1] - 8),   // snow band, just west of the forest border
+      Math.round(b[2] - 6),   // forest band, just west of the plains border
+      Math.round(b[2] + 64),  // plains, well clear of the spawn plot
+      Math.round(b[4] + 8)    // swamp, near the drowned chapel's stretch
+    ];
     for (const shrineX of shrineXs) {
       const groundY = this.surfaceHeights[shrineX];
       this.landmarks.push({ x: shrineX, y: groundY - 5, type: 'shrine' });
@@ -944,7 +977,7 @@ class World {
       }
     }
 
-    const cabinXs = [120];
+    const cabinXs = [Math.round(this.biomeBorders()[1] + 14)];  // inside the forest band
     for (const cabinX of cabinXs) {
       const groundY = this.surfaceHeights[cabinX];
       this.landmarks.push({ x: cabinX, y: groundY - 4, type: 'cabin' });
@@ -960,7 +993,8 @@ class World {
   }
 
   generateSurfaceStructures() {
-    this.buildSnowLodge(42);
+    // The lodge belongs in the snow band, just east of the reef's shore.
+    this.buildSnowLodge(Math.round(this.biomeBorders()[0] + 12));
     // Keep a small, memorable set of hand-built landmarks; leave the rest wild.
   }
 
@@ -1668,6 +1702,9 @@ class World {
   /** Biome colours for the far scenery layers. */
   _biomePalette(biome) {
     return {
+      // The reef's backdrop is swapped for the ocean gradient at the render
+      // layer; this palette only covers the brief blend zone at its borders.
+      reef: { ridge: '#164e63', ridgeSnow: null, far: '#0e7490', near: '#0891b2', haze: 'rgba(103,232,249,0.16)' },
       snow: { ridge: '#5b6b82', ridgeSnow: '#e2e8f0', far: '#7f8fa6', near: '#a8b8cc', haze: 'rgba(200,225,245,0.20)' },
       forest: { ridge: '#1e293b', ridgeSnow: null, far: '#14532d', near: '#166534', haze: 'rgba(180,220,190,0.14)' },
       // Plains sit further away than the forest: a paler, hazier green so the

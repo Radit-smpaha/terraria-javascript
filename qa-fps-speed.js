@@ -99,7 +99,7 @@ win.window = win; win.self = win; win.globalThis = win;
 
 const SCRIPTS = [
   'audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'multiplayer.js', 'terraria.js'
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'multiplayer.js', 'terraria.js'
 ];
 const ctx = vm.createContext(win);
 for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join('.', f), 'utf8'), ctx, { filename: f });

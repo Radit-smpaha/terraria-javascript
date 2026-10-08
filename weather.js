@@ -53,6 +53,12 @@ class WeatherSystem {
 
     const roll = Math.random();
 
+    if (biome === 'reef') {
+      // Open water: mostly clear, with the odd squall rolling in off the sea.
+      if (roll < 0.25) return { type: WEATHER_TYPES.RAIN, hold: 16 + Math.random() * 12, label: 'Sea Squall' };
+      return { type: WEATHER_TYPES.CLEAR, hold: 22 + Math.random() * 14, label: '' };
+    }
+
     if (biome === 'snow') {
       if (roll < 0.62) return { type: WEATHER_TYPES.SNOW, hold: 26 + Math.random() * 20, label: 'Blizzard' };
       return { type: WEATHER_TYPES.CLEAR, hold: 14, label: '' };
