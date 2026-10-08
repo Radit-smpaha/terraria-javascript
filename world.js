@@ -2647,7 +2647,9 @@ class World {
 
   // Draw the tile grid. PERF: static tiles are pre-rendered once into an
   // offscreen chunk cache; per frame we blit the slice (1 drawImage) and
-  // redraw only animated tiles (lava/torch/fire/water). Identical pixels.
+  // redraw only animated tiles (lava/torch/fire). Water artwork is static, so
+  // keeping it in this live pass needlessly repainted hundreds of reef tiles
+  // every frame instead of using the chunk cache.
   //
   // PERF: the cached window is snapped outwards to a CHUNK grid and covers the
   // viewport plus up to one chunk of slack on the far side. The old cache was
@@ -2720,8 +2722,7 @@ class World {
 
   isAnimatedTile(tile) {
     return tile === TILES.LAVA || tile === TILES.TORCH || tile === TILES.CAMPFIRE ||
-      tile === TILES.WATER || tile === TILES.LILY || tile === TILES.CRYSTAL ||
-      tile === TILES.LANTERN;
+      tile === TILES.LILY || tile === TILES.CRYSTAL || tile === TILES.LANTERN;
   }
 
   // Background walls, painted into the static tile cache instead of the frame

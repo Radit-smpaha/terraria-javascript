@@ -4130,7 +4130,7 @@ class Game {
     const savedDrops = (inSpecialDimension && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
-      version: 15,
+      version: 16,
       timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
       tiles: Array.from(this.world.persistTiles()),
@@ -4220,7 +4220,7 @@ class Game {
       return false;
     }
 
-    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 15;
+    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 16;
     if (!supportedVersion || !Array.isArray(save.tiles) || save.tiles.length !== this.world.tiles.length) {
       this.showToast('⚠️ Save data is incompatible.');
       return false;
@@ -4231,6 +4231,7 @@ class Game {
     this.world.tiles.set(save.tiles);
     if (save.version >= 12 && save.version <= 14) this.world.repairLegacyReef(save.version);
     if (save.version < 15) this.world.generateReef();
+    if (save.version === 15) this.world.migrateLegacyReefTemple();
     this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(110000, save.leviathanHP)) : null;
     this.leviathanSlain = save.leviathanSlain === true;
     this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
@@ -5980,26 +5981,27 @@ class Game {
       const playerY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
       if (Math.hypot(tileX - playerX, tileY - playerY) > 7) return false;
       if (tile === TILES.REEF_SHRINE_ACTIVE) {
-        this.showToast('🪸 This shrine is already awake. Four pearls will wake the portal.');
+        this.showToast('🪸 This podium is already glowing. Offer a pearl at each of the four podiums.');
         return true;
       }
       if (!this.removeItem('sacred_pearl', 1)) {
-        this.showToast('🫧 The shrine needs a Sacred Pearl. Look for a glowing pearl deeper in the reef.');
+        this.showToast('🫧 This temple podium needs a Sacred Pearl from the deep reef.');
         return true;
       }
       this.world.setTile(tileX, tileY, TILES.REEF_SHRINE_ACTIVE);
       this.sound.playHit();
       this.particles.magicSparkle((tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE, '#67e8f9', 30);
-      const remaining = this.world.reefShrines.filter(shrine =>
-        this.world.getTile(shrine.x, shrine.y) !== TILES.REEF_SHRINE_ACTIVE).length;
+      const podiums = this.world.reefPodiums || this.world.reefShrines;
+      const remaining = podiums.filter(podium =>
+        this.world.getTile(podium.x, podium.y) !== TILES.REEF_SHRINE_ACTIVE).length;
       if (remaining === 0) {
         const portal = this.world.reefPortal;
         this.world.setTile(portal.x, portal.y, TILES.OCEAN_PORTAL);
         this.showAnnouncement('🌊 THE FOUR PEARLS AWAKEN THE TIDAL GATE!');
-        this.showToast('The portal between the shrines is open. Prepare your diving gear before entering.');
+        this.showToast('The portal between the temple podiums is open. Prepare your diving gear before entering.');
         this.logDiscovery('reef_portal', '🌊 The Four Pearls Awakened the Tidal Gate', 500);
       } else {
-        this.showToast(`🪸 Shrine awakened. ${remaining} more shrine${remaining === 1 ? '' : 's'} remain.`);
+        this.showToast(`🪸 Pearl placed. ${remaining} more offering${remaining === 1 ? '' : 's'} needed to light the Tide Gate.`);
       }
       this.saveGame(true);
       return true;
@@ -6016,11 +6018,11 @@ class Game {
         this.openWormhole('overworld', (tileX + 0.5) * TILE_SIZE, (tileY - 1) * TILE_SIZE, true);
         return true;
       }
-      const allAwake = this.world.reefShrines &&
-        this.world.reefShrines.every(shrine => this.world.getTile(shrine.x, shrine.y) === TILES.REEF_SHRINE_ACTIVE);
+      const podiums = this.world.reefPodiums || this.world.reefShrines;
+      const allAwake = podiums &&
+        podiums.every(podium => this.world.getTile(podium.x, podium.y) === TILES.REEF_SHRINE_ACTIVE);
       if (!allAwake || tile !== TILES.OCEAN_PORTAL) {
-        this.showToast('🫧 The Tide Gate is dormant. Find the four Sacred Pearls and awaken all four shrines.');
-        this.showToast('📜 Reef lore: each pearl rests beyond a different coral shelf.');
+        this.showToast('🫧 The Tide Gate is dormant. Offer one Sacred Pearl at each of the four temple podiums.');
         return true;
       }
       if (this.mp && this.mp.status !== 'idle') {
@@ -6507,7 +6509,7 @@ class Game {
     const tileY = Math.floor(mouseWorldY / TILE_SIZE);
     const tile = this.world.getTile(tileX, tileY);
 
-    if (tile !== TILES.AIR) {
+    if (tile !== TILES.AIR && tile !== TILES.WATER) {
       // Mining speed comes from the pickaxe and the Miner's Focus buff.
       // If a tool/weapon already armed the cooldown this click (useArmed), mine
       // immediately at its use speed; only unarmed clicks hit this gate.
@@ -6528,6 +6530,11 @@ class Game {
           this.showToast(tile === TILES.SPACE_RUNE
             ? '🟪 The rune brick hums. It will not break.'
             : '🕳️ The gate is the way home. Do not chip at it.');
+          return;
+        }
+        if (tile === TILES.REEF_SHRINE || tile === TILES.REEF_SHRINE_ACTIVE ||
+            tile === TILES.OCEAN_PORTAL || tile === TILES.DORMANT_OCEAN_PORTAL) {
+          this.showToast('🪸 The Tide Temple offerings and gate cannot be broken.');
           return;
         }
         const prop = TILE_PROPERTIES[tile];
@@ -6570,6 +6577,10 @@ class Game {
     const mouseWorldY = this.input.mouseY + this.camera.y;
 
     if (this.tryCerberusInteraction(mouseWorldX, mouseWorldY, held)) return;
+
+    if (this.interactWithSpecialTile(
+      Math.floor(mouseWorldX / TILE_SIZE), Math.floor(mouseWorldY / TILE_SIZE)
+    )) return;
 
     // Fishing rod: right-click water to cast (left click still swings it).
     if (this.castFishingLine(Math.floor(mouseWorldX / TILE_SIZE), Math.floor(mouseWorldY / TILE_SIZE))) {

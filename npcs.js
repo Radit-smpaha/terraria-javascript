@@ -13,7 +13,7 @@ const NPC_DEFS = [
     // outward until it finds open ground. They are spread well clear of the
     // spawn cottage (spawnX +/- 6) so nobody ends up nose-to-wall.
     dx: -9,
-    greeting: 'Welcome, traveller! The reef lies far west: find four glowing pearls, then wake the shrines. Old sailors say a Void Rift Beacon can tear the sky open, and the dragon beyond remembers every wound.',
+    greeting: 'Welcome, traveller! The reef lies far west: find four glowing pearls and offer them at the Tide Temple podiums. Old sailors say a Void Rift Beacon can tear the sky open, and the dragon beyond remembers every wound.',
     quests: [
       { type: 'kill', desc: 'Slay 5 monsters', target: 5, reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'kill', desc: 'Slay 10 monsters', target: 10, reward: [{ id: 'arrow', count: 30 }, { id: 'swiftness_potion', count: 1 }] },
@@ -46,7 +46,7 @@ const NPC_DEFS = [
     ]
   },
   // ---- Lore carriers ----------------------------------------------------
-  // The reef progression (4 pearls -> 4 shrines -> Tide Gate -> Leviathan)
+  // The reef progression (4 pearls -> 4 temple podiums -> Tide Gate -> Leviathan)
   // and the space progression (Void Rift Beacon -> Ossuary Sovereign) both
   // need clues the player can actually find. Two dedicated talkers stand at
   // the spawn camp: the Old Sailor knows the sea, the Star Watcher knows the
@@ -56,7 +56,7 @@ const NPC_DEFS = [
     name: 'Old Sailor',
     icon: '🎣',
     dx: -16,
-    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. Four Sacred Pearls hang glowing in the deep; carry each one to a shrine on the sea floor. Wake all four and the Tide Gate between them opens. Mind the pirates... and whatever it is that sleeps beyond the gate.',
+    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. Four Sacred Pearls hang glowing in the deep. Find the drowned Tide Temple, then right-click a pearl onto each of the four podiums: two stand on each side of its gate. The portal opens when all four are lit. Mind the pirates... and whatever sleeps beyond it.',
     quests: [
       { type: 'collect', items: [{ id: 'fish_clownfish', count: 3 }], desc: 'Bring 3 Reef Clownfish', reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'collect', items: [{ id: 'coral_fragment', count: 8 }], desc: 'Bring 8 Coral Fragments', reward: [{ id: 'swiftness_potion', count: 1 }, { id: 'apple', count: 2 }] },
