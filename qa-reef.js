@@ -148,12 +148,18 @@ check('the portal is framed by a generated stone-and-marble temple',
 check('legacy shrine metadata remains available to existing game code',
   W.reefShrines === W.reefPodiums);
 let pearlCount = 0;
-for (const x of reefCols) {
-  for (let y = 0; y < W.height; y++) {
+for (let y = 0; y < W.height; y++) {
+  for (let x = 0; x < W.width; x++) {
     if (W.getTile(x, y) === TILES.SACRED_PEARL) pearlCount++;
   }
 }
-check('four Sacred Pearls hidden in the reef', pearlCount === 4, String(pearlCount));
+check('four Sacred Pearls are spread across the world',
+  pearlCount === 4 && W.reefPearls.length === 4, String(pearlCount));
+check('only one pearl is in the reef, with three on land',
+  W.reefPearls[0].x < rb.right &&
+  W.reefPearls.slice(1).every(pearl => pearl.x >= rb.right));
+check('the pearl locations span separate biomes',
+  new Set(W.reefPearls.slice(1).map(pearl => W.getBiomeAtX(pearl.x))).size === 3);
 check('the Tide Gate is dormant between the inner shrines',
   !!W.reefPortal && W.getTile(W.reefPortal.x, W.reefPortal.y) === TILES.DORMANT_OCEAN_PORTAL,
   W.reefPortal ? W.reefPortal.x + ',' + W.reefPortal.y : 'none');
@@ -171,6 +177,34 @@ for (const x of reefCols) {
   }
 }
 check('reef coral grows into larger multi-tile branches', tallestCoral >= 4, String(tallestCoral));
+const room = W.reefTemple.interior;
+let dirtyTempleTiles = 0;
+for (let y = room.top; y < room.bottom; y++) {
+  for (let x = room.left; x <= room.right; x++) {
+    if (W.getTile(x, y) === TILES.WATER || W.getTile(x, y) === TILES.CORAL) dirtyTempleTiles++;
+  }
+}
+check('the temple sanctuary is cleared of water and stray coral', dirtyTempleTiles === 0,
+  String(dirtyTempleTiles));
+check('the sanctuary uses house-style background walls',
+  W.walls[(room.top * W.width) + room.left] === 23);
+const savedRoomTile = W.getTile(room.left + 1, room.top + 1);
+W.setTile(room.left + 1, room.top + 1, TILES.CORAL);
+W.buildReefTemple();
+check('temple rebuilding clears coral that grows inside',
+  W.getTile(room.left + 1, room.top + 1) === TILES.AIR);
+W.setTile(room.left + 1, room.top + 1, savedRoomTile);
+const savedPlayerPosition = { x: g.player.x, y: g.player.y };
+const savedOxygen = g.oxygen;
+g.player.x = (W.reefTemple.portalX + 0.5) * global.TILE_SIZE - g.player.width / 2;
+g.player.y = (room.top + 1) * global.TILE_SIZE;
+g.oxygen = 0;
+g.updateOceanSystems(0.1);
+check('the temple grants breathable air and refills oxygen',
+  W.isInsideReefTemple(W.reefTemple.portalX, room.top + 1) && g.oxygen === g.oxygenMax);
+g.player.x = savedPlayerPosition.x;
+g.player.y = savedPlayerPosition.y;
+g.oxygen = savedOxygen;
 let coralFill = '';
 const coralRects = [];
 W.drawTileGraphic({
@@ -296,6 +330,15 @@ check('the Reef Pirate monster exists',
 check('reef spawn table rolls pirates (more often at night)',
   srcT.includes('reefColumn && Math.random() < (night ? 0.45 : 0.28)'));
 check('pirates drop coral', srcT.includes("m.type === 'pirate'"));
+const shark = new global.Monster(200, 200, 'shark');
+check('reef sharks are full-size, damageable swimming monsters',
+  shark.type === 'shark' && shark.width >= 48 && shark.hp > 0 &&
+  srcT.includes('findOpenReefSwimSpawn'));
+check('reef sharks drop coral and may drop a Manta',
+  srcT.includes("m.type === 'shark'") && srcT.includes("'fish_manta', 1"));
+check('underground cave monster rolls are disabled',
+  srcT.includes('if (underground && !underworld)') &&
+  !srcT.includes("mType = 'cave_bat'"));
 
 // ==========================================================================
 step('7. The Three-Headed Sea Leviathan');
@@ -323,15 +366,28 @@ check('the Tide Gate really opens the ocean dimension',
 step('8. Clue NPCs and the guide');
 const defs = global.NPC_DEFS || [];
 const byId = Object.fromEntries(defs.map(d => [d.id, d]));
-check('five villagers at camp, including the two lore carriers',
-  defs.length >= 5 && !!byId.sailor && !!byId.starwatcher,
+check('four pearl guides and the two lore carriers are available',
+  defs.length >= 9 && ['tidekeeper', 'frost_scout', 'sun_seeker', 'marsh_warden']
+    .every(id => !!byId[id]) && !!byId.sailor && !!byId.starwatcher,
   defs.map(d => d.id).join(','));
 check('the Guide points at both the reef and the sky',
   /pearl/i.test(byId.guide.greeting) && byId.guide.greeting.includes('Void Rift Beacon'));
 check('the Old Sailor explains pearls, temple podiums and the Tide Gate',
   byId.sailor.greeting.includes('Sacred Pearls') &&
   byId.sailor.greeting.includes('podiums') &&
-  byId.sailor.greeting.includes('Tide Gate'));
+  byId.sailor.greeting.includes('gate'));
+check('pearl coordinates stay locked until each guide favor is completed',
+  defs.filter(def => Number.isInteger(def.reefPearlIndex)).length === 4 &&
+  g.npcs.npcs.filter(npc => Number.isInteger(npc.def.reefPearlIndex))
+    .every(npc => !npc.clueUnlocked));
+const tidekeeper = g.npcs.npcs.find(npc => npc.id === 'tidekeeper');
+tidekeeper.clueUnlocked = true;
+g.npcs.openDialog(tidekeeper);
+check('completing a favor reveals its pearl coordinates in dialogue',
+  els['npc-dialogue'].innerHTML.includes(
+    `X ${W.reefPearls[0].x}, Y ${W.reefPearls[0].y}`));
+tidekeeper.clueUnlocked = false;
+g.npcs.closeDialog();
 check('the Star Watcher explains the space dimension',
   byId.starwatcher.greeting.includes('Void Rift Beacon') &&
   byId.starwatcher.greeting.includes('Ossuary'));
@@ -343,15 +399,17 @@ check('the guide modal still documents the Ossuary ritual',
 
 // ==========================================================================
 step('9. Save migration');
-check('saves are written as version 16', srcT.includes('version: 16'));
-check('version 16 saves are accepted',
-  srcT.includes('save.version >= 1 && save.version <= 16'));
+check('saves are written as version 17', srcT.includes('version: 17'));
+check('version 17 saves are accepted',
+  srcT.includes('save.version >= 1 && save.version <= 17'));
 check('v12-v14 saves get their legacy reef repaired before recarving',
   srcT.includes('save.version >= 12 && save.version <= 14') &&
   srcT.includes('save.version < 15') &&
   srcO.includes('version === 14'));
 check('v15 saves migrate their shrine offerings into the temple podiums',
   srcT.includes('save.version === 15') && srcO.includes('migrateLegacyReefTemple'));
+check('older saves relocate only their remaining pearl tiles',
+  srcT.includes('save.version < 17') && srcO.includes('migrateDistributedReefPearls'));
 
 console.log('');
 if (failures) {

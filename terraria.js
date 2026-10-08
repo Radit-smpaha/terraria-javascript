@@ -1193,7 +1193,6 @@ class Game {
     this.regenLock = 0;
     this._wingsLocked = false;   // so the wings-recharged toast fires once
     this.bedNagTimer = 0; // throttles "can't sleep" toasts while mouse is held
-    this.undergroundTime = 0;
     this.nightAnnounced = false;
     this.lastTime = performance.now();
     // Frame pacing: the loop only *exhibits* frames once both halves of the
@@ -4130,7 +4129,7 @@ class Game {
     const savedDrops = (inSpecialDimension && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
-      version: 16,
+      version: 17,
       timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
       tiles: Array.from(this.world.persistTiles()),
@@ -4220,7 +4219,7 @@ class Game {
       return false;
     }
 
-    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 16;
+    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 17;
     if (!supportedVersion || !Array.isArray(save.tiles) || save.tiles.length !== this.world.tiles.length) {
       this.showToast('⚠️ Save data is incompatible.');
       return false;
@@ -4231,7 +4230,6 @@ class Game {
     this.world.tiles.set(save.tiles);
     if (save.version >= 12 && save.version <= 14) this.world.repairLegacyReef(save.version);
     if (save.version < 15) this.world.generateReef();
-    if (save.version === 15) this.world.migrateLegacyReefTemple();
     this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(110000, save.leviathanHP)) : null;
     this.leviathanSlain = save.leviathanSlain === true;
     this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
@@ -4239,6 +4237,17 @@ class Game {
       : null;
     if (Array.isArray(save.walls) && save.walls.length === this.world.walls.length) {
       this.world.walls.set(save.walls);
+    }
+    if (save.version === 15) this.world.migrateLegacyReefTemple();
+    if (save.version < 17) {
+      this.world.migrateDistributedReefPearls();
+      if (save.version !== 15) {
+        const activePodiums = new Set(this.world.reefPodiums
+          .map((podium, index) => this.world.getTile(podium.x, podium.y) === TILES.REEF_SHRINE_ACTIVE
+            ? index : -1)
+          .filter(index => index >= 0));
+        this.world.buildReefTemple(activePodiums, true);
+      }
     }
     // Both the static tile cache and the minimap's baked texture describe the
     // world that was just replaced; a warm cache would otherwise keep showing
@@ -7325,6 +7334,34 @@ this.player.dodgeTime = 0;
     return null;
   }
 
+  findOpenReefSwimSpawn(x, y, reach = 384) {
+    const world = this.world;
+    const fits = (px, py) => {
+      const left = Math.floor(px / TILE_SIZE);
+      const right = Math.floor((px + 52) / TILE_SIZE);
+      const top = Math.floor(py / TILE_SIZE);
+      const bottom = Math.floor((py + 27) / TILE_SIZE);
+      if (!world.reefBounds || left < world.reefBounds.left ||
+          right >= world.reefBounds.mainRight) return false;
+      let water = false;
+      for (let tx = left; tx <= right; tx++) {
+        for (let ty = top; ty <= bottom; ty++) {
+          if (world.isSolid(tx, ty)) return false;
+          if (world.getTile(tx, ty) === TILES.WATER) water = true;
+        }
+      }
+      return water && py / TILE_SIZE > world.reefBounds.seaY;
+    };
+    if (fits(x, y)) return { x, y };
+    for (let r = TILE_SIZE; r <= reach; r += TILE_SIZE) {
+      for (const [dx, dy] of [[0, -r], [0, r], [-r, 0], [r, 0],
+        [-r, -r], [r, -r], [-r, r], [r, r]]) {
+        if (fits(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+      }
+    }
+    return null;
+  }
+
   getBestArmor() {
     return bestOwnedArmor(this);
   }
@@ -7350,6 +7387,8 @@ this.player.dodgeTime = 0;
   updateOceanSystems(dt) {
     const px = this.player.x + this.player.width / 2;
     const py = this.player.y + this.player.height / 2;
+    const inTemple = this.world.isInsideReefTemple(
+      Math.floor(px / TILE_SIZE), Math.floor((this.player.y + 4) / TILE_SIZE));
     const inWater = [
       [px, py], [px - 6, py], [px + 6, py],
       [px, this.player.y + this.player.height - 3]
@@ -7367,7 +7406,10 @@ this.player.dodgeTime = 0;
         : this.countItem('swim_fins_1') ? ITEMS.swim_fins_1 : null;
     this.player.swimSpeedMultiplier = fins ? fins.swimSpeed : 1;
     this.oxygenMax = gear ? gear.oxygen : 8;
-    if (underwater) {
+    if (inTemple) {
+      this.oxygen = this.oxygenMax;
+      this.oxygenDamageTimer = 0;
+    } else if (underwater) {
       this.oxygen = Math.max(0, Math.min(this.oxygen, this.oxygenMax) - dt);
       if (this.oxygen <= 0) {
         this.oxygenDamageTimer += dt;
@@ -7386,7 +7428,7 @@ this.player.dodgeTime = 0;
     const panel = document.getElementById('oxygen-panel');
     const bar = document.getElementById('oxygen-bar');
     const text = document.getElementById('oxygen-text');
-    if (panel) panel.classList.toggle('hidden', !underwater);
+    if (panel) panel.classList.toggle('hidden', !underwater || inTemple);
     if (bar) {
       bar.style.width = `${this.oxygenMax > 0 ? (this.oxygen / this.oxygenMax) * 100 : 0}%`;
       bar.style.background = this.oxygen < this.oxygenMax * 0.25
@@ -7692,12 +7734,10 @@ this.player.dodgeTime = 0;
 
     // 5. Enemy Spawning AI
     const currentTileX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
-    const isUnderground = Math.floor(this.player.y / TILE_SIZE) > this.world.surfaceHeights[currentTileX] + 12;
     const isUnderworld = Math.floor(this.player.y / TILE_SIZE) >= this.world.underworldStart;
-    this.undergroundTime = isUnderground ? this.undergroundTime + dt : 0;
     this.spawnTimer += dt;
     // Hostile spawns are deliberately slow: one roll every ~7s, capped low.
-    // Daytime surface stays peaceful (only underground + night spawn).
+    // Daytime surface stays peaceful; ordinary cave spawns are disabled.
     // Daytime biome wildlife (wolves, hyenas...) look scary but never spawn
     // by day — they are night-only encounters.
     if (!this.mp?.isClient && this.spawnTimer >= 7.0) {
@@ -7717,16 +7757,15 @@ this.player.dodgeTime = 0;
             : reefColumn ? (this.world.surfaceHeights[tileX] - 10) * TILE_SIZE
               : underground ? this.player.y - 80 : (this.world.surfaceHeights[tileX] - 3) * TILE_SIZE;
           let mType = 'zombie';
-          if (underworld) {
+          if (underground && !underworld) {
+            // Keep the caves quiet: normal hostile spawns belong above ground.
+            this.spawnTimer = 0;
+            mType = null;
+          } else if (underworld) {
             const roll = Math.random();
             mType = roll < 0.45 ? 'hellhound' : roll < 0.78 ? 'imp' : 'bone_serpent';
-          } else if (underground && this.undergroundTime >= 6) {
-            const roll = Math.random();
-            if (roll < 0.35) mType = 'cave_bat';
-            else if (roll < 0.7) mType = 'cave_spider';
-            else mType = 'zombie';
-          } else if (underground) {
-            mType = 'zombie';
+          } else if (reefColumn && Math.random() < (night ? 0.32 : 0.2)) {
+            mType = 'shark';
           } else if (reefColumn && Math.random() < (night ? 0.45 : 0.28)) {
             mType = 'pirate';
           } else if (night) {
@@ -7740,7 +7779,6 @@ this.player.dodgeTime = 0;
             else mType = 'wraith';
           } else {
             // Peaceful daylight surface: never spawn surface hostiles by day.
-            // (Underground cave dwellers are handled by the branch above.)
             // Reset the timer so day rolls stay slow instead of bursting at dusk.
             this.spawnTimer = 0;
             mType = null;
@@ -7755,14 +7793,16 @@ this.player.dodgeTime = 0;
       // overworld's biome tables must not leak a zombie into the arena.
       if (this.world.isInSpace() || this.world.isInOcean() || Math.random() > darkChance) {
         this.spawnTimer = 0;
-      } else if (mType && (underworld || !underground || this.undergroundTime >= 6)) {
+      } else if (mType && (underworld || !underground)) {
         // Never spawn inside rock. The surface branch above takes its Y straight
         // from the heightmap column and the underground branches use a fixed
         // offset to the player, and neither checked whether that tile was
         // actually open -- so a monster could materialise inside a cave wall
         // and sit there forever. Search outward for somewhere it can stand,
         // and skip the roll entirely when there is nowhere nearby.
-        const spot = this.findOpenSpawn(mX, mY);
+        const spot = mType === 'shark'
+          ? this.findOpenReefSwimSpawn(mX, mY)
+          : this.findOpenSpawn(mX, mY);
         if (spot) {
           const spawn = underworld
             ? new UnderworldMonster(spot.x, spot.y, mType)
@@ -7770,7 +7810,7 @@ this.player.dodgeTime = 0;
           // Elites are promoted more often the longer a world has survived,
           // which keeps late nights dangerous without flooding the screen.
           const eliteChance = underworld ? 0.22 : this.eliteChance + Math.min(0.18, (this.world.dayCount - 1) * 0.015);
-          if ((night || underground || underworld) && Math.random() < eliteChance) spawn.makeElite();
+          if (mType !== 'shark' && (night || underground || underworld) && Math.random() < eliteChance) spawn.makeElite();
           this.monsters.push(spawn);
         } else {
           this.spawnTimer = 0;
@@ -7868,6 +7908,10 @@ this.player.dodgeTime = 0;
         if (m.type === 'pirate') {
           this.drops.push(new DropItem(m.x + 6, m.y - 4, 'coral_fragment', 2));
           if (Math.random() < 0.2) this.drops.push(new DropItem(m.x + 12, m.y - 8, 'fish_manta', 1));
+        }
+        if (m.type === 'shark') {
+          this.drops.push(new DropItem(m.x + 8, m.y - 3, 'coral_fragment', 2));
+          if (Math.random() < 0.25) this.drops.push(new DropItem(m.x + 16, m.y - 5, 'fish_manta', 1));
         }
         if (m.type === 'snow_wolf' || m.type === 'savanna_hyena' || m.type === 'swamp_slime') {
           this.drops.push(new DropItem(m.x, m.y, 'raw_mutton', 1));

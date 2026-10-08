@@ -56,7 +56,7 @@ const NPC_DEFS = [
     name: 'Old Sailor',
     icon: '🎣',
     dx: -16,
-    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. Four Sacred Pearls hang glowing in the deep. Find the drowned Tide Temple, then right-click a pearl onto each of the four podiums: two stand on each side of its gate. The portal opens when all four are lit. Mind the pirates... and whatever sleeps beyond it.',
+    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. The pearls are scattered across the world, and four podiums await inside the Tide Temple. Mind the pirates... and whatever sleeps beyond the gate.',
     quests: [
       { type: 'collect', items: [{ id: 'fish_clownfish', count: 3 }], desc: 'Bring 3 Reef Clownfish', reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'collect', items: [{ id: 'coral_fragment', count: 8 }], desc: 'Bring 8 Coral Fragments', reward: [{ id: 'swiftness_potion', count: 1 }, { id: 'apple', count: 2 }] },
@@ -73,6 +73,46 @@ const NPC_DEFS = [
       { type: 'collect', items: [{ id: 'crystal', count: 5 }], desc: 'Bring 5 Cave Crystals', reward: [{ id: 'mana_crystal', count: 1 }] },
       { type: 'kill', desc: 'Slay 8 monsters', target: 8, reward: [{ id: 'healing_potion', count: 2 }, { id: 'arrow', count: 20 }] }
     ]
+  },
+  {
+    id: 'tidekeeper',
+    name: 'Tidekeeper',
+    icon: '🐚',
+    reefPearlIndex: 0,
+    greeting: 'I watch the reef from this shore. Bring me 8 Wood and I will share where a Sacred Pearl sleeps.',
+    quests: [
+      { type: 'collect', items: [{ id: 'wood', count: 8 }], desc: 'Bring 8 Wood', reward: [{ id: 'healing_potion', count: 1 }] }
+    ]
+  },
+  {
+    id: 'frost_scout',
+    name: 'Frost Scout',
+    icon: '🧣',
+    reefPearlIndex: 1,
+    greeting: 'I tracked a blue glow beneath the snow. Bring me 4 Wool and I will mark the spot.',
+    quests: [
+      { type: 'collect', items: [{ id: 'wool', count: 4 }], desc: 'Bring 4 Wool', reward: [{ id: 'torch', count: 16 }] }
+    ]
+  },
+  {
+    id: 'sun_seeker',
+    name: 'Sun Seeker',
+    icon: '🌞',
+    reefPearlIndex: 2,
+    greeting: 'A pearl glimmers somewhere in the warm grasslands. Prove your courage by slaying 3 monsters, and I will reveal its trail.',
+    quests: [
+      { type: 'kill', desc: 'Slay 3 monsters', target: 3, reward: [{ id: 'healing_potion', count: 1 }] }
+    ]
+  },
+  {
+    id: 'marsh_warden',
+    name: 'Marsh Warden',
+    icon: '🪷',
+    reefPearlIndex: 3,
+    greeting: 'Something sacred is buried in the marsh. Bring me 12 Stone and I will tell you where.',
+    quests: [
+      { type: 'collect', items: [{ id: 'stone', count: 12 }], desc: 'Bring 12 Stone', reward: [{ id: 'miners_potion', count: 1 }] }
+    ]
   }
 ];
 
@@ -82,7 +122,12 @@ class NPCManager {
     const world = game.world;
     const cx = Math.floor(world.width / 2);
     this.npcs = NPC_DEFS.map(def => {
-      const spot = this.findStandableSpot(cx + def.dx);
+      const preferredX = Number.isInteger(def.reefPearlIndex)
+        ? (def.reefPearlIndex === 0
+          ? world.reefBounds.right + 6
+          : world.reefPearls[def.reefPearlIndex].x)
+        : cx + def.dx;
+      const spot = this.findStandableSpot(preferredX);
       return {
         def,
         id: def.id,
@@ -94,7 +139,8 @@ class NPCManager {
         height: 48,
         questIndex: 0,
         state: 'offer',   // offer -> active -> ready -> (turn in) -> next quest
-        progress: 0
+        progress: 0,
+        clueUnlocked: false
       };
     });
     this.nearby = null;
@@ -189,7 +235,12 @@ class NPCManager {
       this.game.logDiscovery(`meet_${npc.id}`, `🧭 Met ${npc.name}!`, 30);
     }
     const quest = this.quest(npc);
-    let html = `<span class="q-name">${npc.def.greeting}</span>`;
+    let greeting = npc.def.greeting;
+    if (npc.clueUnlocked && Number.isInteger(npc.def.reefPearlIndex)) {
+      const pearl = this.game.world.reefPearls[npc.def.reefPearlIndex];
+      greeting = `Favor done! The Sacred Pearl is at world tile X ${pearl.x}, Y ${pearl.y}. Look for its glow.`;
+    }
+    let html = `<span class="q-name">${greeting}</span>`;
 
     if (npc.state === 'offer') {
       html += `<p>Quest: <strong>${quest.desc}</strong>.</p>`;
@@ -266,6 +317,7 @@ class NPCManager {
       // Journal bookkeeping (see Game.logDiscovery).
       this.game.questsDone = (this.game.questsDone || 0) + 1;
       this.game.logDiscovery(`quest_${npc.id}`, `⭐ Helped ${npc.name} for the first time!`, 80);
+      if (Number.isInteger(npc.def.reefPearlIndex)) npc.clueUnlocked = true;
 
       // Advance to the next quest in this villager's rotation.
       npc.questIndex = (npc.questIndex + 1) % npc.def.quests.length;
@@ -406,7 +458,12 @@ class NPCManager {
   toSave() {
     const out = {};
     for (const npc of this.npcs) {
-      out[npc.id] = { qi: npc.questIndex, st: npc.state, pr: npc.progress };
+      out[npc.id] = {
+        qi: npc.questIndex,
+        st: npc.state,
+        pr: npc.progress,
+        cl: npc.clueUnlocked
+      };
     }
     return out;
   }
@@ -419,6 +476,7 @@ class NPCManager {
       if (Number.isFinite(s.qi)) npc.questIndex = Math.max(0, s.qi) % npc.def.quests.length;
       if (s.st === 'offer' || s.st === 'active' || s.st === 'ready') npc.state = s.st;
       if (Number.isFinite(s.pr)) npc.progress = Math.max(0, s.pr);
+      npc.clueUnlocked = s.cl === true;
     }
     this._trackerSig = null;
     this.renderTracker(true);

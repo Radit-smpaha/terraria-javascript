@@ -1297,7 +1297,8 @@ const MONSTER_TRAITS = {
   sun_scorpion: { name: 'Sun Scorpion', kb: 0.35, elite: true },
   ostrich: { name: 'Wild Ostrich', kb: 0.25, elite: true },
   bog_witch: { name: 'Bog Witch', kb: 0.50, elite: true },
-  pirate: { name: 'Reef Pirate', kb: 0.12, elite: true }
+  pirate: { name: 'Reef Pirate', kb: 0.12, elite: true },
+  shark: { name: 'Reef Shark', kb: 0.3, elite: false }
 };
 
 class Monster {
@@ -1447,6 +1448,14 @@ class Monster {
       this.speed = 1.9;
       this.damage = 28;
       this.exp = 48;
+    } else if (type === 'shark') {
+      this.width = 52;
+      this.height = 28;
+      this.hp = 125;
+      this.maxHp = 125;
+      this.speed = 2.6;
+      this.damage = 24;
+      this.exp = 52;
     }
 
     // ---- Shared combat / AI state ----
@@ -1622,7 +1631,19 @@ class Monster {
       }
     }
 
-    if (this.isGroundType()) {
+    if (this.type === 'shark') {
+      const speed = this.speed * (this.isElite ? 1.1 : 1);
+      this.vx += (Math.sign(dx) * speed - this.vx) * 0.035;
+      this.vy += (Math.sign(dy) * speed * 0.45 - this.vy) * 0.025;
+      this.vx = Math.max(-speed, Math.min(speed, this.vx));
+      this.vy = Math.max(-speed * 0.45, Math.min(speed * 0.45, this.vy));
+      this.resolveWorldPhysics(world);
+      const tileX = Math.floor((this.x + this.width / 2) / TILE_SIZE);
+      const tileY = Math.floor((this.y + this.height / 2) / TILE_SIZE);
+      if (world.getTile(tileX, tileY) !== TILES.WATER) {
+        this.vy -= 0.25;
+      }
+    } else if (this.isGroundType()) {
       // ---- Ground AI: chase, hop obstacles, refuse to walk into lava ----
       const speed = this.speed * this.speedJitter;
       if (Math.abs(dx) > 10) {
@@ -1869,7 +1890,40 @@ class Monster {
       ctx.translate(-this.width, 0);
     }
 
-    if (this.type === 'pirate') {
+    if (this.type === 'shark') {
+      ctx.fillStyle = '#0e7490';
+      ctx.beginPath();
+      ctx.moveTo(2, this.height / 2);
+      ctx.lineTo(12, 4);
+      ctx.lineTo(37, 5);
+      ctx.lineTo(47, this.height / 2);
+      ctx.lineTo(37, this.height - 4);
+      ctx.lineTo(12, this.height - 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#164e63';
+      ctx.beginPath();
+      ctx.moveTo(25, 6);
+      ctx.lineTo(34, 0);
+      ctx.lineTo(35, 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(14, this.height - 5);
+      ctx.lineTo(19, this.height + 1);
+      ctx.lineTo(23, this.height - 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#bae6fd';
+      ctx.fillRect(13, this.height - 9, 22, 5);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(36, 9, 4, 4);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(38, 10, 2, 2);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(25, this.height - 6, 3, 3);
+      ctx.fillRect(30, this.height - 6, 3, 3);
+    } else if (this.type === 'pirate') {
       ctx.fillStyle = '#1e3a8a';
       ctx.fillRect(4, 13, 14, 16);
       ctx.fillStyle = '#f1c27d';

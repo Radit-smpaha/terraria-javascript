@@ -108,26 +108,44 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     ctx.fillRect(sx + 3, sy + 4, 2, 2);
     ctx.fillRect(sx + 19, sy + 18, 2, 2);
   } else {
-    const coralColors = ['#fb7185', '#f472b6', '#c084fc', '#2dd4bf', '#f97316'];
-    const coral = coralColors[Math.abs(tx * 7 + ty * 11) % coralColors.length];
+    const coralColors = [
+      ['#fb7185', '#f472b6', '#fecdd3'],
+      ['#c084fc', '#a78bfa', '#ede9fe'],
+      ['#2dd4bf', '#14b8a6', '#99f6e4'],
+      ['#f97316', '#facc15', '#ffedd5'],
+      ['#38bdf8', '#2563eb', '#bae6fd'],
+      ['#f43f5e', '#8b5cf6', '#fda4af']
+    ];
+    const colony = coralColors[Math.abs(tx * 17 + ty * 31) % coralColors.length];
+    const coral = colony[0];
+    const branch = colony[1];
     ctx.fillStyle = '#083548';
     ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
     ctx.fillStyle = '#0b4656';
-    ctx.fillRect(sx + ((tx + ty) % 3) * 5, sy + 3, 3, 17);
+    ctx.fillRect(sx, sy + 19, TILE_SIZE, 5);
     ctx.fillStyle = '#7f1d3d';
-    ctx.fillRect(sx + 10, sy, 4, TILE_SIZE);
+    ctx.fillRect(sx + 9, sy + 1, 6, 23);
     ctx.fillStyle = coral;
-    ctx.fillRect(sx + 11, sy, 2, TILE_SIZE);
-    ctx.fillRect(sx + 7, sy + 6, 5, 3);
-    ctx.fillRect(sx + 4, sy + 3, 4, 3);
-    ctx.fillRect(sx + 13, sy + 11, 5, 3);
-    ctx.fillRect(sx + 17, sy + 8, 4, 3);
-    ctx.fillStyle = '#fecdd3';
-    ctx.fillRect(sx + 5, sy + 3, 2, 2);
-    ctx.fillRect(sx + 18, sy + 8, 2, 2);
+    ctx.fillRect(sx + 11, sy, 3, 24);
+    if ((tx + ty) % 2 === 0) {
+      ctx.fillStyle = branch;
+      ctx.fillRect(sx + 4, sy + 5, 8, 4);
+      ctx.fillRect(sx + 2, sy + 2, 4, 5);
+      ctx.fillRect(sx + 13, sy + 12, 8, 4);
+      ctx.fillRect(sx + 18, sy + 9, 4, 6);
+    } else {
+      ctx.fillStyle = branch;
+      ctx.fillRect(sx + 13, sy + 4, 7, 4);
+      ctx.fillRect(sx + 17, sy + 1, 4, 5);
+      ctx.fillRect(sx + 3, sy + 13, 8, 4);
+      ctx.fillRect(sx + 2, sy + 10, 4, 6);
+    }
+    ctx.fillStyle = colony[2];
+    ctx.fillRect(sx + 2, sy + ((tx + ty) % 2 === 0 ? 2 : 10), 3, 3);
+    ctx.fillRect(sx + 19, sy + ((tx + ty) % 2 === 0 ? 9 : 1), 3, 3);
     ctx.fillStyle = '#67e8f9';
-    ctx.fillRect(sx + 3, sy + 16, 2, 2);
-    ctx.fillRect(sx + 19, sy + 19, 2, 2);
+    ctx.fillRect(sx + 4, sy + 17, 2, 2);
+    ctx.fillRect(sx + 18, sy + 20, 2, 2);
   }
 };
 
@@ -147,8 +165,87 @@ World.prototype.isReefAtX = function(tileX) {
     tileX >= this.reefBounds.left && tileX < this.reefBounds.right;
 };
 
+World.prototype.isInsideReefTemple = function(tileX, tileY) {
+  const room = this.reefTemple && this.reefTemple.interior;
+  return this.dimension !== 'ocean' && !!room &&
+    tileX >= room.left && tileX <= room.right &&
+    tileY >= room.top && tileY < room.bottom;
+};
+
+World.prototype.reefPearlTargets = function() {
+  if (!this.reefBounds) return [];
+  const { left, mainRight, seaY } = this.reefBounds;
+  const deepFloor = this.surfaceHeights[Math.max(left, Math.min(mainRight - 1,
+    Math.round(left + (mainRight - left) * 0.36)))];
+  const targets = [
+    {
+      x: Math.round(left + (mainRight - left) * 0.36),
+      y: seaY + Math.max(1, Math.floor((deepFloor - seaY) * 0.48))
+    },
+    { x: Math.round(this.width * 0.33), depth: 7 },
+    { x: Math.round(this.width * 0.55), depth: 9 },
+    { x: Math.round(this.width * 0.86), depth: 11 }
+  ];
+  return targets.map((target, index) => {
+    const x = Math.max(2, Math.min(this.width - 3, target.x));
+    if (index === 0) return { x, y: Math.min(this.surfaceHeights[x] - 1, target.y) };
+    return {
+      x,
+      y: Math.min(this.height - 12, this.surfaceHeights[x] + target.depth)
+    };
+  });
+};
+
+World.prototype.placeDistributedReefPearls = function(count = 4) {
+  const targets = this.reefPearlTargets();
+  const alreadyPlaced = [];
+  for (let y = 0; y < this.height; y++) {
+    for (let x = 0; x < this.width; x++) {
+      if (this.getTile(x, y) !== OCEAN_TILES.PEARL) continue;
+      alreadyPlaced.push({ x, y });
+      const index = y * this.width + x;
+      this.tiles[index] = this.naturalTerrainTiles
+        ? this.naturalTerrainTiles[index] : TILES.AIR;
+    }
+  }
+  const available = [];
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    for (let radius = 0; radius <= 10 && !available[i]; radius++) {
+      for (const offset of radius === 0 ? [0] : [radius, -radius]) {
+        const x = target.x + offset;
+        if (x < 2 || x >= this.width - 2) continue;
+        const y = Math.min(this.height - 2, Math.max(2, target.y +
+          (i === 0 ? 0 : this.surfaceHeights[x] - this.surfaceHeights[target.x])));
+        const index = y * this.width + x;
+        const tile = this.tiles[index];
+        const original = this.naturalTerrainTiles && this.naturalTerrainTiles[index];
+        const wall = this.walls && this.walls[index];
+        const originalWall = this.naturalTerrainWalls && this.naturalTerrainWalls[index];
+        if ((wall && wall !== originalWall) ||
+            (tile !== TILES.AIR && tile !== TILES.WATER &&
+              !(tile === original && [TILES.DIRT, TILES.STONE, TILES.SAND, TILES.MUD,
+                TILES.SANDSTONE, TILES.SNOW].includes(tile)))) continue;
+        available[i] = { x, y };
+        break;
+      }
+    }
+  }
+  const wanted = Math.min(Math.max(0, count), targets.length);
+  this.reefPearls = [];
+  for (let i = 0; i < wanted; i++) {
+    const location = available[i] || alreadyPlaced[i];
+    if (!location) continue;
+    this.setTile(location.x, location.y, OCEAN_TILES.PEARL);
+    this.reefPearls.push({ x: location.x, y: location.y, region: i });
+  }
+  this._tileCacheDirty = true;
+  return this.reefPearls;
+};
+
 World.prototype.generateReef = function() {
   if (!this.naturalTerrainTiles) this.naturalTerrainTiles = this.tiles.slice();
+  if (!this.naturalTerrainWalls) this.naturalTerrainWalls = this.walls.slice();
   if (!this.naturalSurfaceHeights) this.naturalSurfaceHeights = this.surfaceHeights.slice();
   // The reef owns the ENTIRE reef band: the west edge of the world is open
   // sea and the last ~28 columns ramp up into a beach on the snow band's
@@ -161,8 +258,8 @@ World.prototype.generateReef = function() {
   const seaY = Math.max(24, Math.min(this.height - 45,
     Math.round(this.naturalSurfaceHeights[left])));
   const deepFloor = Math.min(this.height - 8, seaY + 30);
-  // Four pearls hang at different depths; four offering podiums guard the
-  // temple gate, with two arranged on each side.
+  // Keep the historic temple alignment stable; the four pearls themselves are
+  // distributed afterward, from the deep reef to distant land biomes.
   const deepLen = mainRight - left;
   const pearlColumns = [0.16, 0.36, 0.62, 0.84].map(f => Math.round(left + deepLen * f));
   const legacyShrineColumns = pearlColumns.map(x => Math.min(x + 4, mainRight - 4));
@@ -202,34 +299,32 @@ World.prototype.generateReef = function() {
     if (floor >= seaY) this.setTile(x, floor, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
   }
 
-  for (let x = left + 4; x < mainRight - 3; x += 7) {
+  for (let x = left + 4; x < mainRight - 3; x += 8) {
     const floor = this.surfaceHeights[x];
     const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
-    const height = 4 + Math.floor(roll * 4);
+    const height = 7 + Math.floor(roll * 6);
     const waterDepth = floor - seaY;
     if (waterDepth >= height + 1 && !legacyShrineColumns.includes(x) &&
-        !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 2)) {
+        !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 3) &&
+        Math.abs(x - portalX) > 17) {
       for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.CORAL);
-      const branchY = floor - height + 2;
-      for (const side of [-1, 1]) {
-        for (let length = 1; length <= 2; length++) {
-          const branchX = x + side * length;
-          const branchTileY = branchY - (length > 1 ? 1 : 0);
-          if (branchX > left && branchX < mainRight &&
-              !legacyShrineColumns.includes(branchX) &&
-              this.getTile(branchX, branchTileY) === TILES.WATER) {
-            this.setTile(branchX, branchTileY, TILES.CORAL);
+      for (const level of [2, 4, 6]) {
+        const branchY = floor - height + level;
+        for (const side of [-1, 1]) {
+          for (let length = 1; length <= 3; length++) {
+            const branchX = x + side * length;
+            const branchTileY = branchY - (length > 1 ? 1 : 0);
+            if (branchX > left && branchX < mainRight &&
+                !legacyShrineColumns.includes(branchX) &&
+                !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 2) &&
+                Math.abs(branchX - portalX) > 17 &&
+                this.getTile(branchX, branchTileY) === TILES.WATER) {
+              this.setTile(branchX, branchTileY, TILES.CORAL);
+            }
           }
         }
       }
     }
-  }
-
-  for (let i = 0; i < 4; i++) {
-    const x = pearlColumns[i];
-    const floor = this.surfaceHeights[x];
-    const pearlY = seaY + Math.max(1, Math.floor((floor - seaY) * (0.35 + i * 0.08)));
-    this.setTile(x, Math.min(floor - 1, pearlY), OCEAN_TILES.PEARL);
   }
 
   this.reefBounds = { left, right: edgeRight, mainRight, seaY };
@@ -250,9 +345,16 @@ World.prototype.generateReef = function() {
     top: seaY + 8,
     floorY: this.surfaceHeights[portalX],
     portalX,
-    portalY: this.reefPortal.y
+    portalY: this.reefPortal.y,
+    interior: {
+      left: portalX - 11,
+      right: portalX + 11,
+      top: seaY + 14,
+      bottom: this.surfaceHeights[portalX]
+    }
   };
-  this.buildReefTemple();
+  this.placeDistributedReefPearls(4);
+  this.buildReefTemple(new Set(), true);
   this._tileCacheDirty = true;
   return {
     left, right: edgeRight, mainRight, seaY, floorY: deepFloor,
@@ -269,13 +371,28 @@ World.prototype.placeReefTempleTile = function(x, y, tile, floor = false) {
   if (replaceable) this.setTile(x, y, tile);
 };
 
-World.prototype.buildReefTemple = function(activePodiums = new Set()) {
+World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInterior = false) {
   const temple = this.reefTemple;
   if (!temple || !this.reefPodiums) return;
   const place = (x, y, tile, floor = false) =>
     this.placeReefTempleTile(x, y, tile, floor);
   const { left, right, top, portalX, portalY } = temple;
   const baseRow = this.surfaceHeights;
+
+  // The inner sanctuary is a dry, house-walled chamber, not another flooded
+  // cave. Clear generated coral and stray terrain before rebuilding its shell.
+  for (let x = temple.interior.left; x <= temple.interior.right; x++) {
+    for (let y = temple.interior.top; y < temple.interior.bottom; y++) {
+      const tile = this.getTile(x, y);
+      if ((clearInterior || tile === TILES.WATER || tile === TILES.CORAL) &&
+          tile !== OCEAN_TILES.PEARL && tile !== OCEAN_TILES.SHRINE &&
+          tile !== OCEAN_TILES.SHRINE_ACTIVE && tile !== OCEAN_TILES.PORTAL &&
+          tile !== OCEAN_TILES.DORMANT_PORTAL) {
+        this.setTile(x, y, TILES.AIR);
+      }
+      this.walls[y * this.width + x] = 23;
+    }
+  }
 
   // The stepped roof and paired towers give the gate a broad, unmistakable
   // silhouette, while the center stays open so the portal is reachable.
@@ -286,6 +403,17 @@ World.prototype.buildReefTemple = function(activePodiums = new Set()) {
   for (let x = portalX - 9; x <= portalX + 9; x++) place(x, top + 3, TILES.POLISHED_STONE);
   for (let x = portalX - 5; x <= portalX + 5; x++) place(x, top + 2, TILES.MARBLE);
   for (let x = portalX - 2; x <= portalX + 2; x++) place(x, top + 1, TILES.COPPER_BLOCK);
+  for (const side of [-1, 1]) {
+    const pilaster = portalX + side * 11;
+    for (let y = top + 7; y < temple.floorY - 2; y += 3) {
+      place(pilaster, y, TILES.COPPER_BLOCK);
+    }
+    place(portalX + side * 14, top + 6, TILES.MARBLE);
+    place(portalX + side * 14, top + 7, TILES.COPPER_BLOCK);
+  }
+  for (let x = portalX - 9; x <= portalX + 9; x++) {
+    if (x % 3 === 0) place(x, temple.floorY - 1, TILES.MARBLE);
+  }
 
   for (const side of [-1, 1]) {
     const towerX = portalX + side * 13;
@@ -323,6 +451,13 @@ World.prototype.buildReefTemple = function(activePodiums = new Set()) {
   const awake = activePodiums.size === this.reefPodiums.length;
   this.setTile(portalX, portalY,
     awake ? OCEAN_TILES.PORTAL : OCEAN_TILES.DORMANT_PORTAL);
+  this._tileCacheDirty = true;
+};
+
+World.prototype.migrateDistributedReefPearls = function() {
+  const count = this.tiles.reduce((total, tile) => total + (tile === OCEAN_TILES.PEARL ? 1 : 0), 0);
+  this.placeDistributedReefPearls(count);
+  return count;
 };
 
 World.prototype.migrateLegacyReefTemple = function() {
@@ -352,7 +487,8 @@ World.prototype.migrateLegacyReefTemple = function() {
   if (gateWasOpen && activePodiums.size < this.reefPodiums.length) {
     for (let i = 0; i < this.reefPodiums.length; i++) activePodiums.add(i);
   }
-  this.buildReefTemple(activePodiums);
+  this.buildReefTemple(activePodiums, true);
+  this.migrateDistributedReefPearls();
   this._tileCacheDirty = true;
   return true;
 };
