@@ -1572,67 +1572,177 @@ class Kraken {
     const t = this.animT * (1.6 + this.phase * 0.35);
     ctx.save();
 
-    // ---- Eight tentacles, drawn first so the mantle overlaps their roots ----
-    const baseColor = this.hitFlash > 0 ? '#ffffff'
-      : this.phase === 3 ? '#4c1d95' : this.phase === 2 ? '#155e75' : '#0e7490';
-    for (let i = 0; i < 8; i++) {
-      const f = i / 7;
-      const bx = x + this.width * (0.14 + 0.72 * f);
-      const outward = (f - 0.5) * 90; // outer limbs reach wider
-      const sway = Math.sin(t + i * 1.15) * (14 + this.phase * 5);
-      const tipX = bx + outward + sway;
-      const tipY = y + this.height * 0.97 + Math.cos(t * 0.8 + i * 0.7) * 7;
-      const midX = bx + outward * 0.35 + sway * 0.4;
-      const midY = rootY + (tipY - rootY) * 0.58;
+    // ---- Arms + tentacles, drawn first so the mantle overlaps their roots ----
+    // A squid's eight shorter arms ring the mouth; a kraken adds two long
+    // feeding tentacles. Each limb is a tapering stroke (fat base, thin tip)
+    // that sways on its own phase, with a pale sucker ridge down the underside
+    // and a soft rim-light so it reads as a 3D limb in the dark water.
+    const flash = this.hitFlash > 0;
+    const skinTop = flash ? '#ffffff'
+      : this.phase === 3 ? '#5b21b6' : this.phase === 2 ? '#0e7490' : '#0891b2';
+    const skinMid = flash ? '#e0f2fe'
+      : this.phase === 3 ? '#3b0764' : this.phase === 2 ? '#155e75' : '#0e7490';
+    const skinTip = flash ? '#bae6fd'
+      : this.phase === 3 ? '#2e1065' : this.phase === 2 ? '#083344' : '#155e75';
+    const suckerColor = flash ? '#ffffff'
+      : this.phase === 3 ? '#f0abfc' : this.phase === 2 ? '#a5f3fc' : '#a5f3fc';
 
-      ctx.strokeStyle = baseColor;
-      ctx.lineWidth = 9;
-      ctx.beginPath();
-      ctx.moveTo(bx, rootY);
-      ctx.quadraticCurveTo(midX, midY, tipX, tipY);
-      ctx.stroke();
-      // Lighter inner ridge down the limb.
-      ctx.globalAlpha = 0.35;
-      ctx.strokeStyle = '#67e8f9';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(bx, rootY);
-      ctx.quadraticCurveTo(midX, midY, tipX, tipY);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      // Suckers: points along the quadratic at t = 0.45/0.65/0.85.
-      ctx.fillStyle = this.hitFlash > 0 ? '#ffffff' : '#a5f3fc';
-      for (const tt of [0.45, 0.65, 0.85]) {
-        const it = 1 - tt;
-        const qx = it * it * bx + 2 * it * tt * midX + tt * tt * tipX;
-        const qy = it * it * rootY + 2 * it * tt * midY + tt * tt * tipY;
-        ctx.beginPath();
-        ctx.arc(qx, qy, 2.4, 0, Math.PI * 2);
-        ctx.fill();
+    /**
+     * Draw one limb: a quadratic from a fat base to a thin tip, with a paler
+     * inner ridge, translucent suckers marching down it, and a bright rim-light
+     * down the leading edge. `widthFn` sets the stroke taper along the curve.
+     */
+    const limb = (bx, by, ctrlX, ctrlY, tipX, tipY, baseW, length, suckers) => {
+      // Taper: a handful of short segments from wide to narrow reads as a real
+      // limb, where a single lineWidth would look like a pipe.
+      const segs = 10;
+      ctx.lineCap = 'round';
+      for (let s = 0; s < segs; s++) {
+        const t0 = s / segs, t1 = (s + 1) / segs;
+        const w0 = baseW * (1 - t0) + 2 * t0;
+        const w1 = baseW * (1 - t1) + 2 * t1;
+        const p0 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t0);
+        const p1 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t1);
+        ctx.strokeStyle = t0 < 0.5 ? skinTop : t0 < 0.82 ? skinMid : skinTip;
+        ctx.lineWidth = w0;
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
       }
+      // Rim-light: a thin bright stroke just behind the silhouette edge.
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = '#67e8f9';
+      ctx.lineWidth = Math.max(1.5, baseW * 0.32);
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY); ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Suckers: pale ovals perpendicular to the limb, denser near the tip.
+      if (suckers) {
+        ctx.fillStyle = suckerColor;
+        for (const tt of [0.34, 0.5, 0.64, 0.78, 0.9]) {
+          const pt = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, tt);
+          const r = 2.6 * (1 - tt) + 0.9;
+          ctx.beginPath(); ctx.ellipse(pt.x, pt.y, r, r * 0.7, tt * 1.6, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    };
+    function qPoint(x0, y0, x1, y1, x2, y2, t) {
+      const it = 1 - t;
+      return { x: it * it * x0 + 2 * it * t * x1 + t * t * x2, y: it * it * y0 + 2 * it * t * y1 + t * t * y2 };
     }
 
-    // ---- Mantle (the giant head-blob) ----
-    ctx.fillStyle = baseColor;
+    // Eight arms fanning from the base of the mantle.
+    for (let i = 0; i < 8; i++) {
+      const f = i / 7;
+      const bx = x + this.width * (0.16 + 0.68 * f);
+      const outward = (f - 0.5) * 120;                       // outer arms reach wider
+      const sway = Math.sin(t * 0.9 + i * 1.2) * (16 + this.phase * 6);
+      const reach = this.height * (0.72 + 0.2 * Math.sin(i * 2.1)); // varied lengths
+      const tipX = bx + outward + sway;
+      const tipY = rootY + reach;
+      const ctrlX = bx + outward * 0.3 + sway * 0.5;
+      const ctrlY = rootY + reach * 0.6;
+      limb(bx, rootY, ctrlX, ctrlY, tipX, tipY, 10, reach, true);
+    }
+    // Two long feeding tentacles sweeping out and forward of the arms.
+    for (const side of [-1, 1]) {
+      const bx = cx + side * this.width * 0.12;
+      const sway = Math.sin(t * 0.7 + (side > 0 ? 0 : Math.PI)) * (26 + this.phase * 8);
+      const tipX = bx + side * (90 + Math.abs(sway));
+      const tipY = rootY + this.height * 1.15 + Math.cos(t * 0.6 + side) * 12;
+      const ctrlX = bx + side * 46 + sway * 0.4;
+      const ctrlY = rootY + this.height * 0.7;
+      limb(bx, rootY + 6, ctrlX, ctrlY, tipX, tipY, 14, this.height * 1.2, true);
+    }
+
+
+    // ---- Mantle: a tapered squid head, shaded with a radial gradient ----
+    // A squid's mantle is a rounded cone, wide and blunt at the skirt and
+    // narrowing toward the crown, with the eye low and forward on it. Shade it
+    // with a radial gradient offset toward a top-left key light so it reads as
+    // a glossy wet dome instead of a flat ellipse.
+    const mantleRx = this.width * 0.46;
+    const mantleRy = this.height * 0.34;
+    const mcX = cx;
+    const mcY = y + this.height * 0.40;
+    const gx = mcX - mantleRx * 0.35, gy = mcY - mantleRy * 0.45;
+    const gr = Math.max(mantleRx, mantleRy) * 1.25;
+    const mantleGrad = ctx.createRadialGradient(gx, gy, gr * 0.08, mcX, mcY, gr);
+    if (flash) {
+      mantleGrad.addColorStop(0, '#ffffff');
+      mantleGrad.addColorStop(1, '#bae6fd');
+    } else if (this.phase === 3) {
+      mantleGrad.addColorStop(0, '#7e22ce');
+      mantleGrad.addColorStop(0.55, '#4c1d95');
+      mantleGrad.addColorStop(1, '#2e1065');
+    } else if (this.phase === 2) {
+      mantleGrad.addColorStop(0, '#22d3ee');
+      mantleGrad.addColorStop(0.5, '#0e7490');
+      mantleGrad.addColorStop(1, '#0c4a6e');
+    } else {
+      mantleGrad.addColorStop(0, '#67e8f9');
+      mantleGrad.addColorStop(0.5, '#0891b2');
+      mantleGrad.addColorStop(1, '#155e75');
+    }
+    ctx.fillStyle = mantleGrad;
     ctx.beginPath();
-    ctx.ellipse(cx, y + this.height * 0.38, this.width * 0.44, this.height * 0.34, 0, 0, Math.PI * 2);
+    ctx.ellipse(mcX, mcY, mantleRx, mantleRy, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = this.hitFlash > 0 ? '#ffffff' : '#164e63';
+    // Crown sheen: a bright highlight arcing over the top-left of the dome.
+    ctx.globalAlpha = flash ? 0.5 : 0.28;
+    ctx.fillStyle = '#e0f2fe';
     ctx.beginPath();
-    ctx.ellipse(cx, y + this.height * 0.24, this.width * 0.30, this.height * 0.14, 0, 0, Math.PI * 2);
+    ctx.ellipse(gx, gy - mantleRy * 0.15, mantleRx * 0.5, mantleRy * 0.34, -0.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+    // A soft dark underside gives the dome volume.
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#020617';
+    ctx.beginPath();
+    ctx.ellipse(mcX, mcY + mantleRy * 0.55, mantleRx * 0.8, mantleRy * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // ---- Mantle fins: two translucent wings flaring from the crown ----
+    for (const side of [-1, 1]) {
+      const finX = cx + side * mantleRx * 0.62;
+      const finY = mcY - mantleRy * 0.55;
+      const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) * 6;
+      ctx.globalAlpha = flash ? 0.5 : 0.4;
+      ctx.fillStyle = flash ? '#ffffff'
+        : this.phase === 3 ? '#a21caf' : this.phase === 2 ? '#22d3ee' : '#67e8f9';
+      ctx.beginPath();
+      ctx.moveTo(finX, finY);
+      ctx.quadraticCurveTo(finX + side * 60, finY - 26 + flap, finX + side * 104, finY + 6 + flap);
+      ctx.quadraticCurveTo(finX + side * 52, finY + 26 + flap * 0.5, finX, finY + 22);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
     // ---- The glowing eye: the weakpoint, and the fight's whole tutorial ----
+    // Layered for depth: an outer bioluminescent halo that bleeds into the
+    // water, a dark socket, a gradient iris with a vertical slit pupil (the
+    // kraken signature), a bright specular glint and a pulsing target ring.
     const eye = this.headTargets()[0];
     const ex = eye.x - camera.x;
     const ey = eye.y - camera.y;
     const glow = 1 + Math.sin(this.animT * 5) * 0.12;
+    const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 191, 36' : '253, 224, 71';
+    // Halo bleed so the eye lights the water and body around it.
+    const halo = ctx.createRadialGradient(ex, ey, 4, ex, ey, 56 * glow);
+    halo.addColorStop(0, 'rgba(' + haloColor + ', 0.5)');
+    halo.addColorStop(1, 'rgba(' + haloColor + ', 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(ex, ey, 56 * glow, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#020617'; // socket, so the iris pops off the mantle
     ctx.beginPath();
     ctx.arc(ex, ey, 30 * glow, 0, Math.PI * 2);
     ctx.fill();
     const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
-    ctx.fillStyle = irisColor;
+    // Iris is its own little gradient — white core fading to a warm rim.
+    const irisGrad = ctx.createRadialGradient(ex, ey, 2, ex, ey, 20 * glow);
+    irisGrad.addColorStop(0, '#ffffff');
+    irisGrad.addColorStop(0.5, irisColor);
+    irisGrad.addColorStop(1, this.phase === 3 ? '#7f1d1d' : this.phase === 2 ? '#b45309' : '#ca8a04');
+    ctx.fillStyle = irisGrad;
     ctx.beginPath();
     ctx.arc(ex, ey, 20 * glow, 0, Math.PI * 2);
     ctx.fill();
@@ -1645,11 +1755,20 @@ class Kraken {
     ctx.arc(ex - 6, ey - 7, 3.5, 0, Math.PI * 2);
     ctx.fill();
     // Pulsing ring marks it as THE target, whatever the phase colour does.
-    ctx.strokeStyle = 'rgba(254, 240, 138, ' + (0.35 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
+    ctx.strokeStyle = 'rgba(' + haloColor + ', ' + (0.4 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(ex, ey, 34 * glow, 0, Math.PI * 2);
     ctx.stroke();
+
+    // ---- Beak: a dark parrot-like hook peeking below the eye ----
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.moveTo(ex - 9, ey + 22);
+    ctx.quadraticCurveTo(ex, ey + 42, ex + 11, ey + 21);
+    ctx.quadraticCurveTo(ex, ey + 28, ex - 9, ey + 22);
+    ctx.closePath();
+    ctx.fill();
 
     // ---- Ink dripping off the skirt ----
     ctx.fillStyle = '#3b0764';
