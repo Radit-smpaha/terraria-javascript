@@ -6,7 +6,11 @@ const OCEAN_TILES = {
   SHRINE_ACTIVE: 75,
   PORTAL: 76,
   CORAL: 77,
-  DORMANT_PORTAL: 78
+  DORMANT_PORTAL: 78,
+  TALL_CORAL: 79,
+  TEMPLE_LEVER: 80,
+  TEMPLE_LEVER_PULLED: 81,
+  TEMPLE_DOOR: 82
 };
 const OCEAN_TILE_SET = new Set(Object.values(OCEAN_TILES));
 const OCEAN_WATER_TILE_CACHE = [];
@@ -39,6 +43,10 @@ TILES.REEF_SHRINE_ACTIVE = OCEAN_TILES.SHRINE_ACTIVE;
 TILES.OCEAN_PORTAL = OCEAN_TILES.PORTAL;
 TILES.CORAL = OCEAN_TILES.CORAL;
 TILES.DORMANT_OCEAN_PORTAL = OCEAN_TILES.DORMANT_PORTAL;
+TILES.TALL_CORAL = OCEAN_TILES.TALL_CORAL;
+TILES.TEMPLE_LEVER = OCEAN_TILES.TEMPLE_LEVER;
+TILES.TEMPLE_LEVER_PULLED = OCEAN_TILES.TEMPLE_LEVER_PULLED;
+TILES.TEMPLE_DOOR = OCEAN_TILES.TEMPLE_DOOR;
 
 Object.assign(TILE_PROPERTIES, {
   [OCEAN_TILES.PEARL]: { solid: true, light: 11, color: '#67e8f9', name: 'Sacred Pearl', drops: { id: 'sacred_pearl', count: 1 } },
@@ -46,7 +54,11 @@ Object.assign(TILE_PROPERTIES, {
   [OCEAN_TILES.SHRINE_ACTIVE]: { solid: true, light: 9, color: '#22d3ee', name: 'Awakened Reef Shrine', drops: null },
   [OCEAN_TILES.PORTAL]: { solid: false, light: 15, color: '#22d3ee', name: 'Tide Portal', drops: null },
   [OCEAN_TILES.CORAL]: { solid: false, light: 2, color: '#fb7185', name: 'Reef Coral', drops: { id: 'coral_fragment', count: 1 } },
-  [OCEAN_TILES.DORMANT_PORTAL]: { solid: false, light: 2, color: '#475569', name: 'Dormant Tide Gate', drops: null }
+  [OCEAN_TILES.DORMANT_PORTAL]: { solid: false, light: 2, color: '#475569', name: 'Dormant Tide Gate', drops: null },
+  [OCEAN_TILES.TALL_CORAL]: { solid: false, light: 3, color: '#c084fc', name: 'Tall Reef Coral', drops: { id: 'coral_fragment', count: 1 } },
+  [OCEAN_TILES.TEMPLE_LEVER]: { solid: false, light: 2, color: '#fbbf24', name: 'Tide Temple Lever', drops: null },
+  [OCEAN_TILES.TEMPLE_LEVER_PULLED]: { solid: false, light: 3, color: '#22d3ee', name: 'Pulled Tide Temple Lever', drops: null },
+  [OCEAN_TILES.TEMPLE_DOOR]: { solid: true, light: 0, color: '#64748b', name: 'Tide Temple Door', drops: null }
 });
 
 const OCEAN_BASE_DRAW_TILE = World.prototype.drawTileGraphic;
@@ -146,6 +158,63 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     ctx.fillStyle = '#64748b';
     ctx.fillRect(sx + 3, sy + 4, 2, 2);
     ctx.fillRect(sx + 19, sy + 18, 2, 2);
+  } else if (tile === OCEAN_TILES.TALL_CORAL) {
+    const tallColors = [
+      ['#c084fc', '#a78bfa', '#ede9fe'],
+      ['#fb7185', '#f472b6', '#fecdd3'],
+      ['#2dd4bf', '#14b8a6', '#99f6e4'],
+      ['#f97316', '#facc15', '#ffedd5'],
+      ['#38bdf8', '#2563eb', '#bae6fd']
+    ];
+    const plant = tallColors[Math.abs(tx * 31 + ty * 17) % tallColors.length];
+    const bend = Math.sin(tx * 1.7 + ty * 0.4) > 0 ? 1 : -1;
+    ctx.fillStyle = '#062b43';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = '#124454';
+    ctx.fillRect(sx, sy + 20, TILE_SIZE, 4);
+    ctx.fillStyle = '#3b1f56';
+    ctx.fillRect(sx + 10, sy, 5, TILE_SIZE);
+    ctx.fillStyle = plant[0];
+    ctx.fillRect(sx + 11, sy, 3, TILE_SIZE);
+    ctx.fillStyle = plant[1];
+    if (bend > 0) ctx.fillRect(sx + 13, sy + 4, 8, 4);
+    else ctx.fillRect(sx + 3, sy + 4, 8, 4);
+    ctx.fillRect(sx + 11, sy + 13, 3, 3);
+    ctx.fillStyle = plant[2];
+    ctx.fillRect(sx + (bend > 0 ? 18 : 2), sy + 2, 4, 4);
+    ctx.fillRect(sx + (bend > 0 ? 2 : 18), sy + 11, 4, 4);
+    ctx.fillStyle = '#67e8f9';
+    ctx.fillRect(sx + 5, sy + 18, 2, 2);
+  } else if (tile === OCEAN_TILES.TEMPLE_LEVER ||
+      tile === OCEAN_TILES.TEMPLE_LEVER_PULLED) {
+    const pulled = tile === OCEAN_TILES.TEMPLE_LEVER_PULLED;
+    ctx.fillStyle = '#123447';
+    ctx.fillRect(sx + 2, sy + 5, 20, 17);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(sx + 5, sy + 7, 14, 13);
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(sx + 7, sy + 9, 10, 9);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(sx + 11, sy + 11, 3, 7);
+    ctx.fillStyle = pulled ? '#22d3ee' : '#f8fafc';
+    ctx.fillRect(sx + (pulled ? 7 : 12), sy + (pulled ? 3 : 1), 4, 11);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(sx + (pulled ? 5 : 11), sy + (pulled ? 2 : 0), 8, 4);
+  } else if (tile === OCEAN_TILES.TEMPLE_DOOR) {
+    ctx.fillStyle = '#0b2230';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(sx + 2, sy + 1, 20, 22);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(sx + 4, sy + 2, 2, 20);
+    ctx.fillRect(sx + 18, sy + 2, 2, 20);
+    ctx.fillStyle = '#0e7490';
+    ctx.fillRect(sx + 7, sy + 4, 10, 16);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(sx + 8, sy + 5, 8, 2);
+    ctx.fillRect(sx + 8, sy + 17, 8, 2);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(sx + 16, sy + 11, 3, 3);
   } else {
     const coralColors = [
       ['#fb7185', '#f472b6', '#fecdd3'],
@@ -408,28 +477,56 @@ World.prototype.generateReef = function() {
     if (floor >= seaY) this.setTile(x, floor, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
   }
 
-  for (let x = left + 4; x < mainRight - 3; x += 4) {
+  for (let x = left + 4; x < mainRight - 3; x += 8) {
     const floor = this.surfaceHeights[x];
     const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
-    const height = 18 + Math.floor(roll * 9);
+    const height = 7 + Math.floor(roll * 6);
     const waterDepth = floor - seaY;
     if (waterDepth >= height + 1 && !legacyShrineColumns.includes(x) &&
-        !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 4) &&
+        !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 3) &&
         Math.abs(x - portalX) > 17) {
       for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.CORAL);
-      for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
-        const branchY = floor - Math.round(height * fraction);
+      for (const level of [2, 4, 6]) {
+        const branchY = floor - height + level;
         for (const side of [-1, 1]) {
-          for (let length = 1; length <= 6; length++) {
+          for (let length = 1; length <= 3; length++) {
             const branchX = x + side * length;
-            const branchTileY = branchY - (length > 2 ? Math.ceil((length - 2) / 2) : 0);
+            const branchTileY = branchY - (length > 1 ? 1 : 0);
             if (branchX > left && branchX < mainRight &&
                 !legacyShrineColumns.includes(branchX) &&
-                !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 3) &&
+                !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 2) &&
                 Math.abs(branchX - portalX) > 17 &&
                 this.getTile(branchX, branchTileY) === TILES.WATER) {
               this.setTile(branchX, branchTileY, TILES.CORAL);
             }
+          }
+        }
+      }
+    }
+  }
+
+  for (const x of [portalX - 22, portalX + 22]) {
+    if (x <= left + 3 || x >= mainRight - 2) continue;
+    const floor = this.surfaceHeights[x];
+    const roll = Math.abs(Math.sin((x + 11) * 12.9898) * 43758.5453) % 1;
+    const height = 13 + Math.floor(roll * 8);
+    if (floor - seaY < height + 1 ||
+        legacyShrineColumns.includes(x) ||
+        podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 4) ||
+        Math.abs(x - portalX) <= 17) continue;
+    for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.TALL_CORAL);
+    for (const fraction of [0.3, 0.55, 0.8]) {
+      const branchY = floor - Math.round(height * fraction);
+      for (const side of [-1, 1]) {
+        for (let length = 1; length <= 4; length++) {
+          const branchX = x + side * length;
+          const branchTileY = branchY - (length > 2 ? 1 : 0);
+          if (branchX > left && branchX < mainRight &&
+              !legacyShrineColumns.includes(branchX) &&
+              !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 3) &&
+              Math.abs(branchX - portalX) > 17 &&
+              this.getTile(branchX, branchTileY) === TILES.WATER) {
+            this.setTile(branchX, branchTileY, TILES.CORAL);
           }
         }
       }
@@ -464,6 +561,14 @@ World.prototype.generateReef = function() {
       right: portalX + 11,
       top: seaY + 14,
       bottom: this.surfaceHeights[portalX]
+    },
+    door: {
+      left: templeLeft + 1,
+      right: templeLeft + 2,
+      top: templeFloorY - 3,
+      bottom: templeFloorY - 1,
+      leverX: templeLeft,
+      leverY: templeFloorY - 2
     }
   };
   this.placeDistributedReefPearls(4);
@@ -496,7 +601,8 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
   for (let x = temple.interior.left; x <= temple.interior.right; x++) {
     for (let y = temple.interior.top; y < temple.interior.bottom; y++) {
       const tile = this.getTile(x, y);
-      if (clearInterior || tile === TILES.WATER || tile === TILES.CORAL) {
+      if (clearInterior || tile === TILES.WATER || tile === TILES.CORAL ||
+          tile === TILES.TALL_CORAL) {
         this.setTile(x, y, TILES.AIR);
       }
       this.walls[y * this.width + x] = 23;
@@ -521,6 +627,7 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
   for (const side of [-1, 1]) {
     const pilaster = portalX + side * 11;
     for (let y = top + 7; y < temple.floorY; y++) {
+      if (side === -1 && y >= temple.door.top && y <= temple.door.bottom) continue;
       place(pilaster - 1, y, y % 5 === 0 ? TILES.COPPER_BLOCK : TILES.POLISHED_STONE);
       place(pilaster, y, TILES.COPPER_BLOCK);
       place(pilaster + 1, y, y % 5 === 0 ? TILES.COPPER_BLOCK : TILES.POLISHED_STONE);
@@ -534,8 +641,11 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
     const towerX = portalX + side * 13;
     const outerX = portalX + side * 15;
     for (let y = top + 6; y < temple.floorY; y++) {
-      place(towerX, y, y % 4 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE);
-      if (y >= top + 9) place(outerX, y, TILES.STONE_BRICK);
+      const throughDoorway = side === -1 && y >= temple.door.top && y <= temple.door.bottom;
+      if (!throughDoorway) {
+        place(towerX, y, y % 4 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE);
+        if (y >= top + 9) place(outerX, y, TILES.STONE_BRICK);
+      }
     }
     place(towerX, top + 5, TILES.COPPER_BLOCK);
     place(towerX, top + 8, TILES.COPPER_BLOCK);
@@ -558,6 +668,16 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
     place(x, portalY - 4, TILES.COPPER_BLOCK);
   }
   place(portalX, portalY - 5, TILES.MARBLE);
+
+  for (let y = temple.door.top; y <= temple.door.bottom; y++) {
+    for (let x = temple.door.left; x <= temple.door.right; x++) {
+      this.setTile(x, y, TILES.TEMPLE_DOOR);
+    }
+    for (let x = temple.door.right + 1; x <= temple.interior.left; x++) {
+      this.setTile(x, y, TILES.AIR);
+    }
+  }
+  this.setTile(temple.door.leverX, temple.door.leverY, TILES.TEMPLE_LEVER);
 
   for (let x = left; x <= right; x++) {
     const tile = (x - left) % 4 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE;
@@ -654,46 +774,54 @@ World.prototype.migrateReefTempleFloor = function() {
     this.surfaceHeights[x] = temple.floorY;
   }
   this.buildReefTemple(activePodiums, true);
-  this.upgradeReefCoral();
+  this.migrateLegacyTallCoral();
   return true;
 };
 
-World.prototype.upgradeReefCoral = function() {
+World.prototype.migrateLegacyTallCoral = function() {
   if (!this.reefBounds) return false;
   const { left, mainRight, seaY } = this.reefBounds;
-  for (let x = left + 4; x < mainRight - 3; x++) {
+  for (let x = left + 1; x < mainRight - 1; x++) {
     const floorY = this.surfaceHeights[x];
-    if (floorY - seaY < 20 || Math.abs(x - this.reefTemple.portalX) <= 17) continue;
-    let topY = floorY - 1;
-    while (topY >= seaY && this.getTile(x, topY) !== TILES.CORAL) topY--;
-    if (topY < seaY) continue;
-    let currentTop = topY;
-    while (currentTop > seaY && this.getTile(x, currentTop - 1) === TILES.CORAL) currentTop--;
-    const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
-    const desiredHeight = Math.min(floorY - seaY - 2, 18 + Math.floor(roll * 9));
-    const desiredTop = floorY - desiredHeight;
-    for (let y = currentTop - 1; y >= desiredTop; y--) {
-      if (this.getTile(x, y) !== TILES.WATER) break;
-      this.setTile(x, y, TILES.CORAL);
-    }
-    for (const fraction of [0.2, 0.4, 0.6, 0.8]) {
-      const branchY = floorY - Math.round(desiredHeight * fraction);
-      for (const side of [-1, 1]) {
-        for (let length = 1; length <= 6; length++) {
-          const branchX = x + side * length;
-          const branchTileY = branchY -
-            (length > 2 ? Math.ceil((length - 2) / 2) : 0);
-          if (branchX > left && branchX < mainRight &&
-              Math.abs(branchX - this.reefTemple.portalX) > 17 &&
-              this.getTile(branchX, branchTileY) === TILES.WATER) {
-            this.setTile(branchX, branchTileY, TILES.CORAL);
-          }
-        }
-      }
+    let bottomY = floorY - 1;
+    while (bottomY >= seaY && this.getTile(x, bottomY) !== TILES.CORAL) bottomY--;
+    if (bottomY < seaY) continue;
+    let topY = bottomY;
+    while (topY > seaY && this.getTile(x, topY - 1) === TILES.CORAL) topY--;
+    if (bottomY - topY + 1 < 16) continue;
+    for (let y = topY; y < bottomY - 2; y++) {
+      this.setTile(x, y, TILES.TALL_CORAL);
     }
   }
   this._tileCacheDirty = true;
   return true;
+};
+
+World.prototype.advanceReefTempleDoor = function(dt) {
+  const door = this.reefTemple && this.reefTemple.door;
+  if (!door || this.getTile(door.leverX, door.leverY) !== TILES.TEMPLE_LEVER_PULLED) return;
+  this.reefTempleDoorTimer = (this.reefTempleDoorTimer || 0) + Math.max(0, dt);
+  while (this.reefTempleDoorTimer >= 0.72) {
+    let openedRow = false;
+    for (let y = door.top; y <= door.bottom; y++) {
+      let rowHasDoor = false;
+      for (let x = door.left; x <= door.right; x++) {
+        if (this.getTile(x, y) === TILES.TEMPLE_DOOR) rowHasDoor = true;
+      }
+      if (rowHasDoor) {
+        for (let x = door.left; x <= door.right; x++) {
+          if (this.getTile(x, y) === TILES.TEMPLE_DOOR) this.setTile(x, y, TILES.AIR);
+        }
+        openedRow = true;
+        break;
+      }
+    }
+    if (!openedRow) {
+      this.reefTempleDoorTimer = 0;
+      return;
+    }
+    this.reefTempleDoorTimer -= 0.72;
+  }
 };
 
 World.prototype.repairLegacyReef = function(version) {

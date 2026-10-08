@@ -4137,7 +4137,7 @@ class Game {
     const savedDrops = (inSpecialDimension && this.dimensionStash) ? this.dimensionStash.drops : this.drops;
     const save = {
       name: preferredName,
-      version: 19,
+      version: 20,
       timeOfDay: stashed ? stashed.timeOfDay : this.world.timeOfDay,
       dayCount: this.world.dayCount,
       tiles: Array.from(this.world.persistTiles()),
@@ -4227,7 +4227,7 @@ class Game {
       return false;
     }
 
-    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 19;
+    const supportedVersion = save && Number.isInteger(save.version) && save.version >= 1 && save.version <= 20;
     if (!supportedVersion || !Array.isArray(save.tiles) || save.tiles.length !== this.world.tiles.length) {
       this.showToast('⚠️ Save data is incompatible.');
       return false;
@@ -4248,7 +4248,7 @@ class Game {
     }
     if (save.version === 15) this.world.migrateLegacyReefTemple();
     if (save.version < 17) this.world.migrateDistributedReefPearls();
-    if (save.version < 19) this.world.migrateReefTempleFloor();
+    if (save.version < 20) this.world.migrateReefTempleFloor();
     // Both the static tile cache and the minimap's baked texture describe the
     // world that was just replaced; a warm cache would otherwise keep showing
     // the pre-load world until something happened to touch a tile.
@@ -6041,6 +6041,20 @@ class Game {
 
   interactWithSpecialTile(tileX, tileY) {
     const tile = this.world.getTile(tileX, tileY);
+    if (tile === TILES.TEMPLE_LEVER || tile === TILES.TEMPLE_LEVER_PULLED) {
+      const playerX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
+      const playerY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
+      if (Math.hypot(tileX - playerX, tileY - playerY) > 7) return false;
+      if (tile === TILES.TEMPLE_LEVER_PULLED) return true;
+      this.world.setTile(tileX, tileY, TILES.TEMPLE_LEVER_PULLED);
+      this.world.reefTempleDoorTimer = 0;
+      this.sound.playHit();
+      this.particles.magicSparkle((tileX + 0.5) * TILE_SIZE,
+        (tileY + 0.5) * TILE_SIZE, '#fbbf24', 14);
+      this.showToast('⚙️ The tide lever turns. The temple door is slowly rising!');
+      this.saveGame(true);
+      return true;
+    }
     if (tile === TILES.REEF_SHRINE || tile === TILES.REEF_SHRINE_ACTIVE) {
       const playerX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
       const playerY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
@@ -6598,7 +6612,9 @@ class Game {
           return;
         }
         if (tile === TILES.REEF_SHRINE || tile === TILES.REEF_SHRINE_ACTIVE ||
-            tile === TILES.OCEAN_PORTAL || tile === TILES.DORMANT_OCEAN_PORTAL) {
+            tile === TILES.OCEAN_PORTAL || tile === TILES.DORMANT_OCEAN_PORTAL ||
+            tile === TILES.TEMPLE_LEVER || tile === TILES.TEMPLE_LEVER_PULLED ||
+            tile === TILES.TEMPLE_DOOR) {
           this.showToast('🪸 The Tide Temple offerings and gate cannot be broken.');
           return;
         }
@@ -7656,6 +7672,7 @@ this.player.dodgeTime = 0;
     // and collision all stand down so nothing fights the pull.
     const inRift = this.updateWormhole(dt);
     this.updateOceanSystems(dt);
+    this.world.advanceReefTempleDoor(dt);
     if (!inRift) this.player.update(dt, this.input, this.world, this.sound, this.particles);
     this.updateOceanFish(dt);
     this.journey?.update(dt);

@@ -183,17 +183,60 @@ const templeTorches = [-1, 1].flatMap(side => [0, 5].map(offsetY =>
 check('four temple torches are placed around the Tide Gate',
   templeTorches.length === 4 && templeTorches.every(tile => tile === TILES.TORCH),
   templeTorches.join(','));
-let tallestCoral = 0;
+let tallestOldCoral = 0;
+let tallestNewCoral = 0;
+let regularCoralColumns = 0;
+let tallCoralColumns = 0;
 for (const x of reefCols) {
-  let run = 0;
+  let oldRun = 0;
+  let tallRun = 0;
+  let oldColumnHeight = 0;
+  let tallColumnHeight = 0;
   for (let y = rb.seaY; y < W.surfaceHeights[x]; y++) {
     if (W.getTile(x, y) === TILES.CORAL) {
-      run++;
-      tallestCoral = Math.max(tallestCoral, run);
-    } else run = 0;
+      oldRun++;
+      oldColumnHeight = Math.max(oldColumnHeight, oldRun);
+    } else oldRun = 0;
+    if (W.getTile(x, y) === TILES.TALL_CORAL) {
+      tallRun++;
+      tallColumnHeight = Math.max(tallColumnHeight, tallRun);
+    } else tallRun = 0;
   }
+  tallestOldCoral = Math.max(tallestOldCoral, oldColumnHeight);
+  tallestNewCoral = Math.max(tallestNewCoral, tallColumnHeight);
+  if (oldColumnHeight) regularCoralColumns++;
+  if (tallColumnHeight) tallCoralColumns++;
 }
-check('reef coral grows into taller multi-tile branches', tallestCoral >= 16, String(tallestCoral));
+check('original colorful coral stays as short floor clusters',
+  tallestOldCoral <= 12 && regularCoralColumns > 0,
+  `height=${tallestOldCoral}, columns=${regularCoralColumns}`);
+check('separate tall coral species creates occasional high reef columns',
+  tallestNewCoral >= 13 && tallCoralColumns > 0,
+  `height=${tallestNewCoral}, columns=${tallCoralColumns}`);
+const reefDoor = W.reefTemple.door;
+check('the temple entrance has a lever outside a closed double door',
+  !!reefDoor && W.getTile(reefDoor.leverX, reefDoor.leverY) === TILES.TEMPLE_LEVER &&
+  Array.from({ length: reefDoor.bottom - reefDoor.top + 1 }, (_, row) =>
+    W.getTile(reefDoor.left, reefDoor.top + row) === TILES.TEMPLE_DOOR &&
+    W.getTile(reefDoor.right, reefDoor.top + row) === TILES.TEMPLE_DOOR).every(Boolean));
+const leverPlayer = { x: g.player.x, y: g.player.y };
+if (reefDoor) {
+  g.player.x = (reefDoor.leverX + 0.5) * global.TILE_SIZE - g.player.width / 2;
+  g.player.y = reefDoor.leverY * global.TILE_SIZE;
+  const pressed = g.interactWithSpecialTile(reefDoor.leverX, reefDoor.leverY);
+  W.advanceReefTempleDoor(0.73);
+  const opensGradually = pressed &&
+    W.getTile(reefDoor.left, reefDoor.top) === TILES.AIR &&
+    W.getTile(reefDoor.left, reefDoor.bottom) === TILES.TEMPLE_DOOR;
+  W.advanceReefTempleDoor(2.2);
+  check('the temple lever opens the solid door gradually, row by row',
+    opensGradually &&
+    Array.from({ length: reefDoor.bottom - reefDoor.top + 1 }, (_, row) =>
+      W.getTile(reefDoor.left, reefDoor.top + row) === TILES.AIR &&
+      W.getTile(reefDoor.right, reefDoor.top + row) === TILES.AIR).every(Boolean));
+  g.player.x = leverPlayer.x;
+  g.player.y = leverPlayer.y;
+}
 const room = W.reefTemple.interior;
 let dirtyTempleTiles = 0;
 for (let y = room.top; y < room.bottom; y++) {
@@ -458,9 +501,9 @@ check('the tide portal has an enlarged active and dormant temple rendering',
 
 // ==========================================================================
 step('9. Save migration');
-check('saves are written as version 19', srcT.includes('version: 19'));
-check('version 19 saves are accepted',
-  srcT.includes('save.version >= 1 && save.version <= 19'));
+check('saves are written as version 20', srcT.includes('version: 20'));
+check('version 20 saves are accepted',
+  srcT.includes('save.version >= 1 && save.version <= 20'));
 check('v12-v14 saves get their legacy reef repaired before recarving',
   srcT.includes('save.version >= 12 && save.version <= 14') &&
   srcT.includes('save.version < 15') &&
@@ -469,9 +512,9 @@ check('v15 saves migrate their shrine offerings into the temple podiums',
   srcT.includes('save.version === 15') && srcO.includes('migrateLegacyReefTemple'));
 check('older saves relocate only their remaining pearl tiles',
   srcT.includes('save.version < 17') && srcO.includes('migrateDistributedReefPearls'));
-check('pre-v19 saves rebuild the level temple floor and coral without losing offerings',
-  srcT.includes('save.version < 19') && srcO.includes('migrateReefTempleFloor') &&
-  srcO.includes('upgradeReefCoral'));
+check('pre-v20 saves rebuild the temple and convert legacy tall coral into its own species',
+  srcT.includes('save.version < 20') && srcO.includes('migrateReefTempleFloor') &&
+  srcO.includes('migrateLegacyTallCoral'));
 
 console.log('');
 if (failures) {
