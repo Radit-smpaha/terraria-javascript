@@ -9,6 +9,29 @@ const OCEAN_TILES = {
   DORMANT_PORTAL: 78
 };
 const OCEAN_TILE_SET = new Set(Object.values(OCEAN_TILES));
+const OCEAN_WATER_TILE_CACHE = [];
+
+function getOceanWaterTile(ripple) {
+  if (!OCEAN_WATER_TILE_CACHE[ripple]) {
+    const canvas = document.createElement('canvas');
+    canvas.width = TILE_SIZE;
+    canvas.height = TILE_SIZE;
+    const tile = canvas.getContext('2d');
+    if (!tile) throw new Error('Could not create the cached reef-water tile.');
+    tile.imageSmoothingEnabled = false;
+    tile.fillStyle = '#062b43';
+    tile.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    tile.fillStyle = '#0c4a6e';
+    tile.fillRect(0, 0, TILE_SIZE, 4);
+    tile.fillStyle = '#0e7490';
+    tile.fillRect(2, 8 + ripple, 7, 2);
+    tile.fillRect(13, 15 - ripple, 8, 2);
+    tile.fillStyle = 'rgba(103,232,249,0.55)';
+    tile.fillRect(5, 1, 3, 2);
+    OCEAN_WATER_TILE_CACHE[ripple] = canvas;
+  }
+  return OCEAN_WATER_TILE_CACHE[ripple];
+}
 
 TILES.SACRED_PEARL = OCEAN_TILES.PEARL;
 TILES.REEF_SHRINE = OCEAN_TILES.SHRINE;
@@ -30,15 +53,7 @@ const OCEAN_BASE_DRAW_TILE = World.prototype.drawTileGraphic;
 World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop) {
   if (tile === TILES.WATER && (this.isInOcean() || this.isReefAtX(tx))) {
     const ripple = ((tx * 7 + ty * 3) % 5 + 5) % 5;
-    ctx.fillStyle = '#062b43';
-    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-    ctx.fillStyle = '#0c4a6e';
-    ctx.fillRect(sx, sy, TILE_SIZE, 4);
-    ctx.fillStyle = '#0e7490';
-    ctx.fillRect(sx + 2, sy + 8 + ripple, 7, 2);
-    ctx.fillRect(sx + 13, sy + 15 - ripple, 8, 2);
-    ctx.fillStyle = 'rgba(103,232,249,0.55)';
-    ctx.fillRect(sx + 5, sy + 1, 3, 2);
+    ctx.drawImage(getOceanWaterTile(ripple), sx, sy);
     return;
   }
   if (!OCEAN_TILE_SET.has(tile)) {
@@ -299,24 +314,24 @@ World.prototype.generateReef = function() {
     if (floor >= seaY) this.setTile(x, floor, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
   }
 
-  for (let x = left + 4; x < mainRight - 3; x += 8) {
+  for (let x = left + 4; x < mainRight - 3; x += 5) {
     const floor = this.surfaceHeights[x];
     const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
-    const height = 7 + Math.floor(roll * 6);
+    const height = 9 + Math.floor(roll * 7);
     const waterDepth = floor - seaY;
     if (waterDepth >= height + 1 && !legacyShrineColumns.includes(x) &&
-        !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 3) &&
+        !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 4) &&
         Math.abs(x - portalX) > 17) {
       for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.CORAL);
-      for (const level of [2, 4, 6]) {
+      for (const level of [2, 4, 6, 8]) {
         const branchY = floor - height + level;
         for (const side of [-1, 1]) {
-          for (let length = 1; length <= 3; length++) {
+          for (let length = 1; length <= 4; length++) {
             const branchX = x + side * length;
             const branchTileY = branchY - (length > 1 ? 1 : 0);
             if (branchX > left && branchX < mainRight &&
                 !legacyShrineColumns.includes(branchX) &&
-                !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 2) &&
+                !podiumColumns.some(podiumX => Math.abs(podiumX - branchX) <= 3) &&
                 Math.abs(branchX - portalX) > 17 &&
                 this.getTile(branchX, branchTileY) === TILES.WATER) {
               this.setTile(branchX, branchTileY, TILES.CORAL);
@@ -429,6 +444,12 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
     const archX = portalX + side * 3;
     for (let y = portalY - 4; y <= portalY + 4; y++) {
       place(archX, y, y % 3 === 0 ? TILES.COPPER_BLOCK : TILES.MARBLE);
+    }
+  }
+  const torchY = Math.max(temple.interior.top + 2, portalY - 2);
+  for (const side of [-1, 1]) {
+    for (const offsetY of [0, 5]) {
+      place(portalX + side * 8, torchY + offsetY, TILES.TORCH);
     }
   }
   for (let x = portalX - 3; x <= portalX + 3; x++) {

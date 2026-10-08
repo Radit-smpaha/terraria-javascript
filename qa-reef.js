@@ -166,6 +166,12 @@ check('the Tide Gate is dormant between the inner shrines',
 check('the portal floats mid-water, not on the floor',
   !!W.reefPortal && W.reefPortal.y > rb.seaY && W.reefPortal.y < W.surfaceHeights[W.reefPortal.x] - 2,
   W.reefPortal ? 'y=' + W.reefPortal.y + ' floor=' + W.surfaceHeights[W.reefPortal.x] : 'none');
+const templeTorchY = Math.max(W.reefTemple.interior.top + 2, W.reefPortal.y - 2);
+const templeTorches = [-1, 1].flatMap(side => [0, 5].map(offsetY =>
+  W.getTile(W.reefPortal.x + side * 8, templeTorchY + offsetY)));
+check('four temple torches are placed around the Tide Gate',
+  templeTorches.length === 4 && templeTorches.every(tile => tile === TILES.TORCH),
+  templeTorches.join(','));
 let tallestCoral = 0;
 for (const x of reefCols) {
   let run = 0;
@@ -216,8 +222,29 @@ check('coral tiles fill their whole cell with opaque reef color',
     r.width === global.TILE_SIZE && r.height === global.TILE_SIZE));
 check('static water uses the tile cache instead of the per-frame animation pass',
   !W.isAnimatedTile(TILES.WATER));
+let cachedWaterDraws = 0;
+W.drawTileGraphic({ drawImage() { cachedWaterDraws++; } }, TILES.WATER, 0, 0, 4, 4);
+check('reef water draws from its cached tile sprite',
+  cachedWaterDraws === 1, String(cachedWaterDraws));
 check('the ocean backdrop is reused as a cached canvas',
   srcO.includes('_oceanBackgroundCache') && srcO.includes('ctx.drawImage(cache.canvas, 0, 0)'));
+const savedTimeOfDay = W.timeOfDay;
+W.timeOfDay = 0.12;
+const dawnLight = W.daylightFactor();
+W.timeOfDay = 0.32;
+const noonLight = W.daylightFactor();
+W.timeOfDay = 0.56;
+const duskLight = W.daylightFactor();
+W.timeOfDay = 0.75;
+const nightLight = W.daylightFactor();
+W.timeOfDay = savedTimeOfDay;
+check('daylight eases through dawn, dusk, and moonlit night',
+  dawnLight > 0 && dawnLight < 1 && noonLight === 1 &&
+  duskLight > 0 && duskLight < 1 && nightLight === 0,
+  [dawnLight, noonLight, duskLight, nightLight].map(n => n.toFixed(2)).join('/'));
+check('landscape birds and fireflies stay out of reef and space backdrops',
+  /const landBiome = this\.dimension !== 'ocean' && this\.dimension !== 'space'/.test(
+    fs.readFileSync('world.js', 'utf8')));
 const waterX = Math.floor((g.player.x + g.player.width / 2) / global.TILE_SIZE) + 2;
 const waterY = Math.floor((g.player.y + g.player.height / 2) / global.TILE_SIZE);
 const previousTile = W.getTile(waterX, waterY);

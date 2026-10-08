@@ -1341,16 +1341,17 @@ class World {
    * made them pop in on a single frame at dusk/dawn: god rays appeared at full
    * strength the instant the clock crossed 0.95, which was a visible seam in an
    * otherwise smooth sky. This ramps over the same dawn/dusk windows the sky
-   * palette already uses (0.02..0.14 and 0.44..0.58), so a fade here lines up
-   * exactly with the colour change behind it.
+   * palette already uses (0.02..0.22 and 0.42..0.70), so a fade here lines up
+   * with the colour change behind it.
    */
   daylightFactor() {
     const t = this.timeOfDay;
-    if (t <= 0.02 || t >= 0.98) return 0;
-    if (t < 0.14) return (t - 0.02) / 0.12;      // dawn
-    if (t <= 0.44) return 1;                      // full day
-    if (t < 0.58) return 1 - (t - 0.44) / 0.14;   // dusk
-    return 0;                                     // night
+    if (t <= 0.02 || t >= 0.70) return 0;
+    const smooth = (value) => value * value * (3 - 2 * value);
+    if (t < 0.22) return smooth((t - 0.02) / 0.20); // dawn
+    if (t <= 0.42) return 1;                       // full day
+    if (t < 0.70) return 1 - smooth((t - 0.42) / 0.28); // dusk
+    return 0;                                      // night
   }
 
   isMidnight() {
@@ -1404,7 +1405,8 @@ class World {
       const a = stops[i];
       const b = stops[i + 1];
       if (t >= a.t && t <= b.t) {
-        const p = (t - a.t) / Math.max(0.0001, b.t - a.t);
+        const linear = (t - a.t) / Math.max(0.0001, b.t - a.t);
+        const p = linear * linear * (3 - 2 * linear);
         return {
           zenith: this.interpolateColor(a.zenith, b.zenith, p),
           mid: this.interpolateColor(a.mid, b.mid, p),
@@ -1658,6 +1660,10 @@ class World {
     const daylight = this.daylightFactor();
 
     this.renderBiomeDecor(ctx, camera, biome, w, h, t, night);
+    const landBiome = this.dimension !== 'ocean' && this.dimension !== 'space' &&
+      ['snow', 'forest', 'plains', 'savanna', 'swamp'].includes(biome);
+    if (landBiome) this.renderSkyBirds(ctx, w, h, t, daylight, biome);
+    if (landBiome && biome !== 'swamp') this.renderFireflies(ctx, w, h, t, daylight);
     if (biome === 'forest' && daylight > 0.02) {
       this.renderGodRays(ctx, camera, w, h, sun.sunX, sun.sunY, daylight);
     }
@@ -1675,10 +1681,14 @@ class World {
       const fireflyAlpha = 1 - daylight;
       if (fireflyAlpha > 0.02) {
         ctx.save();
-        ctx.fillStyle = `rgba(254, 240, 138, ${(0.9 * fireflyAlpha).toFixed(3)})`;
+        ctx.fillStyle = `rgba(254, 240, 138, ${(0.62 * fireflyAlpha).toFixed(3)})`;
         for (let f = 0; f < 14; f++) {
           const fx = ((f * 211 + t * (12 + f * 2)) % (w + 40)) - 20 - (camera.x * 0.02) % 40;
           const fy = h * 0.55 + ((f * 67) % Math.max(1, h * 0.3)) + Math.sin(t * 1.7 + f) * 8;
+          const pulse = 0.65 + Math.sin(t * 2.4 + f * 3.1) * 0.35;
+          ctx.fillStyle = `rgba(254, 240, 138, ${(0.14 * pulse * fireflyAlpha).toFixed(3)})`;
+          ctx.fillRect(fx - 3, fy - 3, 8, 8);
+          ctx.fillStyle = `rgba(254, 240, 138, ${(0.82 * pulse * fireflyAlpha).toFixed(3)})`;
           ctx.fillRect(fx, fy, 2, 2);
         }
         ctx.restore();
@@ -1859,29 +1869,33 @@ class World {
     }
     ctx.restore();
 
-    const moonAngle = sunAngle + Math.PI;
-    const moonX = cx + Math.cos(moonAngle) * orbDist;
-    const moonY = cy + Math.sin(moonAngle) * orbDist;
-    if (moonY < h + 100) {
+    const moonProgress = Math.max(0, Math.min(1, (this.timeOfDay - 0.55) / 0.4));
+    const moonVisibility = night ? Math.sin(moonProgress * Math.PI) : 0;
+    const moonAngle = Math.PI + moonProgress * Math.PI;
+    const moonOrbit = Math.max(w, h) * 0.42;
+    const moonX = cx + Math.cos(moonAngle) * moonOrbit;
+    const moonY = cy + Math.sin(moonAngle) * moonOrbit;
+    if (moonVisibility > 0.01) {
       ctx.save();
+      const moonGlow = 0.34 * moonVisibility;
       ctx.beginPath();
-      ctx.arc(moonX, moonY, 52, 0, Math.PI * 2);
-      ctx.fillStyle = night ? 'rgba(254, 205, 211, 0.14)' : 'rgba(226, 232, 240, 0.14)';
+      ctx.arc(moonX, moonY, 58, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(191, 219, 254, ${moonGlow.toFixed(3)})`;
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(moonX, moonY, 32, 0, Math.PI * 2);
-      ctx.fillStyle = night ? '#fecdd3' : '#e2e8f0';
-      ctx.shadowColor = night ? '#e11d48' : '#93c5fd';
-      ctx.shadowBlur = 35;
+      ctx.arc(moonX, moonY, 34, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(241, 245, 249, ${moonVisibility.toFixed(3)})`;
+      ctx.shadowColor = '#bfdbfe';
+      ctx.shadowBlur = 48 * moonVisibility;
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.fillStyle = `rgba(0, 0, 0, ${(0.15 * moonVisibility).toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(moonX - 8, moonY - 6, 8, 0, Math.PI * 2);
       ctx.arc(moonX + 10, moonY + 8, 10, 0, Math.PI * 2);
       ctx.arc(moonX + 6, moonY - 12, 5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = 'rgba(10, 14, 32, 0.25)';
+      ctx.fillStyle = `rgba(10, 14, 32, ${(0.25 * moonVisibility).toFixed(3)})`;
       ctx.fillRect(moonX + 4, moonY - 32, 28, 64);
       ctx.restore();
     }
@@ -2063,7 +2077,60 @@ class World {
     ctx.restore();
   }
 
-  // Savanna: dust devils by day, soaring birds, giant low sun glow.
+  renderSkyBirds(ctx, w, h, t, daylight, biome) {
+    if (daylight <= 0.03) return;
+    const period = 21;
+    const shade = biome === 'snow' ? '20, 35, 58' : '27, 38, 31';
+    ctx.save();
+    ctx.fillStyle = `rgba(${shade}, ${(0.68 * daylight).toFixed(3)})`;
+    for (let flock = 0; flock < 3; flock++) {
+      const phase = ((t + flock * 7.1) % period + period) % period;
+      if (phase > 8.5) continue;
+      const direction = flock % 2 === 0 ? 1 : -1;
+      const x = direction > 0
+        ? w + 35 - phase * 92
+        : -35 + phase * 92;
+      const y = h * (0.17 + flock * 0.075) + Math.sin(t * 1.5 + flock) * 9;
+      for (let bird = 0; bird < 3; bird++) {
+        const bx = x + direction * bird * 15;
+        const by = y + Math.sin(t * 2.1 + bird * 1.7 + flock) * 3;
+        const flap = Math.sin(t * 7 + bird * 2 + flock) * 3;
+        ctx.beginPath();
+        ctx.moveTo(bx - 6, by + flap);
+        ctx.quadraticCurveTo(bx - 3, by - 2, bx, by + 1);
+        ctx.quadraticCurveTo(bx + 3, by - 2, bx + 6, by + flap);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.stroke();
+        ctx.fillRect(bx - 1, by, 3, 2);
+      }
+    }
+    ctx.restore();
+  }
+
+  renderFireflies(ctx, w, h, t, daylight) {
+    const darkness = 1 - daylight;
+    if (darkness <= 0.1) return;
+    ctx.save();
+    for (let group = 0; group < 3; group++) {
+      const phase = ((t + group * 9.3) % 30 + 30) % 30;
+      if (phase > 6.5) continue;
+      const count = 3 + group;
+      for (let i = 0; i < count; i++) {
+        const x = (i * 167 + group * 113 + phase * (9 + i)) % w;
+        const y = h * (0.50 + ((i * 37 + group * 19) % 32) / 100) +
+          Math.sin(t * 1.9 + i * 2 + group) * 8;
+        const pulse = 0.55 + 0.45 * Math.sin(t * 3.1 + i * 2.7 + group);
+        ctx.fillStyle = `rgba(253, 224, 71, ${(0.12 * pulse * darkness).toFixed(3)})`;
+        ctx.fillRect(x - 4, y - 4, 10, 10);
+        ctx.fillStyle = `rgba(254, 249, 195, ${(0.82 * pulse * darkness).toFixed(3)})`;
+        ctx.fillRect(x, y, 2, 2);
+      }
+    }
+    ctx.restore();
+  }
+
+  // Savanna: daytime dust devils, with migrating birds rendered for every land biome.
   renderSavannaLife(ctx, camera, w, h, t, night) {
     ctx.save();
     if (!night) {
@@ -2076,16 +2143,6 @@ class World {
           ctx.fillRect(bx + sway, h * 0.45 + sgm * 14, 14 - sgm, 8);
         }
       }
-    }
-    // Birds: 2px flapping "v" silhouettes.
-    ctx.fillStyle = night ? 'rgba(20,20,30,0.8)' : 'rgba(60,30,10,0.7)';
-    for (let b = 0; b < 5; b++) {
-      const bx = ((b * 389 + t * (18 + b * 4)) % (w + 60)) - 30;
-      const by = h * 0.18 + (b % 3) * 34 + Math.sin(t * 1.2 + b) * 8;
-      const flap = Math.sin(t * 6 + b * 2) > 0 ? 1 : 0;
-      ctx.fillRect(bx - 5, by - flap * 2, 5, 2);
-      ctx.fillRect(bx, by - flap * 2, 5, 2);
-      ctx.fillRect(bx - 1, by, 2, 2);
     }
     ctx.restore();
   }
@@ -3782,28 +3839,20 @@ class World {
     const w = camera.viewportWidth;
     const h = camera.viewportHeight;
 
-    // Base ambient light depends on Day/Night & depth
-    let ambientLuminance = 1.0;
-    if (this.isNight()) {
-      ambientLuminance = 0.08; // deep dark night!
-    } else {
-      const t = this.timeOfDay;
-      if (t < 0.2) {
-        ambientLuminance = 0.4 + (t / 0.2) * 0.6;
-      } else if (t > 0.5 && t < 0.6) {
-        ambientLuminance = 1.0 - ((t - 0.5) / 0.1) * 0.85;
-      } else {
-        ambientLuminance = 1.0;
-      }
-    }
+    // Blend surface ambient light through the same smooth dawn/dusk curve as
+    // the sky. Keep a cool moonlit floor so nights remain readable.
+    const daylight = this.daylightFactor();
+    const ambientLuminance = 0.24 + 0.76 * daylight;
 
     // Fill dark mask on lighting canvas (warm at dusk, cold at night)
     lightCtx.clearRect(0, 0, w, h);
-    const nightK = this.isNight() ? 1 : 0;
-    const duskK = (!nightK && this.timeOfDay >= 0.5 && this.timeOfDay < 0.62) ? 1 : 0;
-    const maskR = nightK ? 5 : duskK ? 34 : 5;
-    const maskG = nightK ? 7 : duskK ? 12 : 7;
-    const maskB = nightK ? 18 : duskK ? 26 : 18;
+    const t = this.timeOfDay;
+    const dusk = t >= 0.42 && t < 0.70
+      ? Math.sin(((t - 0.42) / 0.28) * Math.PI)
+      : 0;
+    const maskR = Math.round(10 + dusk * 36);
+    const maskG = Math.round(16 + dusk * 12);
+    const maskB = Math.round(42 - dusk * 8);
     lightCtx.fillStyle = `rgba(${maskR}, ${maskG}, ${maskB}, ${1.0 - ambientLuminance})`;
     lightCtx.fillRect(0, 0, w, h);
 
