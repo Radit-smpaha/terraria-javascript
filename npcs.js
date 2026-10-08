@@ -46,7 +46,7 @@ const NPC_DEFS = [
     ]
   },
   // ---- Lore carriers ----------------------------------------------------
-  // The reef progression (4 pearls -> 4 temple podiums -> Tide Gate -> Leviathan)
+  // The reef progression (4 pearls -> 4 temple podiums -> Tide Gate -> Kraken)
   // and the space progression (Void Rift Beacon -> Ossuary Sovereign) both
   // need clues the player can actually find. Two dedicated talkers stand at
   // the spawn camp: the Old Sailor knows the sea, the Star Watcher knows the
@@ -56,7 +56,7 @@ const NPC_DEFS = [
     name: 'Old Sailor',
     icon: '🎣',
     dx: -16,
-    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. The pearls are scattered across the world, and four podiums await inside the Tide Temple. Mind the pirates... and whatever sleeps beyond the gate.',
+    greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. The Sacred Pearls are scattered across the world, and four podiums await inside the Tide Temple. Mind the pirates... and whatever sleeps beyond the gate.',
     quests: [
       { type: 'collect', items: [{ id: 'fish_clownfish', count: 3 }], desc: 'Bring 3 Reef Clownfish', reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'collect', items: [{ id: 'coral_fragment', count: 8 }], desc: 'Bring 8 Coral Fragments', reward: [{ id: 'swiftness_potion', count: 1 }, { id: 'apple', count: 2 }] },

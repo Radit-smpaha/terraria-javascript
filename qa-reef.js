@@ -1,6 +1,6 @@
 // Reef QA: the band-derived ocean reef (the "ocean was in the snow biome"
 // fix), its pearls/shrines/Tide Gate, diving gear + swim fins + oxygen,
-// reef fish and pirates, the Three-Headed Sea Leviathan, the lore NPCs, the
+// reef fish and pirates, the Abyssal Kraken, the lore NPCs, the
 // guide text, and the save-version migration. Run with: node qa-reef.js
 const fs = require('fs');
 const vm = require('vm');
@@ -248,12 +248,20 @@ check('the temple sanctuary is cleared of water and stray coral', dirtyTempleTil
   String(dirtyTempleTiles));
 check('the sanctuary uses house-style background walls',
   W.walls[(room.top * W.width) + room.left] === 23);
-const savedRoomTile = W.getTile(room.left + 1, room.top + 1);
-W.setTile(room.left + 1, room.top + 1, TILES.CORAL);
-W.buildReefTemple();
-check('temple rebuilding clears coral that grows inside',
-  W.getTile(room.left + 1, room.top + 1) === TILES.AIR);
-W.setTile(room.left + 1, room.top + 1, savedRoomTile);
+  // Probe a genuinely OPEN interior tile (not a pilaster column or roof edge):
+  // find one that is AIR in the freshly built sanctuary, then confirm a coral
+  // block dropped there is swept back to AIR on the next rebuild.
+  let probeX = null, probeY = null;
+  for (let y = room.top + 1; y < room.bottom - 1 && probeX === null; y++) {
+    for (let x = room.left + 2; x <= room.right - 2; x++) {
+      if (W.getTile(x, y) === TILES.AIR) { probeX = x; probeY = y; break; }
+    }
+  }
+  W.setTile(probeX, probeY, TILES.CORAL);
+  W.buildReefTemple();
+  check('temple rebuilding clears coral that grows inside',
+    W.getTile(probeX, probeY) === TILES.AIR);
+  W.setTile(probeX, probeY, TILES.AIR);
 const savedPlayerPosition = { x: g.player.x, y: g.player.y };
 const savedOxygen = g.oxygen;
 g.player.x = (W.reefTemple.portalX + 0.5) * global.TILE_SIZE - g.player.width / 2;
@@ -433,24 +441,26 @@ check('underground cave monster rolls are disabled',
   !srcT.includes("mType = 'cave_bat'"));
 
 // ==========================================================================
-step('7. The Three-Headed Sea Leviathan');
-const boss = new global.OceanLeviathan(100, 100, g);
+step('7. The Abyssal Kraken');
+const boss = new global.Kraken(100, 100, g);
 check('110,000 HP', boss.maxHp === 110000 && boss.hp === 110000, String(boss.maxHp));
-check('middle head takes less damage than the flanks (it is the most op)',
-  boss.scaleDamageFor({ index: 1 }, 100) < boss.scaleDamageFor({ index: 0 }, 100) &&
-  boss.scaleDamageFor({ index: 1 }, 100) < boss.scaleDamageFor({ index: 2 }, 100),
-  [0, 1, 2].map(i => boss.scaleDamageFor({ index: i }, 100)).join('/'));
-check('three heads, the middle one biggest',
-  boss.headTargets().length === 3 && boss.headTargets()[1].r > boss.headTargets()[0].r);
-check('the middle head leads the attack rotation',
-  srcO.includes('roll < 0.45 ? heads[1]'));
-check('water lasers hurt and announce it',
-  srcO.includes('water laser') && srcO.includes('tidal burst'));
+const targets = boss.headTargets();
+const eye = targets.find(t => t.eye);
+const mantle = targets.find(t => t.body);
+check('the glowing eye is the weakpoint (1.4x) and the armoured mantle shrugs off a third (0.65x)',
+  boss.scaleDamageFor(eye, 100) === 140 && boss.scaleDamageFor(mantle, 100) === 65,
+  boss.scaleDamageFor(eye, 100) + '/' + boss.scaleDamageFor(mantle, 100));
+check('four hitpoints: exactly one glowing eye plus three mantle nodes',
+  targets.filter(t => t.eye).length === 1 && targets.filter(t => t.body).length === 3,
+  String(targets.length));
+check('the kit is Ink Blindness, a tentacle slam and hostile ink globs',
+  srcO.includes('ink_burst') && srcO.includes('ink_blindness') &&
+  srcO.includes('tentacle slam') && srcO.includes('fireInkGlobs'));
 check('the boss wears its injuries (scar render keyed to lost HP)',
   srcO.includes('const injury = 1 - this.hp / this.maxHp') &&
-  srcO.includes('WOUNDED SEA LEVIATHAN'));
+  srcO.includes('WOUNDED KRAKEN'));
 check('entering the ocean planet spawns the boss',
-  srcT.includes('new OceanLeviathan(arena.bossX, arena.bossY, this)'));
+  srcT.includes('new Kraken(arena.bossX, arena.bossY, this)'));
 check('the Tide Gate really opens the ocean dimension',
   srcT.includes("openWormhole('ocean'") && srcT.includes('enterOceanDimension()'));
 
@@ -485,7 +495,7 @@ check('the Star Watcher explains the space dimension',
   byId.starwatcher.greeting.includes('Ossuary'));
 check('the guide modal documents the reef ritual',
   html.includes('THE OCEAN REEF') && html.includes('Sacred Pearls') &&
-  html.includes('THREE-HEADED SEA LEVIATHAN'));
+  html.includes('ABYSSAL KRAKEN'));
 check('the guide modal still documents the Ossuary ritual',
   html.includes('WAKING THE SOVEREIGN'));
 check('the creative menu offers dimension teleport and needs-free god mode',

@@ -400,15 +400,23 @@ const NEW_ITEMS = {
   fish_angler: { id: 'fish_angler', name: 'Abyssal Anglerfish', type: 'material', icon: '🐟', stackMax: 256 },
   sacred_pearl: { id: 'sacred_pearl', name: 'Sacred Pearl', type: 'material', icon: '🫧', stackMax: 256 },
   coral_fragment: { id: 'coral_fragment', name: 'Coral Fragment', type: 'material', icon: '🪸', stackMax: 256 },
-  sea_scale: { id: 'sea_scale', name: 'Leviathan Scale', type: 'material', icon: '🔹', stackMax: 256 },
-  leviathan_trophy: { id: 'leviathan_trophy', name: 'Leviathan Trophy', type: 'material', icon: '🐉', stackMax: 1 },
-  leviathan_trident: { id: 'leviathan_trident', name: 'Leviathan Trident', type: 'weapon', weaponType: 'melee', damage: 142, range: 132, useTime: 0.28, icon: '🔱', stackMax: 1 },
+  sea_scale: { id: 'sea_scale', name: 'Kraken Scale', type: 'material', icon: '🔹', stackMax: 256 },
+  kraken_trophy: { id: 'kraken_trophy', name: 'Kraken Trophy', type: 'material', icon: '🦑', stackMax: 1 },
+  leviathan_trident: { id: 'leviathan_trident', name: 'Kraken Trident', type: 'weapon', weaponType: 'melee', damage: 142, range: 132, useTime: 0.28, icon: '🔱', stackMax: 1 },
+  // The Kraken's signature ranged drop: no ammo, ink tendrils that lash on
+  // hit and sometimes lock the target stiff (stun-ink proc on monster hits,
+  // see the projectile→monster path in Game.update).
+  tentacle_gun: {
+    id: 'tentacle_gun', name: 'Tentacle Gun', type: 'weapon', weaponType: 'ranged',
+    damage: 96, projectile: 'ink_tentacle', speed: 16, useTime: 0.16, critBonus: 0.10,
+    usesAmmo: false, stunChance: 0.35, stunDuration: 1.4, icon: '🐙', stackMax: 1
+  },
   diving_gear_1: { id: 'diving_gear_1', name: 'Reef Diver Set', type: 'material', icon: '🤿', oxygen: 18, stackMax: 1 },
   diving_gear_2: { id: 'diving_gear_2', name: 'Tidecaller Set', type: 'material', icon: '🤿', oxygen: 38, stackMax: 1 },
   diving_gear_3: { id: 'diving_gear_3', name: 'Abyssal Suit', type: 'material', icon: '🫧', oxygen: 75, stackMax: 1 },
   swim_fins_1: { id: 'swim_fins_1', name: 'Reef Swim Fins', type: 'material', icon: '🩴', swimSpeed: 1.18, stackMax: 1 },
   swim_fins_2: { id: 'swim_fins_2', name: 'Current fins', type: 'material', icon: '🩴', swimSpeed: 1.34, stackMax: 1 },
-  swim_fins_3: { id: 'swim_fins_3', name: 'Leviathan Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
+  swim_fins_3: { id: 'swim_fins_3', name: 'Kraken Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
   sunken_boot: {
     id: 'sunken_boot', name: 'Sunken Boot', type: 'material',
     icon: '🥾', stackMax: 99
@@ -745,8 +753,13 @@ const RECIPES = [
   { result: { id: 'diving_gear_3', count: 1 }, materials: [{ id: 'diving_gear_2', count: 1 }, { id: 'diamond', count: 8 }, { id: 'sacred_pearl', count: 2 }, { id: 'fish_angler', count: 3 }], name: 'Abyssal Suit (75s oxygen)' },
   { result: { id: 'swim_fins_1', count: 1 }, materials: [{ id: 'wool', count: 4 }, { id: 'fish_turtle', count: 2 }], name: 'Reef Swim Fins' },
   { result: { id: 'swim_fins_2', count: 1 }, materials: [{ id: 'swim_fins_1', count: 1 }, { id: 'fish_turtle', count: 2 }, { id: 'coral_fragment', count: 12 }], name: 'Current Fins' },
-  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Leviathan Fins' },
-  { result: { id: 'leviathan_trident', count: 1 }, materials: [{ id: 'leviathan_trophy', count: 1 }, { id: 'sea_scale', count: 18 }, { id: 'sacred_pearl', count: 4 }], name: 'Leviathan Trident' },
+  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Kraken Fins' },
+  { result: { id: 'leviathan_trident', count: 1 }, materials: [{ id: 'sea_scale', count: 18 }, { id: 'sacred_pearl', count: 4 }], name: 'Kraken Trident' },
+  // Tentacle Gun: the trophy rebuilds a lost gun (the drop is the primary
+  // source; the trophy is the backup — same pattern as the Sovereign's gear).
+  // The trophy is unique per save, so the trident was retargeted to pure
+  // reef materials: both recipes stay reachable with one trophy in hand.
+  { result: { id: 'tentacle_gun', count: 1 }, materials: [{ id: 'kraken_trophy', count: 1 }, { id: 'sea_scale', count: 15 }, { id: 'fish_manta', count: 3 }], name: 'Tentacle Gun' },
   {
     result: { id: 'anglers_charm', count: 1 },
     materials: [{ id: 'gold_ore', count: 6 }, { id: 'crystal', count: 3 }, { id: 'fish_koi', count: 2 }],
@@ -4180,7 +4193,7 @@ class Game {
       dragonHP: (this.boss && this.boss.kind === 'dragon' && !this.boss.dead)
         ? Math.max(1, Math.round(this.boss.hp))
         : (Number.isFinite(this.dragonHP) ? this.dragonHP : null),
-      leviathanHP: (this.boss && this.boss.kind === 'leviathan' && !this.boss.dead)
+      leviathanHP: (this.boss && (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan') && !this.boss.dead)
         ? Math.max(1, Math.round(this.boss.hp))
         : (Number.isFinite(this.leviathanHP) ? this.leviathanHP : null),
       leviathanSlain: this.leviathanSlain === true,
@@ -6518,7 +6531,10 @@ class Game {
       const pMidY = this.player.y + this.player.height / 2;
       const angle = Math.atan2(mouseWorldY - pMidY, mouseWorldX - pMidX);
       // Bowstring release: a quick fan of sparks off the bow, tinted per bow.
-      const bowTint = held.id === 'soulfire_repeater' ? '#fb7185' : held.id === 'ember_bow' ? '#fb923c' : '#bae6fd';
+      // The Tentacle Gun spits violet ink sparks instead of a bowstring flash.
+      const isTentacleGun = held.id === 'tentacle_gun';
+      const bowTint = isTentacleGun ? '#a855f7'
+        : held.id === 'soulfire_repeater' ? '#fb7185' : held.id === 'ember_bow' ? '#fb923c' : '#bae6fd';
       for (let i = 0; i < 7; i++) {
         const a = angle + (Math.random() - 0.5) * 0.9;
         const spd = 1.5 + Math.random() * 3;
@@ -6532,14 +6548,25 @@ class Game {
         pMidX, pMidY,
         Math.cos(angle) * itemData.speed,
         Math.sin(angle) * itemData.speed,
-        'arrow',
+        // Weapons may name their own projectile (Tentacle Gun → ink_tentacle;
+        // gravity in Projectile.update only touches 'arrow', so the tendril
+        // flies flat instead of arcing down out of the reticle).
+        itemData.projectile || 'arrow',
         itemData.damage,
         false,
         3.0
       );
       // Ember and Soulfire arrows leave a themed trail rather than plain air.
-      arrow.arrowTint = held.id === 'soulfire_repeater' ? '#fb7185' : held.id === 'ember_bow' ? '#fb923c' : '#93c5fd';
-      arrow.lightRadius = held.id === 'soulfire_repeater' ? 90 : 0;
+      arrow.arrowTint = isTentacleGun ? '#c084fc'
+        : held.id === 'soulfire_repeater' ? '#fb7185' : held.id === 'ember_bow' ? '#fb923c' : '#93c5fd';
+      arrow.lightRadius = (held.id === 'soulfire_repeater' || isTentacleGun) ? 90 : 0;
+      // Stun-ink rides on the projectile itself: the hit path reads these two
+      // fields, so any weapon can carry a proc without the combat loop ever
+      // having to know which gun fired.
+      if (itemData.stunChance) {
+        arrow.stunChance = itemData.stunChance;
+        arrow.stunDuration = itemData.stunDuration;
+      }
       this.projectiles.push(arrow);
       return;
     }
@@ -6928,7 +6955,7 @@ class Game {
     this.showAnnouncement(intent === 'space'
       ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
       : intent === 'ocean'
-        ? '🌊 THE TIDE GATE OPENS — THE LEVIATHAN STIRS.'
+        ? '🌊 THE TIDE GATE OPENS — THE KRAKEN STIRS.'
         : '🕳️ THE WAY HOME OPENS.');
   }
 
@@ -7166,17 +7193,17 @@ class Game {
     if (this.mp && this.mp.status !== 'idle') {
       this.showToast('This ocean-world expedition is solo-only.');
     }
-    if (!this.leviathanSlain && typeof OceanLeviathan === 'function') {
+    if (!this.leviathanSlain && typeof Kraken === 'function') {
       const hp = Number.isFinite(this.leviathanHP) ? this.leviathanHP : 110000;
-      this.boss = new OceanLeviathan(arena.bossX, arena.bossY, this);
+      this.boss = new Kraken(arena.bossX, arena.bossY, this);
       this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, hp));
       this.leviathanHP = null;
       this.sound.isBoss = true;
       document.getElementById('boss-panel')?.classList.remove('hidden');
-      this.showAnnouncement('🐉 THE THREE-HEADED SEA LEVIATHAN RISES!');
+      this.showAnnouncement('🐙 THE ABYSSAL KRAKEN RISES!');
     } else {
       this.boss = null;
-      this.showToast('🌊 The ocean planet is quiet. The Leviathan you defeated remains gone.');
+      this.showToast('🌊 The ocean planet is quiet. The Kraken you defeated remains gone.');
     }
     this.showToast('🫧 Keep your diving gear close. The Tide Gate behind you returns home.');
   }
@@ -7224,7 +7251,7 @@ class Game {
     // An unfinished fight is banked, not forgotten.
     const fromOcean = this.world.isInOcean();
     if (this.boss && !this.boss.dead && this.boss.kind === 'dragon') this.dragonHP = this.boss.hp;
-    if (this.boss && !this.boss.dead && this.boss.kind === 'leviathan') this.leviathanHP = this.boss.hp;
+    if (this.boss && !this.boss.dead && (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan')) this.leviathanHP = this.boss.hp;
     this.boss = null;
     // The death show belongs to the arena: leaving (or being dragged out by
     // death) ends it. The held victory screen keeps its own timer — the kill
@@ -7266,7 +7293,7 @@ class Game {
       this.player.y + this.player.height / 2 - this.camera.viewportHeight / 2));
     this.showToast(fromOcean
       ? (Number.isFinite(this.leviathanHP)
-        ? '🌊 Back at the reef. The Leviathan remembers the damage it took.'
+        ? '🌊 Back at the reef. The Kraken remembers the damage it took.'
         : '🌊 Back at the reef, with the Tide Gate still behind you.')
       : Number.isFinite(this.dragonHP)
         ? '🕳️ The rift closes. It is still in there, and it remembers every hit.'
@@ -8030,7 +8057,7 @@ this.player.dodgeTime = 0;
       const defeatedKnight = this.boss.kind === 'knight';
       const defeatedDemon = this.boss.kind === 'demon';
       const defeatedDragon = this.boss.kind === 'dragon';
-      const defeatedLeviathan = this.boss.kind === 'leviathan';
+      const defeatedKraken = this.boss.kind === 'kraken' || this.boss.kind === 'leviathan';
       this.stats.bossKills += 1;
       this.journey?.recordActivity('hunt', this.boss.x + this.boss.width / 2, this.boss.y);
       // Remember which bosses this world has ever felled — the journal scores
@@ -8041,26 +8068,26 @@ this.player.dodgeTime = 0;
       this._bossKinds[bossKey] = true;
       if (firstTime) {
         this.logDiscovery(`boss_${bossKey}`,
-          defeatedLeviathan ? '🌊 First Three-Headed Sea Leviathan Defeated!'
+          defeatedKraken ? '🐙 First Abyssal Kraken Defeated!'
             : defeatedDragon ? '🌌 First Ossuary Sovereign Defeated!'
               : defeatedDemon ? '🔥 First Hellbound Demon Defeated!'
                 : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!',
-          defeatedLeviathan ? 1000 : defeatedDragon ? 900 : defeatedDemon ? 600 : 300);
+          defeatedKraken ? 1000 : defeatedDragon ? 900 : defeatedDemon ? 600 : 300);
       }
       const bossPanel = document.getElementById('boss-panel');
       if (bossPanel) bossPanel.classList.add('hidden');
       this.sound.isBoss = false;
-      this.showAnnouncement(defeatedLeviathan
-        ? '🌊 THE THREE-HEADED SEA LEVIATHAN HAS FALLEN!'
+      this.showAnnouncement(defeatedKraken
+        ? '🐙 THE ABYSSAL KRAKEN HAS FALLEN!'
         : defeatedDragon
         ? '🌌 THE OSSUARY SOVEREIGN HAS FALLEN!'
         : defeatedDemon
           ? '🔥 THE HELLBOUND DEMON HAS FALLEN!'
           : defeatedKnight ? '⚔️ THE CURSED KNIGHT IS UNDONE!' : '👑 THE ANCIENT FOREST GUARDIAN HAS BEEN FELLED!');
-      this.feel.slow(defeatedLeviathan ? 2.8 : defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6,
-        defeatedLeviathan ? 0.15 : defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
-      this.feel.shake(defeatedLeviathan ? 2.2 : defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
-      const rewardIds = defeatedLeviathan
+      this.feel.slow(defeatedKraken ? 2.8 : defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6,
+        defeatedKraken ? 0.15 : defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
+      this.feel.shake(defeatedKraken ? 2.2 : defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
+      const rewardIds = defeatedKraken
         ? ['sea_scale', 'coral_fragment', 'fish_manta', 'fish_angler', 'sacred_pearl']
         : defeatedDragon
         ? ['dragonbone', 'meteor_shard', 'nebula_crystal', 'crystal', 'life_crystal', 'mana_crystal']
@@ -8069,17 +8096,20 @@ this.player.dodgeTime = 0;
           : defeatedKnight
             ? ['crystal', 'diamond', 'gold_ore', 'fallen_star', 'life_crystal', 'mana_crystal']
             : ['gold_ore', 'iron_ore', 'crystal', 'diamond', 'fallen_star', 'life_crystal', 'mana_crystal'];
-      const bagCount = defeatedLeviathan ? 12 : defeatedDragon ? 18 : defeatedDemon ? 12 : defeatedKnight ? 7 : 8;
+      const bagCount = defeatedKraken ? 12 : defeatedDragon ? 18 : defeatedDemon ? 12 : defeatedKnight ? 7 : 8;
       for (let i = 0; i < bagCount; i++) {
         this.drops.push(new DropItem(this.boss.x + i * 10 - 40, this.boss.y, rewardIds[i % rewardIds.length],
-          defeatedLeviathan ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
+          defeatedKraken ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
       this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-        defeatedLeviathan ? 'leviathan_trophy'
+        defeatedKraken ? 'kraken_trophy'
           : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
             : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
-      if (defeatedLeviathan) {
+      if (defeatedKraken) {
+        // Both weapons drop straight off the corpse: the trident for melee,
+        // the Tentacle Gun for range. The forge recipes are rebuild backups.
         this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'leviathan_trident', 1));
+        this.drops.push(new DropItem(this.boss.x - 16, this.boss.y - 26, 'tentacle_gun', 1));
         this.leviathanHP = null;
         this.leviathanSlain = true;
       }
@@ -8111,9 +8141,9 @@ this.player.dodgeTime = 0;
       }
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
-      if (defeatedLeviathan) {
-        if (vTitle) vTitle.textContent = '🌊 THE SEA LEVIATHAN IS BROKEN!';
-        if (vLead) vLead.textContent = 'All three heads have fallen. The Tidal Gate remains open, and the ocean planet is yours to explore. Gather Leviathan Scales and craft the trident from its trophy.';
+      if (defeatedKraken) {
+        if (vTitle) vTitle.textContent = '🐙 THE ABYSSAL KRAKEN IS BROKEN!';
+        if (vLead) vLead.textContent = 'The Kraken’s mantle lies still and the ink cloud thins. The Tide Gate remains open, and the ocean planet is yours to explore. Gather Kraken Scales, take the trident and the Tentacle Gun, and craft spares from its trophy.';
       } else if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
         if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it — and they will never fall again, because there is only one of each. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and another Rite of Waking read on them will bring another; it will cost you far more than the first.';
@@ -8300,6 +8330,9 @@ this.player.dodgeTime = 0;
             // whoever is closest to (p.x, p.y) — host or guest.
             this.damagePlayer(p.damage, p.x, 'You were struck down by a projectile.',
               p.fromBoss === true, p.y);
+            // The Kraken's ink globs blind on contact: caught by one means the
+            // ink_blindness debuff on top of the hit (dodge the globs).
+            if (p.type === 'ink_glob') this.buffs.add('ink_blindness', 8);
           }
         }
       } else {
@@ -8323,6 +8356,16 @@ this.player.dodgeTime = 0;
               this.stats.damageDealt += dealt;
               this.feel.stop(crit ? 0.075 : 0.03, 0.07);
               this.feel.shake(crit ? 0.2 : 0.07);
+              // Stun-ink proc: a landed round whose projectile carries
+              // `stunChance` (the Tentacle Gun) can lock the target stiff for
+              // `stunDuration` seconds (Monster.applyStun). Host-owned on
+              // shared mobs, same rule as the venom procs above.
+              if (p.stunChance && !(this.mp && this.mp.isClient) &&
+                  Math.random() < p.stunChance &&
+                  typeof m.applyStun === 'function' && m.applyStun(p.stunDuration || 1.4)) {
+                this.particles.magicSparkle(mMidX, mMidY, '#c084fc', 8);
+                this.particles.addDamageText(mMidX, mMidY - 6, 'STUN', '#c084fc', false);
+              }
             }
             break;
           }
@@ -8854,6 +8897,33 @@ this.player.dodgeTime = 0;
     if (this.wormhole) this.wormhole.renderScreenOverlay(out, this.canvas.width, this.canvas.height);
     // The Sovereign's white-out rides the same unscaled output layer.
     if (this.dragonFinale) this.dragonFinale.renderScreenOverlay(out, this.canvas.width, this.canvas.height);
+    // Ink Blindness vignette: creeping violet ink pooling at the edges of the
+    // screen, drawn on the UNSIZED output layer (like the wormhole overlay) so
+    // it stays crisp at any render scale. Opacity pulses with the buff clock.
+    if (this.buffs && this.buffs.has('ink_blindness')) {
+      const w = this.canvas.width;
+      const h = this.canvas.height;
+      const t = performance.now() * 0.001;
+      const g = out.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.28, w / 2, h / 2, Math.max(w, h) * 0.72);
+      g.addColorStop(0, 'rgba(76, 29, 149, 0)');
+      g.addColorStop(0.6, 'rgba(76, 29, 149, 0.22)');
+      g.addColorStop(1, 'rgba(30, 7, 50, 0.85)');
+      out.save();
+      out.globalAlpha = 0.85 + Math.sin(t * 2.4) * 0.1;
+      out.fillStyle = g;
+      out.fillRect(0, 0, w, h);
+      // Drifting ink blots so the blindness reads as ink, not a vignette filter.
+      out.fillStyle = 'rgba(46, 16, 74, 0.5)';
+      for (let i = 0; i < 5; i++) {
+        const bx = (Math.sin(t * 0.7 + i * 2.1) * 0.5 + 0.5) * w;
+        const by = (Math.cos(t * 0.55 + i * 1.7) * 0.5 + 0.5) * h;
+        const br = 26 + Math.sin(t * 1.9 + i) * 10;
+        out.beginPath();
+        out.ellipse(bx, by, br, br * 0.7, i, 0, Math.PI * 2);
+        out.fill();
+      }
+      out.restore();
+    }
     if (this.showFps) this.renderFpsBadge();
   }
 

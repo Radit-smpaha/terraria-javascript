@@ -187,6 +187,14 @@ const BUFF_DEFS = {
     name: "Miner's Focus", icon: '⛏️', color: '#fbbf24', good: true,
     modifiers: { mining: 2.0 }
   },
+  ink_blindness: {
+    // Kraken ink in the eyes: swings land softer, crits dry up, and your
+    // footing drags — pure downside, which is what `good: false` says to the
+    // HUD (the chip renders with the debuff pulse). Chip render + duration
+    // bookkeeping come free from BuffSystem; only the modifiers are here.
+    name: 'Ink Blindness', icon: '🟣', color: '#a855f7', good: false,
+    modifiers: { damage: 0.78, crit: -0.08, speed: 0.85 }
+  },
 };
 
 class BuffSystem {

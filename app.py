@@ -136,7 +136,7 @@ def build_inline_html() -> str | None:
             "entities.js": "Player",
             "underworld.js": "UnderworldMonster",
             "space.js": "SkeletonDragonBoss",
-            "ocean.js": "OceanLeviathan",
+            "ocean.js": "Kraken",
             "juice.js": "GameFeel",
             "npcs.js": "NPCManager",
             "journey.js": "JourneySystem",

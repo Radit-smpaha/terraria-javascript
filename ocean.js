@@ -10,7 +10,13 @@ const OCEAN_TILES = {
   TALL_CORAL: 79,
   TEMPLE_LEVER: 80,
   TEMPLE_LEVER_PULLED: 81,
-  TEMPLE_DOOR: 82
+  TEMPLE_DOOR: 82,
+  // Shipwreck furniture on the ocean-planet islands. WRECK_PLANK and WRECK_HULL
+  // are solid and drop loot when mined, so a wreck is a place you break open
+  // rather than a decorative prop. WRECK_MAST is a climbable mast (platform).
+  WRECK_PLANK: 83,
+  WRECK_HULL: 84,
+  WRECK_MAST: 85
 };
 const OCEAN_TILE_SET = new Set(Object.values(OCEAN_TILES));
 const OCEAN_WATER_TILE_CACHE = [];
@@ -47,6 +53,9 @@ TILES.TALL_CORAL = OCEAN_TILES.TALL_CORAL;
 TILES.TEMPLE_LEVER = OCEAN_TILES.TEMPLE_LEVER;
 TILES.TEMPLE_LEVER_PULLED = OCEAN_TILES.TEMPLE_LEVER_PULLED;
 TILES.TEMPLE_DOOR = OCEAN_TILES.TEMPLE_DOOR;
+TILES.WRECK_PLANK = OCEAN_TILES.WRECK_PLANK;
+TILES.WRECK_HULL = OCEAN_TILES.WRECK_HULL;
+TILES.WRECK_MAST = OCEAN_TILES.WRECK_MAST;
 
 Object.assign(TILE_PROPERTIES, {
   [OCEAN_TILES.PEARL]: { solid: true, light: 11, color: '#67e8f9', name: 'Sacred Pearl', drops: { id: 'sacred_pearl', count: 1 } },
@@ -58,7 +67,12 @@ Object.assign(TILE_PROPERTIES, {
   [OCEAN_TILES.TALL_CORAL]: { solid: false, light: 3, color: '#c084fc', name: 'Tall Reef Coral', drops: { id: 'coral_fragment', count: 1 } },
   [OCEAN_TILES.TEMPLE_LEVER]: { solid: false, light: 2, color: '#fbbf24', name: 'Tide Temple Lever', drops: null },
   [OCEAN_TILES.TEMPLE_LEVER_PULLED]: { solid: false, light: 3, color: '#22d3ee', name: 'Pulled Tide Temple Lever', drops: null },
-  [OCEAN_TILES.TEMPLE_DOOR]: { solid: true, light: 0, color: '#64748b', name: 'Tide Temple Door', drops: null }
+  [OCEAN_TILES.TEMPLE_DOOR]: { solid: true, light: 0, color: '#64748b', name: 'Tide Temple Door', drops: null },
+  // Wreck tiles drop real salvage: planks give wood, the hull gives iron (a
+  // wreck is the ocean's ore seam), and the mast is climbable and gives wood.
+  [OCEAN_TILES.WRECK_PLANK]: { solid: true, light: 0, color: '#5b4636', name: 'Rotten Plank', drops: { id: 'wood', count: 2 } },
+  [OCEAN_TILES.WRECK_HULL]: { solid: true, light: 0, color: '#3f3226', name: 'Barnacled Hull', drops: { id: 'iron_ore', count: 2 } },
+  [OCEAN_TILES.WRECK_MAST]: { solid: false, light: 0, color: '#7c5a3a', name: 'Broken Mast', isPlatform: true, drops: { id: 'wood', count: 3 } }
 });
 
 const OCEAN_BASE_DRAW_TILE = World.prototype.drawTileGraphic;
@@ -215,6 +229,56 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     ctx.fillRect(sx + 8, sy + 17, 8, 2);
     ctx.fillStyle = '#fbbf24';
     ctx.fillRect(sx + 16, sy + 11, 3, 3);
+  } else if (tile === OCEAN_TILES.WRECK_PLANK) {
+    // Weather-beaten planks: a dark hull board with pale grain and a rusted nail.
+    ctx.fillStyle = '#2f241a';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = '#5b4636';
+    ctx.fillRect(sx + 1, sy + 2, TILE_SIZE - 2, 9);
+    ctx.fillRect(sx + 1, sy + 13, TILE_SIZE - 2, 9);
+    ctx.fillStyle = '#7a6144';
+    ctx.fillRect(sx + 1, sy + 3, TILE_SIZE - 2, 2);
+    ctx.fillRect(sx + 1, sy + 14, TILE_SIZE - 2, 2);
+    ctx.fillStyle = '#3b2f22';
+    ctx.fillRect(sx + 4, sy + 11, TILE_SIZE - 8, 2);
+    ctx.fillStyle = '#8a9aa8';
+    ctx.fillRect(sx + 5, sy + 5, 2, 2);
+    ctx.fillRect(sx + 16, sy + 16, 2, 2);
+  } else if (tile === OCEAN_TILES.WRECK_HULL) {
+    // A curved hull plate crusted with barnacles and hanging weed.
+    ctx.fillStyle = '#241c14';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = '#3f3226';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + 3);
+    ctx.quadraticCurveTo(sx + 12, sy - 2, sx + TILE_SIZE, sy + 3);
+    ctx.lineTo(sx + TILE_SIZE, sy + TILE_SIZE - 2);
+    ctx.quadraticCurveTo(sx + 12, sy + TILE_SIZE + 2, sx, sy + TILE_SIZE - 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#57483a';
+    ctx.fillRect(sx + 2, sy + 7, TILE_SIZE - 4, 2);
+    ctx.fillRect(sx + 2, sy + 15, TILE_SIZE - 4, 2);
+    ctx.fillStyle = '#8fb3a3';
+    ctx.fillRect(sx + 4, sy + 10, 2, 2);
+    ctx.fillRect(sx + 15, sy + 4, 2, 2);
+    ctx.fillRect(sx + 9, sy + 18, 2, 2);
+    ctx.fillStyle = '#2f5f4a';
+    ctx.fillRect(sx + 18, sy + 20, 3, 3);
+    ctx.fillRect(sx + 3, sy + 1, 2, 3);
+  } else if (tile === OCEAN_TILES.WRECK_MAST) {
+    // A leaning, splintered mast you can stand on — an actual platform tile.
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+    ctx.clearRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = '#6b4f33';
+    ctx.fillRect(sx + 8, sy, 8, TILE_SIZE);
+    ctx.fillStyle = '#8a6a45';
+    ctx.fillRect(sx + 9, sy, 3, TILE_SIZE);
+    ctx.fillStyle = '#4a3623';
+    ctx.fillRect(sx + 13, sy + 4, 2, 6);
+    ctx.fillRect(sx + 8, sy + 14, 2, 5);
+    ctx.fillStyle = '#3b2f22';
+    ctx.fillRect(sx + 2, sy + 2, 20, 3);
   } else {
     const coralColors = [
       ['#fb7185', '#f472b6', '#fecdd3'],
@@ -898,31 +962,174 @@ World.prototype.repairLegacyReef = function(version) {
   return true;
 };
 
+World.prototype.buildOceanShipwreck = function(cx, groundY, seaY) {
+  if (cx < 4 || cx >= this.width - 4) return;
+  const set = (x, y, tile) => {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+    // Never carve a wreck into open water: a column whose ground is still
+    // below the waterline is left alone, so the hull always sits on dry sand.
+    this.setTile(x, y, tile);
+  };
+  const waterline = Number.isFinite(seaY) ? seaY
+    : (this.oceanArena ? this.oceanArena.seaY : this.surfaceHeights[cx]);
+  const dry = (x) => x >= 0 && x < this.width && this.surfaceHeights[x] < waterline;
+  // A broken hull: a wide, low arc of barnacled hull with a plank deck on top,
+  // sitting on the beach. The prow is lifted and cracked open so it reads as
+  // wrecked rather than moored.
+  const hullLeft = cx - 4;
+  const hullRight = cx + 4;
+  for (let x = hullLeft; x <= hullRight; x++) {
+    if (!dry(x)) continue;
+    const t = (x - hullLeft) / Math.max(1, hullRight - hullLeft);
+    // Hull is deepest in the middle and rises toward both broken ends.
+    const rise = Math.round(Math.abs(t - 0.5) * 4);
+    const deckY = groundY - 3 + rise;
+    for (let y = deckY + 1; y <= groundY; y++) set(x, y, OCEAN_TILES.WRECK_HULL);
+    set(x, deckY, OCEAN_TILES.WRECK_PLANK);
+  }
+  // The cracked stern stands a little higher and opens into a cabin mouth.
+  for (let y = groundY - 6; y <= groundY - 3; y++) {
+    set(hullLeft, y, OCEAN_TILES.WRECK_HULL);
+    set(hullRight, y, OCEAN_TILES.WRECK_HULL);
+  }
+  set(hullLeft, groundY - 7, OCEAN_TILES.WRECK_PLANK);
+  set(hullRight, groundY - 7, OCEAN_TILES.WRECK_PLANK);
+  // Interior air pocket inside the hull, so there is somewhere to stand.
+  for (let x = hullLeft + 1; x < hullRight; x++) {
+    for (let y = groundY - 2; y <= groundY - 1; y++) set(x, y, TILES.AIR);
+  }
+  // A leaning, broken mast — climbable planks rising out of the deck.
+  const mastX = cx + 1;
+  const mastTop = groundY - 13;
+  for (let y = mastTop; y <= groundY - 4; y++) set(mastX, y, OCEAN_TILES.WRECK_MAST);
+  // A cross-yard near the top, with one broken half missing.
+  set(mastX - 1, mastTop + 3, OCEAN_TILES.WRECK_MAST);
+  set(mastX - 2, mastTop + 3, OCEAN_TILES.WRECK_MAST);
+  set(mastX + 1, mastTop + 5, OCEAN_TILES.WRECK_PLANK);
+  // A couple of chests half-buried in the sand, so the loot is on the shore too.
+  this.oceanWreckChests = this.oceanWreckChests || [];
+  if (dry(hullLeft + 1)) this.oceanWreckChests.push({ x: hullLeft + 1, y: groundY - 1 });
+  if (dry(hullRight - 1)) this.oceanWreckChests.push({ x: hullRight - 1, y: groundY - 1 });
+  this._tileCacheDirty = true;
+};
+
 World.prototype.generateOceanPlanet = function() {
   this.tiles.fill(TILES.AIR);
   this.walls.fill(0);
   const seaY = Math.max(24, Math.floor(this.height * 0.24));
   const floorY = this.height - 18;
   this.surfaceHeights.fill(floorY);
+
+  // ---- The abyssal planet is a WORLD OF ISLANDS, not a tank of water ----
+  // The sea surface (seaY) and the seabed (floorY) stay flat, but a handful of
+  // rolling islands rise out of the water. The player spawns on the first one;
+  // the rest are places to explore. Every column is still carved the same way
+  // (bedrock, water, seabed), so the island bumps are the only irregularity and
+  // nothing here can produce a floating tile.
+  const islandCount = 5 + Math.floor(Math.random() * 3);
+  const islands = [];
+  const minGap = 34;
+  const margin = 24;
+  const usable = Math.max(1, this.width - margin * 2);
+  for (let i = 0; i < islandCount; i++) {
+    // Evenly spaced with jitter, so no two islands ever merge into one blob.
+    const base = margin + (usable * (i + 0.5)) / islandCount;
+    const jitter = (Math.random() - 0.5) * (usable / islandCount) * 0.5;
+    const cx = Math.max(margin, Math.min(this.width - margin - 1,
+      Math.round(base + jitter)));
+    if (islands.some(other => Math.abs(other.cx - cx) < minGap)) continue;
+    const halfWidth = 9 + Math.floor(Math.random() * 9);
+    const height = 6 + Math.floor(Math.random() * 9);
+    islands.push({ cx, halfWidth, height });
+  }
+
+  // A smooth, deterministic height profile for the whole world. The base
+  // ground is the deep seabed (floorY); each island is a broad cosine mound
+  // that rises all the way above the waterline, so its flanks pass through
+  // seaY as a beach and its crown is dry land.
+  const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
-    for (let y = seaY; y < floorY; y++) this.setTile(x, y, TILES.WATER);
-    this.setTile(x, floorY, TILES.SANDSTONE);
-    for (let y = floorY + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
-    if (x % 13 === 0) {
-      for (let k = 1; k <= 1 + (x % 3); k++) this.setTile(x, floorY - k, TILES.CORAL);
+    let ground = floorY;
+    for (const island of islands) {
+      const d = Math.abs(x - island.cx);
+      if (d > island.halfWidth) continue;
+      const t = d / island.halfWidth;
+      const bump = Math.cos((t * Math.PI) / 2);
+      const surf = Math.round(floorY - (floorY - (seaY - island.height)) * bump);
+      if (surf < ground) ground = surf;
     }
+    groundHeight[x] = ground;
+  }
+
+  for (let x = 0; x < this.width; x++) {
+    const ground = groundHeight[x];
+    this.surfaceHeights[x] = ground;
+    const islandColumn = ground < seaY;
+    // Flood every air tile between the waterline and the ground. Over open
+    // ocean that is the whole water column; over an island it is only the
+    // shallow shelf around the beach.
+    for (let y = seaY; y < ground; y++) this.setTile(x, y, TILES.WATER);
+    // Beach/soil for the exposed island cap, then the seabed proper.
+    if (islandColumn) {
+      this.setTile(x, ground, TILES.SAND);
+      for (let y = ground + 1; y < ground + 4 && y < this.height; y++) {
+        this.setTile(x, y, TILES.DIRT);
+      }
+      for (let y = ground + 4; y < this.height; y++) this.setTile(x, y, TILES.STONE);
+    } else {
+      this.setTile(x, ground, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
+      for (let y = ground + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
+    }
+    // Coral gardens still dress the deep reef, but never inside an island.
+    if (!islandColumn && x % 13 === 0) {
+      for (let k = 1; k <= 1 + (x % 3); k++) {
+        if (this.getTile(x, ground - k) === TILES.WATER) this.setTile(x, ground - k, TILES.CORAL);
+      }
+    }
+  }
+
+  // ---- Shipwrecks: lootable ruins on the island shores ----
+  // Each wreck is a broken hull half-buried in the beach, with a cracked mast,
+  // and every plank tile carries loot (see OCEAN_TILES.WRECK_PLANK). A `wreck`
+  // record is kept so the save migration and the minimap can find them again.
+  this.shipwrecks = [];
+  this.oceanWreckChests = [];
+  for (const island of islands) {
+    if (island.height < 6) continue; // only the substantial islands keep a wreck
+    const side = Math.random() < 0.5 ? -1 : 1;
+    // Walk out from the crown toward the chosen shore until the ground is
+    // comfortably dry, so the whole hull sits on land instead of half-flooded.
+    let wx = null;
+    for (let step = 0; step <= island.halfWidth; step++) {
+      const candidate = island.cx + side * step;
+      if (candidate < 6 || candidate > this.width - 7) break;
+      if (groundHeight[candidate] <= seaY - 2) { wx = candidate; break; }
+    }
+    if (wx === null) continue;
+    const ground = groundHeight[wx];
+    this.buildOceanShipwreck(wx, ground, seaY);
+    this.shipwrecks.push({ x: wx, y: ground, side });
   }
 
   const portalX = Math.floor(this.width * 0.33);
   for (let y = floorY - 4; y < floorY; y++) this.setTile(portalX, y, TILES.OCEAN_PORTAL);
+
+  // Spawn on the first island's beach, not in open water. The boss rises over
+  // the second island so the arena is a real place with ground to fight on.
+  const spawnIsland = islands[0];
+  const bossIsland = islands[1] || islands[0];
+  const spawnX = spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34);
+  const bossX = bossIsland ? bossIsland.cx : Math.floor(this.width * 0.38);
   const arena = {
     seaY,
     floorY,
     portalX,
-    spawnX: Math.floor(this.width * 0.34) * TILE_SIZE,
-    spawnY: (floorY - 7) * TILE_SIZE,
-    bossX: Math.floor(this.width * 0.38) * TILE_SIZE,
-    bossY: (floorY - 11) * TILE_SIZE
+    islands,
+    shipwrecks: this.shipwrecks,
+    spawnX: spawnX * TILE_SIZE,
+    spawnY: (Math.max(2, groundHeight[spawnX] - 2)) * TILE_SIZE,
+    bossX: bossX * TILE_SIZE,
+    bossY: (Math.max(2, groundHeight[bossX] - 12)) * TILE_SIZE
   };
   this.oceanArena = arena;
   this.underworldStart = this.height + 1000;
@@ -1113,37 +1320,59 @@ class OceanFish {
   }
 }
 
-class OceanLeviathan {
+// ============================================================
+// THE ABYSSAL KRAKEN — the ocean-planet boss.
+//
+// Replaces the three-headed Sea Leviathan wholesale: one giant mantle,
+// eight animated tentacles, and a single glowing eye that is the fight's
+// whole damage story — the eye weakpoint soaks 1.4x while the armoured
+// mantle shrugs off a third of every blow, so players learn to aim.
+//
+// Kit: a telegraphed Ink Blindness burst (catching you inside it applies
+// the ink_blindness debuff — see juice.js BUFF_DEFS), a tentacle slam,
+// and volleys of hostile ink globs that blind on contact.
+//
+// The old name stays exported (window.OceanLeviathan) because app.py's
+// inline probe, the HTML onload probe and older hooks still look for it —
+// the Kraken simply occupies the slot the Leviathan used to hold.
+// ============================================================
+class Kraken {
   constructor(x, y, game) {
-    this.kind = 'leviathan';
-    this.name = 'THREE-HEADED SEA LEVIATHAN';
+    this.kind = 'kraken';
+    this.name = 'ABYSSAL KRAKEN';
     this.x = x;
     this.y = y;
-    this.width = 320;
-    this.height = 150;
+    this.width = 340;
+    this.height = 230;
     this.maxHp = 110000;
     this.hp = 110000;
     this.phase = 1;
     this.dead = false;
     this.game = game;
-    this.lightRadius = 260;
+    this.lightRadius = 270;
     this.glowRadius = 150;
-    this.lightColor = [34, 211, 238];
+    this.lightColor = [168, 85, 247];
     this.animT = 0;
     this.attackTimer = 2.3;
-    this.beamTimer = 0;
-    this.beam = null;
-    this.surgeTimer = 0;
-    this.surge = null;
+    /** Armed telegraphed skill: { type, x, y, radius, timer, total } */
+    this.pending = null;
     this.hitFlash = 0;
   }
 
+  /**
+   * Hittable points: the glowing eye (weakpoint, `eye: true`) and three
+   * armoured mantle nodes (`body: true`). Tentacle roots are decorative —
+   * swings along the skirt still land on a mantle node, so melee never
+   * whiffs against a body that visually fills the arc.
+   */
   headTargets() {
     const cx = this.x + this.width * 0.5;
+    const bob = Math.sin(this.animT * 2) * 6;
     return [
-      { x: cx - 105, y: this.y + 12 + Math.sin(this.animT * 2) * 8, r: 37, head: true, index: 0 },
-      { x: cx, y: this.y - 10 + Math.sin(this.animT * 2.4) * 8, r: 47, head: true, index: 1 },
-      { x: cx + 105, y: this.y + 12 + Math.sin(this.animT * 1.8 + 1) * 8, r: 37, head: true, index: 2 }
+      { x: cx, y: this.y + 52 + bob, r: 28, head: true, eye: true, index: 0 },
+      { x: cx - 74, y: this.y + 84 + bob * 0.5, r: 44, body: true, index: 1 },
+      { x: cx + 74, y: this.y + 84 + bob * 0.5, r: 44, body: true, index: 2 },
+      { x: cx, y: this.y + 124, r: 52, body: true, index: 3 }
     ];
   }
 
@@ -1160,11 +1389,11 @@ class OceanLeviathan {
   }
 
   scaleDamageFor(target, damage) {
-    // The crowned middle head is the apex of the fight: it shrugs off nearly
-    // a third of what the flanks eat, so players break the two side heads
-    // first and face the core last. The middle head also lands harder (its
-    // beams carry a centre bonus) and attacks far more often.
-    return Math.max(1, Math.round(damage * (target && target.index === 1 ? 0.72 : 1)));
+    // The eye is the whole fight: it eats 1.4x. The armoured mantle shrugs
+    // off a third of everything (0.65x). Aiming at the glow is rewarded;
+    // flailing at the body grinds through 110k HP the slow way.
+    const mult = target && target.eye ? 1.4 : target && target.body ? 0.65 : 1;
+    return Math.max(1, Math.round(damage * mult));
   }
 
   takeDamage(amount, sound, particles, critical = false) {
@@ -1175,21 +1404,21 @@ class OceanLeviathan {
     if (sound) sound.playHit();
     if (particles) {
       particles.addDamageText(this.x + this.width / 2, this.y, damage,
-        critical ? '#fef08a' : '#a5f3fc', critical);
-      particles.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#67e8f9', 5);
+        critical ? '#fef08a' : '#d8b4fe', critical);
+      particles.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#a855f7', 5);
     }
     const phase = this.hp <= this.maxHp / 3 ? 3 : this.hp <= this.maxHp * 2 / 3 ? 2 : 1;
     if (phase > this.phase) {
       this.phase = phase;
-      this.name = phase === 3 ? 'WOUNDED SEA LEVIATHAN · LAST TIDE'
-        : 'INJURED SEA LEVIATHAN · RISING STORM';
+      this.name = phase === 3 ? 'WOUNDED KRAKEN · LAST INK'
+        : 'ENRAGED KRAKEN · INK STORM';
       if (sound) sound.playBossRoar();
       if (this.game && this.game.feel) this.game.feel.shake(0.8);
     }
     if (this.hp <= 0) {
       this.dead = true;
       if (sound) sound.playExplosion();
-      if (particles) particles.magicSparkle(this.x + this.width / 2, this.y, '#a5f3fc', 100);
+      if (particles) particles.magicSparkle(this.x + this.width / 2, this.y, '#a855f7', 100);
     }
     return damage;
   }
@@ -1206,70 +1435,129 @@ class OceanLeviathan {
   update(dt, target, projectiles, sound, particles) {
     this.animT += dt;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
+
+    // Wind up the armed telegraph; it resolves through resolvePending().
+    if (this.pending) {
+      this.pending.timer -= dt;
+      if (this.pending.timer <= 0) this.resolvePending(sound, particles);
+    }
+
     this.attackTimer -= dt;
-    if (this.beamTimer > 0) {
-      this.beamTimer -= dt;
-      if (this.beamTimer <= 0 && this.beam) {
-        const player = this.game.player;
-        const px = player.x + player.width / 2;
-        const py = player.y + player.height / 2;
-        const bx = this.beam.x;
-        const by = this.beam.y;
-        if (Math.abs(py - by) < 27 && px >= bx - 24 && px <= bx + this.beam.length + 24) {
-          const centerBonus = this.beam.head === 1 ? 24 : 0;
-          this.game.damagePlayer(42 + this.phase * 13 + centerBonus, bx, 'The Leviathan’s water laser struck you!', true, by);
-        }
-        this.beam = null;
-      }
-    }
-    if (this.surgeTimer > 0) {
-      this.surgeTimer -= dt;
-      if (this.surgeTimer <= 0 && this.surge) {
-        const px = this.game.player.x + this.game.player.width / 2;
-        const py = this.game.player.y + this.game.player.height / 2;
-        if (Math.hypot(px - this.surge.x, py - this.surge.y) <= this.surge.radius) {
-          this.game.damagePlayer(35 + this.phase * 12, this.surge.x, 'A Leviathan tidal burst caught you!', true, this.surge.y);
-        }
-        this.surge = null;
-      }
-    }
-    if (this.attackTimer <= 0 && target && !this.beam && !this.surge) {
-      // Nearly half the attacks come from the middle head — the most op one.
-      const heads = this.headTargets();
-      const roll = Math.random();
-      const head = roll < 0.45 ? heads[1] : roll < 0.725 ? heads[0] : heads[2];
+    if (this.attackTimer <= 0 && target && !this.pending) {
       const px = target.x + target.width / 2;
       const py = target.y + target.height / 2;
-      if (Math.random() < 0.32) {
-        this.surge = { x: px, y: py, radius: 120 + this.phase * 18, head: head.index };
-        this.surgeTimer = 0.85;
-      } else {
-        const bx = Math.min(head.x, px);
-        this.beam = { x: bx, y: py, length: Math.abs(px - head.x), head: head.index };
-        this.beamTimer = 0.75;
+      const roll = Math.random();
+      if (roll < 0.40) {
+        // INK BLINDNESS BURST — telegraphed circle on your position; caught
+        // inside means the debuff, not just damage. Dodge = counterplay.
+        this.pending = {
+          type: 'ink_burst', x: px, y: py,
+          radius: 130 + this.phase * 20, timer: 0.95, total: 0.95
+        };
+      } else if (roll < 0.70) {
+        // TENTACLE SLAM — same telegraph shape, pure damage, no debuff.
+        this.pending = {
+          type: 'slam', x: px, y: py,
+          radius: 95 + this.phase * 15, timer: 0.7, total: 0.7
+        };
+      } else if (projectiles && typeof Projectile === 'function') {
+        // INK GLOB VOLLEY — immediate spread of hostile globs.
+        this.fireInkGlobs(target, projectiles);
       }
-      this.attackTimer = Math.max(1.6, 3.4 - this.phase * 0.55);
+      // (In a QA sandbox with no Projectile class the volley branch is
+      // skipped and the cooldown simply recycles — never a thrown ReferenceError.)
+      this.attackTimer = Math.max(1.5, 3.3 - this.phase * 0.55);
       if (sound) sound.playBossRoar();
     }
   }
 
-  renderTelegraph(ctx, camera) {
-    ctx.save();
-    if (this.beam && this.beamTimer > 0) {
-      ctx.strokeStyle = `rgba(103,232,249,${0.45 + Math.sin(this.animT * 18) * 0.2})`;
-      ctx.lineWidth = 5;
-      ctx.setLineDash([12, 8]);
-      ctx.beginPath();
-      ctx.moveTo(this.beam.x - camera.x, this.beam.y - camera.y);
-      ctx.lineTo(this.beam.x + this.beam.length - camera.x, this.beam.y - camera.y);
-      ctx.stroke();
+  /** Resolve a spent telegraph: damage, the blindness debuff, and the show. */
+  resolvePending(sound, particles) {
+    const p = this.pending;
+    this.pending = null;
+    if (!p) return;
+    const player = this.game && this.game.player;
+    if (p.type === 'ink_burst') {
+      if (particles) particles.magicSparkle(p.x, p.y, '#7c3aed', 24);
+      if (player) {
+        const px = player.x + player.width / 2;
+        const py = player.y + player.height / 2;
+        if (Math.hypot(px - p.x, py - p.y) <= p.radius) {
+          this.game.damagePlayer(30 + this.phase * 10, p.x,
+            'The Kraken’s ink cloud blinded you!', true, p.y);
+          if (this.game.buffs) this.game.buffs.add('ink_blindness', 14);
+          if (this.game.feel) this.game.feel.shake(0.35);
+        }
+      }
+    } else {
+      if (particles) particles.bloodBurst(p.x, p.y, '#155e75', 16);
+      if (player) {
+        const px = player.x + player.width / 2;
+        const py = player.y + player.height / 2;
+        if (Math.hypot(px - p.x, py - p.y) <= p.radius) {
+          this.game.damagePlayer(44 + this.phase * 14, p.x,
+            'A Kraken tentacle slam crushed you!', true, p.y);
+        }
+      }
     }
-    if (this.surge && this.surgeTimer > 0) {
-      ctx.setLineDash([8, 6]);
-      ctx.strokeStyle = `rgba(103,232,249,${0.5 + Math.sin(this.animT * 20) * 0.25})`;
+    if (sound) sound.playHit();
+  }
+
+  /** A fan of hostile ink globs aimed at the player. Blind on contact. */
+  fireInkGlobs(target, projectiles) {
+    const cx = this.x + this.width * 0.5;
+    const cy = this.y + this.height * 0.42;
+    const px = target.x + target.width / 2;
+    const py = target.y + target.height / 2;
+    const base = Math.atan2(py - cy, px - cx);
+    const count = 2 + this.phase;
+    const speed = 5.2;
+    for (let i = 0; i < count; i++) {
+      const a = base + (i - (count - 1) / 2) * 0.22;
+      const glob = new Projectile(cx, cy,
+        Math.cos(a) * speed, Math.sin(a) * speed,
+        'ink_glob', 24 + this.phase * 6, true, 3.5, 70);
+      glob.fromBoss = true;
+      projectiles.push(glob);
+    }
+  }
+
+  renderTelegraph(ctx, camera) {
+    const p = this.pending;
+    if (!p) return;
+    ctx.save();
+    const sx = p.x - camera.x;
+    const sy = p.y - camera.y;
+    const k = 1 - Math.max(0, p.timer) / p.total; // 0 → 1 as it winds up
+    const pulse = 0.5 + Math.sin(this.animT * 22) * 0.25;
+    if (p.type === 'ink_burst') {
+      // The full blast radius, plus a dark fill that closes in as time runs.
+      ctx.setLineDash([12, 8]);
       ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(168, 85, 249, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
       ctx.beginPath();
-      ctx.arc(this.surge.x - camera.x, this.surge.y - camera.y, this.surge.radius, 0, Math.PI * 2);
+      ctx.arc(sx, sy, p.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(59, 7, 100, ' + (0.15 + 0.35 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.radius * (0.7 + 0.3 * k), 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Crosshair so the slam point reads at a glance.
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx - 14, sy);
+      ctx.lineTo(sx + 14, sy);
+      ctx.moveTo(sx, sy - 14);
+      ctx.lineTo(sx, sy + 14);
       ctx.stroke();
     }
     ctx.restore();
@@ -1279,62 +1567,127 @@ class OceanLeviathan {
     const x = this.x - camera.x;
     const y = this.y - camera.y;
     const injury = 1 - this.hp / this.maxHp;
+    const cx = x + this.width * 0.5;
+    const rootY = y + this.height * 0.5;
+    const t = this.animT * (1.6 + this.phase * 0.35);
     ctx.save();
-    ctx.fillStyle = this.hitFlash > 0 ? '#ffffff' : this.phase === 3 ? '#14532d' : '#0e7490';
-    ctx.beginPath();
-    ctx.ellipse(x + this.width / 2, y + this.height * 0.68, this.width * 0.46, this.height * 0.31, 0, 0, Math.PI * 2);
-    ctx.fill();
-    for (let i = 0; i < 3; i++) {
-      const head = this.headTargets()[i];
-      const hx = head.x - camera.x;
-      const hy = head.y - camera.y;
-      const size = i === 1 ? 39 : 31;
-      ctx.fillStyle = this.phase === 3 ? '#166534' : '#0891b2';
+
+    // ---- Eight tentacles, drawn first so the mantle overlaps their roots ----
+    const baseColor = this.hitFlash > 0 ? '#ffffff'
+      : this.phase === 3 ? '#4c1d95' : this.phase === 2 ? '#155e75' : '#0e7490';
+    for (let i = 0; i < 8; i++) {
+      const f = i / 7;
+      const bx = x + this.width * (0.14 + 0.72 * f);
+      const outward = (f - 0.5) * 90; // outer limbs reach wider
+      const sway = Math.sin(t + i * 1.15) * (14 + this.phase * 5);
+      const tipX = bx + outward + sway;
+      const tipY = y + this.height * 0.97 + Math.cos(t * 0.8 + i * 0.7) * 7;
+      const midX = bx + outward * 0.35 + sway * 0.4;
+      const midY = rootY + (tipY - rootY) * 0.58;
+
+      ctx.strokeStyle = baseColor;
+      ctx.lineWidth = 9;
       ctx.beginPath();
-      ctx.ellipse(hx, hy, size, size * 0.76, (i - 1) * 0.17, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = i === 1 ? '#facc15' : '#fda4af';
+      ctx.moveTo(bx, rootY);
+      ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+      ctx.stroke();
+      // Lighter inner ridge down the limb.
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = '#67e8f9';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(hx + (i === 0 ? -8 : 8), hy - 4, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#082f49';
-      ctx.fillRect(hx + (i === 0 ? -9 : 7), hy - 6, 2, 3);
-      ctx.fillStyle = '#cffafe';
-      ctx.fillRect(hx - 8, hy + 9, 16, 3);
-      if (injury > 0.2 + i * 0.12) {
-        ctx.strokeStyle = '#991b1b';
-        ctx.lineWidth = 3;
+      ctx.moveTo(bx, rootY);
+      ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Suckers: points along the quadratic at t = 0.45/0.65/0.85.
+      ctx.fillStyle = this.hitFlash > 0 ? '#ffffff' : '#a5f3fc';
+      for (const tt of [0.45, 0.65, 0.85]) {
+        const it = 1 - tt;
+        const qx = it * it * bx + 2 * it * tt * midX + tt * tt * tipX;
+        const qy = it * it * rootY + 2 * it * tt * midY + tt * tt * tipY;
         ctx.beginPath();
-        ctx.moveTo(hx - 3, hy - 17);
-        ctx.lineTo(hx + 2, hy - 4);
-        ctx.lineTo(hx - 5, hy + 7);
-        ctx.stroke();
+        ctx.arc(qx, qy, 2.4, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
-    ctx.fillStyle = '#155e75';
-    for (let i = 0; i < 7; i++) {
-      const px = x + 40 + i * 39;
-      ctx.beginPath();
-      ctx.moveTo(px, y + this.height * 0.68);
-      ctx.lineTo(px + 10, y + this.height * (0.28 + injury * 0.12));
-      ctx.lineTo(px + 21, y + this.height * 0.72);
-      ctx.fill();
+
+    // ---- Mantle (the giant head-blob) ----
+    ctx.fillStyle = baseColor;
+    ctx.beginPath();
+    ctx.ellipse(cx, y + this.height * 0.38, this.width * 0.44, this.height * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = this.hitFlash > 0 ? '#ffffff' : '#164e63';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + this.height * 0.24, this.width * 0.30, this.height * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ---- The glowing eye: the weakpoint, and the fight's whole tutorial ----
+    const eye = this.headTargets()[0];
+    const ex = eye.x - camera.x;
+    const ey = eye.y - camera.y;
+    const glow = 1 + Math.sin(this.animT * 5) * 0.12;
+    ctx.fillStyle = '#020617'; // socket, so the iris pops off the mantle
+    ctx.beginPath();
+    ctx.arc(ex, ey, 30 * glow, 0, Math.PI * 2);
+    ctx.fill();
+    const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
+    ctx.fillStyle = irisColor;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 20 * glow, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#020617'; // vertical slit pupil
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 4.5, 13 * glow, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff'; // specular glint
+    ctx.beginPath();
+    ctx.arc(ex - 6, ey - 7, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Pulsing ring marks it as THE target, whatever the phase colour does.
+    ctx.strokeStyle = 'rgba(254, 240, 138, ' + (0.35 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 34 * glow, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // ---- Ink dripping off the skirt ----
+    ctx.fillStyle = '#3b0764';
+    for (let i = 0; i < 6; i++) {
+      const dx = x + this.width * (0.18 + i * 0.13);
+      const drip = (this.animT * 26 + i * 37) % (this.height * 0.3);
+      ctx.fillRect(dx, y + this.height * 0.52 + drip, 3, 6);
     }
+
+    // ---- The boss wears its injuries: scars spread with the HP it has lost ----
     if (injury > 0.05) {
-      ctx.strokeStyle = `rgba(127,29,29,${Math.min(0.85, injury)})`;
+      ctx.strokeStyle = 'rgba(127, 29, 29, ' + Math.min(0.85, injury).toFixed(3) + ')';
       ctx.lineWidth = 3 + injury * 3;
       ctx.beginPath();
       for (let i = 0; i < 5; i++) {
-        const px = x + 90 + i * 30;
-        const py = y + this.height * (0.55 + (i % 2) * 0.15);
-        ctx.moveTo(px, py);
-        ctx.lineTo(px + 8, py + 12);
+        const px2 = cx - 70 + i * 34;
+        const py2 = y + this.height * (0.28 + (i % 2) * 0.14);
+        ctx.moveTo(px2, py2);
+        ctx.lineTo(px2 + 9, py2 + 13);
+        ctx.lineTo(px2 - 4, py2 + 24);
       }
       ctx.stroke();
+    }
+
+    // Hit flash: whole-silhouette white, same deal as every other boss.
+    if (this.hitFlash > 0) {
+      ctx.globalAlpha = Math.min(0.6, this.hitFlash * 3);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x, y, this.width, this.height);
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }
 }
 
-window.OceanLeviathan = OceanLeviathan;
+window.Kraken = Kraken;
+// Back-compat alias: app.py's inline probe, the HTML onload probe and older
+// hooks that still name the class OceanLeviathan resolve straight to Kraken.
+window.OceanLeviathan = Kraken;
+
 window.OceanFish = OceanFish;

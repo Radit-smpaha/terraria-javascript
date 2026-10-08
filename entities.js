@@ -92,6 +92,10 @@ class Projectile {
     this.lightRadius = lightRadius;
     // Phantom blades carry their own colour into the room's bloom pass.
     if (type === 'knight_blade') this.lightColor = [150, 140, 255];
+    // Kraken ink: the gun's tentacle shot and the boss's hostile globs both
+    // glow violet in the lighting pass so night fights stay readable.
+    if (type === 'ink_tentacle' || type === 'ink_glob') this.lightColor = [168, 85, 247];
+    if (type === 'ink_glob') { this.width = 12; this.height = 12; }
   }
 
   update(dt, world, particleSystem) {
@@ -131,6 +135,17 @@ class Projectile {
       }
     } else if (this.type === 'boss_laser') {
       particleSystem.addParticle(this.x, this.y, 0, 0, '#ef4444', 3, 0.2, 0, true);
+    } else if (this.type === 'ink_tentacle' || this.type === 'ink_glob') {
+      // Ink trail: slow-dripping violet motes that hang in the air a beat,
+      // so both the gun's shot and the boss's globs draw their arc clearly.
+      if (Math.random() < 0.7) {
+        particleSystem.addParticle(
+          this.x - this.vx * 0.2, this.y - this.vy * 0.2,
+          (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4 + 0.15,
+          this.type === 'ink_glob' ? '#7c3aed' : '#a855f7',
+          2 + Math.random() * 2, 0.3, -0.005, false
+        );
+      }
     } else if (this.type === 'boss_thorn') {
       particleSystem.addParticle(this.x, this.y, 0, 0, '#22c55e', 2.5, 0.2, 0, false);
     } else if (this.type === 'knight_blade') {
@@ -170,6 +185,9 @@ class Projectile {
         particleSystem.magicSparkle(this.x, this.y, '#93c5fd', 8);
       } else if (this.type === 'boss_laser') {
         particleSystem.bloodBurst(this.x, this.y, '#ef4444', 6);
+      } else if (this.type === 'ink_tentacle' || this.type === 'ink_glob') {
+        // Ink splatters on the stone it fails to pass through.
+        particleSystem.bloodBurst(this.x, this.y, '#7c3aed', 7);
       } else if (this.type === 'knight_blade') {
         // Shattered spectral steel: shards fly back along the impact normal.
         particleSystem.magicSparkle(this.x, this.y, '#a5b4fc', 16);
@@ -279,6 +297,47 @@ class Projectile {
       ctx.lineTo(-6, 4);
       ctx.closePath();
       ctx.fill();
+    } else if (this.type === 'ink_tentacle') {
+      // The Tentacle Gun's round: a barbed violet lash with a bright core.
+      ctx.shadowColor = '#a855f7';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#6d28d9';
+      ctx.beginPath();
+      ctx.moveTo(14, 0);
+      ctx.quadraticCurveTo(2, -5, -12, -3);
+      ctx.lineTo(-14, 0);
+      ctx.lineTo(-12, 3);
+      ctx.quadraticCurveTo(2, 5, 14, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#e9d5ff';
+      ctx.fillRect(-6, -1, 14, 2);
+      // Suckers along the underside.
+      ctx.fillStyle = '#c4b5fd';
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(8 - i * 6, 3, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+    } else if (this.type === 'ink_glob') {
+      // Hostile ink glob: a wobbling droplet, dark rim with a violet core.
+      const wob = 1 + Math.sin(Date.now() * 0.02 + this.x * 0.1) * 0.15;
+      ctx.shadowColor = '#7c3aed';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#3b0764';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8 * wob, 6.5 / wob, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#a855f7';
+      ctx.beginPath();
+      ctx.ellipse(-1.5, -1, 3.5 * wob, 2.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f5d0fe';
+      ctx.beginPath();
+      ctx.arc(-3, -2.5, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
     } else if (this.type === 'knight_blade') {
       // Terraria-style phantom blade: layered pixel blade with glowing aura & hilt.
       const pPulse = 0.85 + Math.sin(Date.now() * 0.02 + this.x * 0.05) * 0.15;
@@ -1319,6 +1378,11 @@ class Monster {
     this.poisonTime = 0;
     this.poisonTick = 0;
     this.poisonDps = 0;
+    // `stunTime` is seconds of stun remaining (Tentacle Gun's stun-ink proc).
+    // A stunned mob skips its AI entirely (see update()) and wears a tell in
+    // render(), so the crowd-control is both visible and honestly duration'd
+    // rather than a boolean that never clears.
+    this.stunTime = 0;
 
     if (type === 'zombie') {
       this.width = 18;
@@ -1597,9 +1661,37 @@ class Monster {
     return dealt;
   }
 
+  /**
+   * Stun the monster for `seconds` (Tentacle Gun's stun-ink proc).
+   *
+   * Like poison, re-applying refreshes to the LONGER of the two durations so
+   * rapid procs extend the lock instead of a short re-stun cancelling a long
+   * one. Returns false on corpses so the caller can skip the feedback.
+   */
+  applyStun(seconds) {
+    if (this.dead) return false;
+    this.stunTime = Math.max(this.stunTime, seconds);
+    return true;
+  }
+
   update(dt, player, world) {
     if (this.hurtCooldown > 0) this.hurtCooldown = Math.max(0, this.hurtCooldown - dt);
     if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
+
+    // Stun gate: a stunned mob freezes where it stands — no facing, no chase,
+    // no stuck-recovery hops. Velocity bleeds off (a mid-knockback stun still
+    // lands) but gravity and world collision still run so nothing hovers in
+    // the air. Poison keeps ticking through it: venom does not care.
+    if (this.stunTime > 0) {
+      this.stunTime = Math.max(0, this.stunTime - dt);
+      this.vx *= 0.7;
+      this.vy *= 0.7;
+      if (this.isGroundType() || this.type === 'shark') {
+        if (this.isGroundType()) this.vy += 0.38;
+        this.resolveWorldPhysics(world);
+      }
+      return;
+    }
 
     const dx = (player.x + player.width / 2) - (this.x + this.width / 2);
     const dy = (player.y + player.height / 2) - (this.y + this.height / 2);
@@ -1874,6 +1966,27 @@ class Monster {
         const py = sy + this.height - ((t * 9) % (this.height + 6));
         ctx.fillRect(px, py, 2, 2);
       }
+      ctx.restore();
+    }
+
+    // Stun tell: violet ink motes circling the head while stunned — the mob's
+    // silhouette droops too, so a locked enemy is unmistakable mid-melee.
+    if (this.stunTime > 0) {
+      const fade = Math.max(0, Math.min(1, this.stunTime / 1.2));
+      ctx.save();
+      ctx.globalAlpha = 0.55 + fade * 0.4;
+      ctx.fillStyle = '#c084fc';
+      const cxs = sx + this.width / 2;
+      for (let i = 0; i < 3; i++) {
+        const a = (this.animT || 0) * 6 + i * 2.09;
+        ctx.beginPath();
+        ctx.arc(cxs + Math.cos(a) * (this.width * 0.45 + 4),
+          sy - 5 + Math.sin(a) * 4, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 0.22 * fade;
+      ctx.fillStyle = '#7c3aed';
+      ctx.fillRect(sx - 2, sy - 2, this.width + 4, this.height + 4);
       ctx.restore();
     }
 
