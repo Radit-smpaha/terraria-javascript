@@ -1043,6 +1043,30 @@ World.prototype.generateOceanPlanet = function() {
     islands.push({ cx, halfWidth, height });
   }
 
+  // ---- Small stepping-stone islets -------------------------------------
+  // The big islands sit far apart; a swimmer needs somewhere to surface and
+  // stand mid-channel instead of drowning between them. These short, dry sand
+  // bumps rise just above the waterline so you can hop across the sea. They
+  // are terrain only — never the spawn, the boss, or a wreck.
+  const islets = [];
+  for (let i = 0; i + 1 < islands.length; i++) {
+    const a = islands[i], b = islands[i + 1];
+    const gap = b.cx - a.cx;
+    if (gap < 44) continue;
+    const mid = (a.cx + b.cx) / 2;
+    const spots = gap > 96 ? [mid - gap * 0.16, mid + gap * 0.16] : [mid];
+    for (const sx of spots) {
+      const cx = Math.round(sx);
+      if (cx < margin || cx > this.width - margin - 1) continue;
+      if (islands.some(o => Math.abs(o.cx - cx) < 18)) continue;
+      if (islets.some(o => Math.abs(o.cx - cx) < 12)) continue;
+      islets.push({ cx, halfWidth: 2 + Math.floor(Math.random() * 3),
+        height: 3 + Math.floor(Math.random() * 3), islet: true });
+    }
+  }
+
+  const allIslands = islands.concat(islets);
+
   // A smooth, deterministic height profile for the whole world. The base
   // ground is the deep seabed (floorY); each island is a broad cosine mound
   // that rises all the way above the waterline, so its flanks pass through
@@ -1050,7 +1074,7 @@ World.prototype.generateOceanPlanet = function() {
   const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
     let ground = floorY;
-    for (const island of islands) {
+    for (const island of allIslands) {
       const d = Math.abs(x - island.cx);
       if (d > island.halfWidth) continue;
       const t = d / island.halfWidth;
@@ -1114,22 +1138,79 @@ World.prototype.generateOceanPlanet = function() {
   const portalX = Math.floor(this.width * 0.33);
   for (let y = floorY - 4; y < floorY; y++) this.setTile(portalX, y, TILES.OCEAN_PORTAL);
 
-  // Spawn on the first island's beach, not in open water. The boss rises over
-  // the second island so the arena is a real place with ground to fight on.
+  // ---- Dress the spawn island so it reads as "home", not bare sand ----
+  // A beach you wash up on should have palms for shade, a campfire and torches
+  // for light, a little dock lapping into the water, and scattered shore grass.
+  // Everything is placed on confirmed dry land (ground < seaY) with clear air
+  // overhead, so nothing floats and the player never spawns inside a prop.
   const spawnIsland = islands[0];
-  const bossIsland = islands[1] || islands[0];
-  const spawnX = spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34);
-  const bossX = bossIsland ? bossIsland.cx : Math.floor(this.width * 0.38);
+  if (spawnIsland) {
+    const crown = spawnIsland.cx;
+    const isDry = (x) => x >= 2 && x < this.width - 2 && groundHeight[x] < seaY;
+    const clear = (x, y) => this.getTile(x, y) === TILES.AIR &&
+      this.getTile(x, y - 1) === TILES.AIR;
+    // Palms: a 3-tall trunk with a leafy crown, set back from the exact spawn
+    // column so they frame the beach instead of blocking it.
+    const plantPalm = (x) => {
+      if (!isDry(x)) return;
+      const g = groundHeight[x];
+      for (let k = 1; k <= 3; k++) this.setTile(x, g - k, TILES.WOOD);
+      const topY = g - 4;
+      this.setTile(x - 1, topY, TILES.MANGROVE_LEAVES);
+      this.setTile(x + 1, topY, TILES.MANGROVE_LEAVES);
+      this.setTile(x, topY, TILES.MANGROVE_LEAVES);
+      this.setTile(x, topY - 1, TILES.MANGROVE_LEAVES);
+    };
+    for (const off of [-6, -4, 4, 6]) plantPalm(crown + off);
+    // Campfire + a ring of torches at the heart of the camp.
+    const fireX = crown;
+    if (isDry(fireX) && clear(fireX, groundHeight[fireX] - 1)) {
+      this.setTile(fireX, groundHeight[fireX] - 1, TILES.CAMPFIRE);
+    }
+    for (const off of [-3, -2, 2, 3]) {
+      const tx = crown + off;
+      if (isDry(tx) && clear(tx, groundHeight[tx] - 1)) {
+        this.setTile(tx, groundHeight[tx] - 1, TILES.TORCH);
+      }
+    }
+    // A short wooden dock reaching from the beach out over the water.
+    const dockX = crown + (spawnIsland.halfWidth - 2 > 0 ? Math.min(4, spawnIsland.halfWidth - 1) : -4);
+    const dir = dockX >= crown ? 1 : -1;
+    for (let s = 0; s < 5; s++) {
+      const dx = dockX + dir * s;
+      if (dx < 2 || dx >= this.width - 2) break;
+      const surf = Math.min(groundHeight[dx], seaY - 1);
+      if (this.getTile(dx, surf) === TILES.AIR) this.setTile(dx, surf, TILES.WOOD_PLATFORM);
+    }
+    // Shore grass and the occasional flower across the dry cap.
+    for (let x = crown - spawnIsland.halfWidth; x <= crown + spawnIsland.halfWidth; x++) {
+      if (!isDry(x)) continue;
+      const g = groundHeight[x];
+      if (!clear(x, g - 1)) continue;
+      const roll = Math.random();
+      if (roll < 0.16) this.setTile(x, g - 1, TILES.TALL_GRASS);
+      else if (roll < 0.24) this.setTile(x, g - 1, TILES.FLOWER);
+    }
+  }
+
+  // Spawn on the first island's beach, not in open water. The Kraken breaches
+  // the WATER SURFACE just off that same shore — visible the instant you land —
+  // then stalks you across the sea, so the arena is a real place with ground to
+  // fight on and the boss is never a silent speck a screen (or a seabed) away.
+  const bossX = spawnIsland ? spawnIsland.cx + spawnIsland.halfWidth + 5 : Math.floor(this.width * 0.38);
+  const bossStandX = Math.max(6, Math.min(this.width - 7, bossX));
   const arena = {
     seaY,
     floorY,
     portalX,
     islands,
     shipwrecks: this.shipwrecks,
-    spawnX: spawnX * TILE_SIZE,
-    spawnY: (Math.max(2, groundHeight[spawnX] - 2)) * TILE_SIZE,
-    bossX: bossX * TILE_SIZE,
-    bossY: (Math.max(2, groundHeight[bossX] - 12)) * TILE_SIZE
+    spawnX: (spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)) * TILE_SIZE,
+    spawnY: (Math.max(2, groundHeight[spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)] - 2)) * TILE_SIZE,
+    // Rise out of the water, not the seabed: the eye sits around the waterline
+    // (seaY), the mantle breaches it, and the tentacles trail down into the deep.
+    bossX: bossStandX * TILE_SIZE,
+    bossY: Math.max(2, seaY - 3) * TILE_SIZE
   };
   this.oceanArena = arena;
   this.underworldStart = this.height + 1000;
@@ -1435,6 +1516,36 @@ class Kraken {
   update(dt, target, projectiles, sound, particles) {
     this.animT += dt;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
+
+    // ---- The Kraken stalks you across the sea --------------------------
+    // A leviathan that parked off-screen and never moved was the whole reason
+    // the fight felt broken: the announcement roared but there was nothing to
+    // look at. It now drifts toward the player and hovers at fighting range —
+    // slow, relentless, a little faster each phase — so it is always the thing
+    // in front of you, and closing the gap is part of the arena, not a bug.
+    if (target && !this.dead) {
+      const world = this.game && this.game.world;
+      const pcx = target.x + target.width / 2;
+      const pcy = target.y + target.height / 2;
+      const ccx = this.x + this.width / 2;
+      const ccy = this.y + this.height * 0.45;
+      const dx = pcx - ccx;
+      const dy = pcy - ccy;
+      const dist = Math.hypot(dx, dy) || 1;
+      const hover = 330; // stops closing once it looms at menacing range
+      if (dist > hover) {
+        const stalk = (80 + this.phase * 22) * dt; // px this frame
+        this.x += (dx / dist) * stalk;
+        this.y += (dy / dist) * stalk * 0.55;
+      } else {
+        // Idle drift so it never looks frozen even at fighting range.
+        this.y += Math.sin(this.animT * 1.3) * 14 * dt;
+      }
+      if (world) {
+        this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
+        this.y = Math.max(0, Math.min(world.pixelHeight - this.height, this.y));
+      }
+    }
 
     // Wind up the armed telegraph; it resolves through resolvePending().
     if (this.pending) {
