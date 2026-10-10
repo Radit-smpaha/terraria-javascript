@@ -7190,6 +7190,13 @@ class Game {
     this.player.vx = 0;
     this.player.vy = 0;
     this.oxygen = this.oxygenMax;
+    // Arrival grace: the Kraken is live the instant you land and its first
+    // telegraphed shot can be mid-flight. A short invulnerability window means
+    // entering the ocean is never an instant death, whichever way you arrived
+    // (the Tide Gate's own cutscene, or a creative teleport straight onto it).
+    if (this.player.invuln !== undefined) {
+      this.player.invuln = Math.max(this.player.invuln || 0, 1.6);
+    }
     if (this.mp && this.mp.status !== 'idle') {
       this.showToast('This ocean-world expedition is solo-only.');
     }
