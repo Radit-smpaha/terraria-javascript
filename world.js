@@ -2332,14 +2332,20 @@ class World {
     const peaks = [];
     for (let x = -step * 2; x <= w + step * 2; x += step) {
       const worldX = x + offset;
+      // RIDGED multifractal height: 1 - |sin| stacks into sharp creases instead
+      // of the smooth rolling waves that made the range read as a dark bush.
+      // Several octaves at increasing frequency give big peaks with crags and
+      // shoulders, the way a real mountain profile actually looks.
+      const ridge = (freq, wt) => {
+        const s = Math.sin(worldX * freq + freq * 7.13);
+        return (1 - Math.abs(s)) * wt; // ridged: sharp crests, V-shaped saddles
+      };
       const my = baseY
-        - Math.sin(worldX * 0.003) * amp
-        - Math.cos(worldX * 0.008) * (amp * 0.5)
-        - Math.sin(worldX * 0.021) * (amp * 0.13)
-        // Ridged detail: |sin| makes V-shaped saddles rather than more rolling
-        // waves, at two finer scales — this is the crag on top of the swell.
-        - Math.abs(Math.sin(worldX * 0.043)) * amp * 0.12
-        - Math.abs(Math.sin(worldX * 0.097 + 2.1)) * amp * 0.05;
+        - ridge(0.0022, amp)                     // continental massifs
+        - ridge(0.0058, amp * 0.55)              // major peaks
+        - ridge(0.0131, amp * 0.30)              // shoulders / crags
+        - ridge(0.0297, amp * 0.16)              // rocky detail
+        - ridge(0.0613, amp * 0.07);             // fine teeth on the crest
       peaks.push([x, my]);
     }
 
@@ -2375,34 +2381,74 @@ class World {
     ridgePath();
     ctx.clip();
 
-    // 2. Shade the complete mountain face with smooth gradients. Filling
-    //    individual straight wedges left gaps and a jagged colour edge beneath
-    //    an otherwise smooth crest. The clip keeps both gradients exactly
-    //    inside the silhouette, while the broad horizontal wash suggests
-    //    sunward and shadowed faces without drawing seams across the outline.
+    // 2. Base vertical shading across the whole face (sun high, foot in shadow).
     const face = ctx.createLinearGradient(0, baseY - amp, 0, h);
-    face.addColorStop(0, this.shadeHex(baseColor, 1.18));
+    face.addColorStop(0, this.shadeHex(baseColor, 1.22));
     face.addColorStop(0.48, baseColor);
-    face.addColorStop(1, this.shadeHex(baseColor, 0.68));
+    face.addColorStop(1, this.shadeHex(baseColor, 0.62));
     ctx.fillStyle = face;
     ctx.fillRect(-step * 2, baseY - amp, w + step * 4, h - baseY + amp);
-    const sunward = ctx.createLinearGradient(0, 0, w, 0);
-    sunward.addColorStop(0, 'rgba(255,255,255,0.12)');
-    sunward.addColorStop(0.52, 'rgba(255,255,255,0)');
-    sunward.addColorStop(1, 'rgba(0,0,0,0.12)');
-    ctx.fillStyle = sunward;
-    ctx.fillRect(-step * 2, baseY - amp, w + step * 4, h - baseY + amp);
 
-    // Rock striations: a few darker seams following the slope, sparse enough to
-    // read as texture rather than as noise.
-    ctx.fillStyle = this.shadeHex(baseColor, 0.6);
-    ctx.globalAlpha = 0.5;
-    for (let i = 4; i < peaks.length; i += 6) {
+    // 2b. PER-PEAK lit and shadow faces. This is what stops the range reading
+    //     as a flat bush: every crest casts a bright sunward slope on one side
+    //     and a dark lee slope on the other, so the silhouette breaks into
+    //     readable rock planes. The slope sign comes from the crest direction.
+    for (let i = 0; i < peaks.length - 1; i++) {
+      const [x0, y0] = peaks[i];
+      const [x1, y1] = peaks[i + 1];
+      const rising = y1 < y0; // screen Y shrinks as the ground rises
+      const ax = x0, ay = y0, bx2 = x1, by2 = y1;
+      // A triangular facet from the crest down to the valley between samples.
+      const midY = Math.max(y0, y1);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx2, by2);
+      ctx.lineTo((ax + bx2) / 2, midY + step * 1.6);
+      ctx.closePath();
+      // Sun from the left: the upslope facing left is lit, the other is shadow.
+      if (rising) {
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      } else {
+        ctx.fillStyle = 'rgba(2,6,23,0.20)';
+      }
+      ctx.fill();
+    }
+
+    // Rock crags: dark V-notch chiseled under each crest, and a bright lip on
+    // the crest edge — the hard highlight/shadow that makes rock look like rock.
+    for (let i = 1; i < peaks.length - 1; i += 1) {
+      const [px, py] = peaks[i];
+      const [plx, ply] = peaks[i - 1];
+      const [prx, pry] = peaks[i + 1];
+      const isPeak = py <= ply && py <= pry; // a local high point
+      if (!isPeak) continue;
+      // Bright sunlit crest lip.
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(plx + 2, ply - 2);
+      ctx.lineTo(px, py - 2);
+      ctx.lineTo(prx - 2, pry - 2);
+      ctx.stroke();
+      // Dark chasm dropping off the lee side.
+      ctx.fillStyle = 'rgba(2,6,23,0.28)';
+      ctx.beginPath();
+      ctx.moveTo(px, py + 3);
+      ctx.lineTo(px + step * 1.1, py + 16);
+      ctx.lineTo(px + step * 0.4, py + 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Rock striations: darker seams following the slope for texture.
+    ctx.fillStyle = this.shadeHex(baseColor, 0.55);
+    ctx.globalAlpha = 0.4;
+    for (let i = 3; i < peaks.length; i += 5) {
       const [px, py] = peaks[i];
       ctx.beginPath();
-      ctx.moveTo(px, py + 10);
-      ctx.lineTo(px - step * 1.4, py + 34);
-      ctx.lineTo(px - step * 0.9, py + 34);
+      ctx.moveTo(px, py + 12);
+      ctx.lineTo(px - step * 1.4, py + 40);
+      ctx.lineTo(px - step * 0.8, py + 40);
       ctx.closePath();
       ctx.fill();
     }

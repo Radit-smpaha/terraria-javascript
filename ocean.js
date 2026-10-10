@@ -1362,6 +1362,9 @@ World.prototype.renderOceanBackground = function(ctx, camera) {
   const width = camera.viewportWidth;
   const height = camera.viewportHeight;
   if (width <= 0 || height <= 0) return;
+  const time = Date.now() * 0.001;
+
+  // ---- Base water column: a deep reef gradient, brighter toward the surface --
   let cache = this._oceanBackgroundCache;
   if (!cache || cache.width !== width || cache.height !== height) {
     const canvas = document.createElement('canvas');
@@ -1369,29 +1372,119 @@ World.prototype.renderOceanBackground = function(ctx, camera) {
     canvas.height = height;
     const background = canvas.getContext('2d');
     const gradient = background.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, '#0c4a6e');
-    gradient.addColorStop(0.45, '#083344');
-    gradient.addColorStop(1, '#020617');
+    gradient.addColorStop(0, '#0e7490');     // sunlit surface
+    gradient.addColorStop(0.30, '#0c4a6e');
+    gradient.addColorStop(0.62, '#082f49');
+    gradient.addColorStop(1, '#020617');     // lightless deep
     background.fillStyle = gradient;
     background.fillRect(0, 0, width, height);
     cache = this._oceanBackgroundCache = { canvas, width, height };
   }
   ctx.drawImage(cache.canvas, 0, 0);
+
+  // ---- Caustics: rippling bands of light where the surface chops the sun ----
   ctx.save();
-  ctx.globalAlpha = 0.1;
-  ctx.fillStyle = '#67e8f9';
-  const drift = (Date.now() * 0.01) % (width + 180);
-  for (let i = 0; i < 3; i++) {
-    const x = ((i * width / 3 - drift * 0.12 + width) % width);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 5; i++) {
+    const y = 20 + i * 34 + Math.sin(time * 0.6 + i) * 6;
+    ctx.strokeStyle = 'rgba(165, 243, 252, ' + (0.05 + 0.03 * Math.sin(time + i * 1.7)).toFixed(3) + ')';
+    ctx.lineWidth = 10 + i * 3;
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x + 65, 0);
-    ctx.lineTo(x + 220, height);
-    ctx.lineTo(x + 110, height);
+    for (let x = -20; x <= width + 20; x += 24) {
+      const wy = y + Math.sin(x * 0.02 + time * 1.4 + i) * 7 + Math.sin(x * 0.05 - time) * 3;
+      if (x === -20) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // ---- God rays: soft shafts angling down from the surface ----
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 6; i++) {
+    const baseX = ((i * 260 - camera.x * 0.10) % (width + 400) + width + 400) % (width + 400) - 200;
+    const sway = Math.sin(time * 0.3 + i * 1.3) * 30;
+    const topW = 26 + (i % 3) * 14;
+    const g = ctx.createLinearGradient(0, 0, 0, height * 0.9);
+    g.addColorStop(0, 'rgba(186, 230, 253, 0.10)');
+    g.addColorStop(1, 'rgba(186, 230, 253, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(baseX + sway, -10);
+    ctx.lineTo(baseX + sway + topW, -10);
+    ctx.lineTo(baseX + sway + topW * 3 + 90, height * 0.9);
+    ctx.lineTo(baseX + sway + 90, height * 0.9);
+    ctx.closePath();
     ctx.fill();
   }
   ctx.restore();
+
+  // ---- Drifting particulate: motes of marine snow hanging in the water ----
+  ctx.save();
+  for (let i = 0; i < 40; i++) {
+    const seed = i * 12.9898;
+    const drift = (camera.x * 0.05 + time * (6 + (i % 5) * 3)) % (width + 40);
+    const px = ((Math.sin(seed) * 0.5 + 0.5) * width + drift) % (width + 40) - 20;
+    const py = ((Math.cos(seed * 1.7) * 0.5 + 0.5) * height + Math.sin(time * 0.5 + i) * 8) % height;
+    const r = 0.8 + (i % 3) * 0.6;
+    ctx.fillStyle = 'rgba(165, 243, 252, ' + (0.10 + (i % 4) * 0.05).toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  // ---- Parallax reef silhouettes: distant coral/rock ridge, then kelp ----
+  // Two depth bands keyed to camera.x so the whole scene scrolls like water.
+  const reefRidge = (parallax, baseFrac, color, amp, seedOff) => {
+    const off = camera.x * parallax;
+    const baseY = height * baseFrac;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-10, height + 10);
+    for (let x = -10; x <= width + 10; x += 18) {
+      const wx = x + off;
+      const n = Math.sin(wx * 0.006 + seedOff) * amp
+        + Math.sin(wx * 0.017 + seedOff * 2) * amp * 0.5
+        + Math.abs(Math.sin(wx * 0.04 + seedOff)) * amp * 0.25;
+      ctx.lineTo(x, baseY - n);
+    }
+    ctx.lineTo(width + 10, height + 10);
+    ctx.closePath();
+    ctx.fill();
+  };
+  reefRidge(0.08, 0.86, '#04222f', 46, 1.3);   // far ridge, darkest
+  reefRidge(0.16, 0.96, '#020e17', 34, 4.7);   // near ridge
+
+  // Kelp/coral fronds swaying in the foreground current, deterministic per x.
+  const frond = (wx, baseY, hgt, color, phase) => {
+    const sx = wx - camera.x * 0.22;
+    if (sx < -40 || sx > width + 40) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(sx, baseY);
+    const segs = 5;
+    for (let s = 1; s <= segs; s++) {
+      const tt = s / segs;
+      const sway = Math.sin(time * 1.1 + phase + tt * 2) * 12 * tt;
+      ctx.lineTo(sx + sway, baseY - hgt * tt);
+    }
+    ctx.stroke();
+    // A couple of leafy blobs on the frond.
+    ctx.fillStyle = color;
+    for (const tt of [0.5, 0.8]) {
+      const sway = Math.sin(time * 1.1 + phase + tt * 2) * 12 * tt;
+      ctx.beginPath();
+      ctx.ellipse(sx + sway + 5, baseY - hgt * tt, 5, 3, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  for (let i = 0; i < 14; i++) {
+    const wx = i * 97 + 30;
+    frond(wx, height * 0.99, 90 + (i % 4) * 40, i % 2 ? '#053b30' : '#064e3b', i * 0.9);
+  }
 };
+
 
 World.prototype.enterOceanDimension = function() {
   if (this.dimension === 'ocean') return this.oceanArena || this.generateOceanPlanet();
@@ -1651,30 +1744,52 @@ class Kraken {
     this.animT += dt;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
 
-    // ---- The Kraken stalks you across the sea --------------------------
+    // ---- The Kraken stalks you across the sea, smoothly -----------------
     // A leviathan that parked off-screen and never moved was the whole reason
-    // the fight felt broken: the announcement roared but there was nothing to
-    // look at. It now drifts toward the player and hovers at fighting range —
-    // slow, relentless, a little faster each phase — so it is always the thing
-    // in front of you, and closing the gap is part of the arena, not a bug.
+    // the fight felt broken. It now accelerates toward the player with real
+    // inertia — thrust toward a hover point, then water drag — so it glides and
+    // leans into its turns like something heavy swimming, instead of snapping
+    // along a straight line. A lazy swim-cycle bob keeps it alive at range.
     if (target && !this.dead) {
       const world = this.game && this.game.world;
       const pcx = target.x + target.width / 2;
       const pcy = target.y + target.height / 2;
       const ccx = this.x + this.width / 2;
       const ccy = this.y + this.height * 0.45;
-      const dx = pcx - ccx;
-      const dy = pcy - ccy;
+
+      // Desired hover point: hold station a little off the player, orbiting
+      // slowly so it never sits perfectly still. The orbit radius grows with
+      // phase so later phases loom from further out.
+      const orbit = 300 + this.phase * 30;
+      const orbitAng = this.animT * 0.25;
+      const goalX = pcx + Math.cos(orbitAng) * orbit;
+      const goalY = pcy + Math.sin(orbitAng * 0.7) * orbit * 0.5 - 20;
+
+      // Steering: accelerate toward the goal, capped by a max speed that rises
+      // with phase. This is thrust, not teleport-on-a-line.
+      const dx = goalX - ccx;
+      const dy = goalY - ccy;
       const dist = Math.hypot(dx, dy) || 1;
-      const hover = 330; // stops closing once it looms at menacing range
-      if (dist > hover) {
-        const stalk = (80 + this.phase * 22) * dt; // px this frame
-        this.x += (dx / dist) * stalk;
-        this.y += (dy / dist) * stalk * 0.55;
-      } else {
-        // Idle drift so it never looks frozen even at fighting range.
-        this.y += Math.sin(this.animT * 1.3) * 14 * dt;
-      }
+      const maxSpeed = 150 + this.phase * 45;
+      // Ease the thrust off as it arrives, so it settles instead of overshooting.
+      const arrive = Math.min(1, dist / 160);
+      const ax = (dx / dist) * maxSpeed * arrive;
+      const ay = (dy / dist) * maxSpeed * arrive;
+      // Velocity integrates thrust, then drag bleeds it off (frame-rate safe).
+      this.vx = (this.vx || 0) + ax * dt;
+      this.vy = (this.vy || 0) + ay * dt;
+      const drag = Math.pow(0.12, dt); // strong water drag
+      this.vx *= drag;
+      this.vy *= drag;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      // Lean into the direction of travel — a heavy body banks as it turns.
+      this.lean = (this.lean || 0) + ((this.vx / (maxSpeed * 2)) - (this.lean || 0)) * Math.min(1, dt * 4);
+
+      // A slow vertical swim cycle so it undulates even while holding station.
+      this.y += Math.sin(this.animT * 1.1) * 10 * dt;
+
       if (world) {
         this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
         this.y = Math.max(0, Math.min(world.pixelHeight - this.height, this.y));
@@ -1720,7 +1835,7 @@ class Kraken {
           type: 'whirlpool', x: px, y: py,
           radius: 150 + this.phase * 20, timer: 1.3, total: 1.3
         };
-      } else if (roll < 0.90) {
+      } else if (roll < 0.86) {
         // TENTACLE SWEEP — a single arm scythes across a wide arc in front of
         // the Kraken. The telegraph is a sweeping wedge, not a circle.
         const toward = Math.atan2(py - (this.y + this.height * 0.5),
@@ -1729,14 +1844,52 @@ class Kraken {
           type: 'sweep', x: this.x + this.width * 0.5, y: this.y + this.height * 0.6,
           radius: 210 + this.phase * 25, angle: toward, timer: 0.85, total: 0.85
         };
+      } else if (roll < 0.96) {
+        // TENTACLE BARRAGE — a ring of tentacles stabs up from the deep in a
+        // sequence, each at its own delay. The whole arena lights up with warning
+        // spikes; you have to keep moving between the beats.
+        this.pending = {
+          type: 'barrage', x: px, y: py,
+          radius: 150 + this.phase * 20, timer: 1.5, total: 1.5,
+          // Six stab points around the player, staggered.
+          stabs: [0, 1, 2, 3, 4, 5].map(i => {
+            const a = (i / 6) * Math.PI * 2;
+            return {
+              x: px + Math.cos(a) * (110 + this.phase * 20),
+              y: py + Math.sin(a) * 60,
+              at: 0.25 + i * 0.18 // stagger, in seconds from the start
+            };
+          })
+        };
       } else if (projectiles && typeof Projectile === 'function') {
         // INK GLOB VOLLEY — immediate spread of hostile globs.
         this.fireInkGlobs(target, projectiles);
       }
       // (In a QA sandbox with no Projectile class the volley branch is
       // skipped and the cooldown simply recycles — never a thrown ReferenceError.)
-      this.attackTimer = Math.max(1.3, 3.1 - this.phase * 0.5);
+      this.attackTimer = Math.max(1.2, 3.0 - this.phase * 0.5);
       if (sound) sound.playBossRoar();
+    }
+
+    // ---- Barrage stab timing: fire each tentacle stab as its beat arrives ----
+    if (this.pending && this.pending.type === 'barrage') {
+      const p = this.pending;
+      const elapsed = p.total - p.timer;
+      for (const stab of p.stabs) {
+        if (!stab.done && elapsed >= stab.at) {
+          stab.done = true;
+          if (particles) particles.bloodBurst(stab.x, stab.y, '#7f1d3a', 18);
+          if (this.game && this.game.player) {
+            const pl = this.game.player;
+            if (Math.hypot(pl.x + pl.width / 2 - stab.x, pl.y + pl.height / 2 - stab.y) <= 60) {
+              this.game.damagePlayer(40 + this.phase * 14, stab.x,
+                'A tentacle speared up out of the deep!', true, stab.y);
+            }
+          }
+          if (sound) sound.playHit();
+          if (this.game && this.game.feel) this.game.feel.shake(0.3);
+        }
+      }
     }
 
     // ---- Whirlpool drag: while it spins up, haul the player toward the core --
@@ -1764,7 +1917,7 @@ class Kraken {
     const ppx = player ? player.x + player.width / 2 : 0;
     const ppy = player ? player.y + player.height / 2 : 0;
     if (p.type === 'ink_burst') {
-      if (particles) particles.magicSparkle(p.x, p.y, '#7c3aed', 24);
+      if (particles) particles.magicSparkle(p.x, p.y, '#f43f5e', 34);
       if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
         this.game.damagePlayer(30 + this.phase * 10, p.x,
           'The Kraken’s ink cloud blinded you!', true, p.y);
@@ -1772,7 +1925,7 @@ class Kraken {
         if (this.game.feel) this.game.feel.shake(0.35);
       }
     } else if (p.type === 'slam') {
-      if (particles) particles.bloodBurst(p.x, p.y, '#155e75', 16);
+      if (particles) particles.bloodBurst(p.x, p.y, '#7f1d3a', 22);
       if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
         this.game.damagePlayer(44 + this.phase * 14, p.x,
           'A Kraken tentacle slam crushed you!', true, p.y);
@@ -1781,7 +1934,7 @@ class Kraken {
       // Three columns erupt; each vent is its own damage + ink check.
       if (particles) {
         for (const v of (p.vents || [-1, 0, 1])) {
-          particles.magicSparkle(p.x + v * 70, p.y, '#6d28d9', 20);
+          particles.magicSparkle(p.x + v * 70, p.y, '#f43f5e', 26);
         }
       }
       for (const v of (p.vents || [-1, 0, 1])) {
@@ -1794,8 +1947,18 @@ class Kraken {
       }
       if (this.game && this.game.feel) this.game.feel.shake(0.5);
     } else if (p.type === 'whirlpool') {
-      // The vortex collapses: a final inward crush + blindness at the core.
-      if (particles) particles.magicSparkle(p.x, p.y, '#1e1b4b', 40);
+      // The vortex collapses: a spiral burst of debris spinning out of the
+      // core, a final inward crush + blindness.
+      if (particles) {
+        for (let arm = 0; arm < 4; arm++) {
+          for (let s = 0; s < 6; s++) {
+            const a = arm * (Math.PI / 2) + s * 0.35;
+            const r = p.radius * (0.15 + s * 0.14);
+            particles.magicSparkle(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.6,
+              s % 2 ? '#fb7185' : '#be123c', 6);
+          }
+        }
+      }
       if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
         this.game.damagePlayer(38 + this.phase * 12, p.x,
           'The whirlpool dragged you into its crushing core!', true, p.y);
@@ -1805,7 +1968,15 @@ class Kraken {
     } else if (p.type === 'sweep') {
       // A scything arc: hit if the player is within the radius AND within the
       // swept angular band in front of the Kraken.
-      if (particles) particles.bloodBurst(p.x, p.y, '#0e7490', 22);
+      if (particles) {
+        // Trail of spray along the whole swept arc, not just a single burst.
+        for (let s = 0; s <= 8; s++) {
+          const a = p.angle - 0.9 + 1.8 * (s / 8);
+          particles.bloodBurst(p.x + Math.cos(a) * p.radius,
+            p.y + Math.sin(a) * p.radius, '#be123c', 4);
+        }
+        particles.bloodBurst(p.x, p.y, '#7f1d3a', 16);
+      }
       if (player) {
         const dx = ppx - p.x, dy = ppy - p.y;
         const dist = Math.hypot(dx, dy);
@@ -1818,6 +1989,15 @@ class Kraken {
         }
       }
       if (this.game && this.game.feel) this.game.feel.shake(0.45);
+    } else if (p.type === 'barrage') {
+      // All the stabs already fired on their beats; the resolve moment is just
+      // the arena exhaling — a last ring of ichor at each spent spike.
+      if (particles) {
+        for (const stab of p.stabs) {
+          if (stab.done) particles.magicSparkle(stab.x, stab.y, '#be123c', 8);
+        }
+      }
+      if (this.game && this.game.feel) this.game.feel.shake(0.4);
     }
     if (sound) sound.playHit();
   }
@@ -1853,12 +2033,12 @@ class Kraken {
       // The full blast radius, plus a dark fill that closes in as time runs.
       ctx.setLineDash([12, 8]);
       ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(168, 85, 249, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
       ctx.beginPath();
       ctx.arc(sx, sy, p.radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(59, 7, 100, ' + (0.15 + 0.35 * k).toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(76, 5, 25, ' + (0.15 + 0.35 * k).toFixed(3) + ')';
       ctx.beginPath();
       ctx.arc(sx, sy, p.radius * (0.7 + 0.3 * k), 0, Math.PI * 2);
       ctx.fill();
@@ -1868,14 +2048,14 @@ class Kraken {
         const vx = sx + v * 70;
         ctx.setLineDash([8, 6]);
         ctx.lineWidth = 4;
-        ctx.strokeStyle = 'rgba(109, 40, 217, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
+        ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
         ctx.strokeRect(vx - 24, sy - 150, 48, 150);
         ctx.setLineDash([]);
         // Ink surging up the column toward the surface as the timer runs down.
         const colH = 150 * k;
         const grad = ctx.createLinearGradient(vx, sy, vx, sy - colH);
-        grad.addColorStop(0, 'rgba(76, 29, 149, 0.55)');
-        grad.addColorStop(1, 'rgba(167, 139, 250, 0.05)');
+        grad.addColorStop(0, 'rgba(127, 29, 29, 0.55)');
+        grad.addColorStop(1, 'rgba(251, 113, 133, 0.05)');
         ctx.fillStyle = grad;
         ctx.fillRect(vx - 24, sy - colH, 48, colH);
       }
@@ -1885,19 +2065,19 @@ class Kraken {
       const spin = this.animT * 6;
       for (let ring = 3; ring >= 1; ring--) {
         const rr = p.radius * (ring / 3) * (1 - k * 0.35);
-        ctx.strokeStyle = 'rgba(129, 140, 248, ' + (0.25 + 0.35 * (1 - ring / 3)).toFixed(3) + ')';
+        ctx.strokeStyle = 'rgba(251, 113, 133, ' + (0.25 + 0.35 * (1 - ring / 3)).toFixed(3) + ')';
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(sx, sy, rr, 0, Math.PI * 2);
         ctx.stroke();
       }
-      for (let arm = 0; arm < 3; arm++) {
-        ctx.strokeStyle = 'rgba(168, 85, 247, ' + (0.4 + pulse * 0.4).toFixed(3) + ')';
+      for (let arm = 0; arm < 4; arm++) {
+        ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.4 + pulse * 0.4).toFixed(3) + ')';
         ctx.lineWidth = 4;
         ctx.beginPath();
         for (let s = 0; s <= 24; s++) {
           const tt = s / 24;
-          const ang = spin + arm * (Math.PI * 2 / 3) + tt * 3.2;
+          const ang = spin + arm * (Math.PI / 2) + tt * 3.2;
           const rr = p.radius * (1 - tt) * (0.4 + 0.6 * (1 - k * 0.3));
           const px2 = sx + Math.cos(ang) * rr;
           const py2 = sy + Math.sin(ang) * rr * 0.6;
@@ -1906,7 +2086,7 @@ class Kraken {
         ctx.stroke();
       }
       // Dark core that tightens as it collapses.
-      ctx.fillStyle = 'rgba(2, 6, 23, ' + (0.2 + 0.5 * k).toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(27, 3, 10, ' + (0.2 + 0.5 * k).toFixed(3) + ')';
       ctx.beginPath();
       ctx.arc(sx, sy, p.radius * 0.28 * (1 - k * 0.4), 0, Math.PI * 2);
       ctx.fill();
@@ -1915,14 +2095,14 @@ class Kraken {
       const sweepNow = p.angle - 0.9 + 1.8 * k;
       ctx.setLineDash([10, 6]);
       ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(103, 232, 249, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.arc(sx, sy, p.radius, sweepNow - 0.45, sweepNow + 0.45);
       ctx.closePath();
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(14, 116, 144, ' + (0.18 + 0.3 * k).toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(127, 29, 29, ' + (0.18 + 0.3 * k).toFixed(3) + ')';
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.arc(sx, sy, p.radius, sweepNow - 0.45, sweepNow + 0.45);
@@ -1935,6 +2115,49 @@ class Kraken {
       ctx.moveTo(sx, sy);
       ctx.lineTo(sx + Math.cos(sweepNow + 0.45) * p.radius, sy + Math.sin(sweepNow + 0.45) * p.radius);
       ctx.stroke();
+    } else if (p.type === 'barrage') {
+      // TENTACLE BARRAGE — a ring of warning spikes around the player, each
+      // flashing faster as its own stab beat approaches, then going dark once
+      // it has fired. The whole arena becomes a rhythm of dodges.
+      const elapsed = p.total - p.timer;
+      for (const stab of p.stabs) {
+        const tx = stab.x - camera.x;
+        const ty = stab.y - camera.y;
+        const untilStab = stab.at - elapsed;
+        if (stab.done) {
+          // Already fired: a faint dark scar on the seabed.
+          ctx.fillStyle = 'rgba(43, 6, 8, 0.35)';
+          ctx.beginPath(); ctx.arc(tx, ty, 26, 0, Math.PI * 2); ctx.fill();
+          continue;
+        }
+        // Warning spike: a triangle rising from the seabed that pulses, then
+        // snaps bright white in the last moment before it stabs.
+        const armed = Math.max(0, Math.min(1, 1 - untilStab / 0.35)); // 0→1 over last .35s
+        const warn = 0.4 + 0.4 * Math.sin(this.animT * 18 + stab.at * 10);
+        ctx.strokeStyle = armed > 0.5
+          ? 'rgba(255, 255, 255, ' + (0.6 + 0.4 * armed).toFixed(3) + ')'
+          : 'rgba(244, 63, 94, ' + warn.toFixed(3) + ')';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty + 14);
+        ctx.lineTo(tx - 16, ty - 18);
+        ctx.moveTo(tx, ty + 14);
+        ctx.lineTo(tx + 16, ty - 18);
+        ctx.stroke();
+        // Ground ring so the hit zone is readable.
+        ctx.setLineDash([6, 5]);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(251, 113, 133, ' + (0.3 + 0.3 * warn).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.ellipse(tx, ty + 14, 34, 16, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Rising ink plume preview under the armed spikes.
+        if (armed > 0.3) {
+          ctx.fillStyle = 'rgba(127, 29, 29, ' + (0.3 * armed).toFixed(3) + ')';
+          ctx.fillRect(tx - 6, ty - 30 * armed, 12, 30 * armed);
+        }
+      }
     } else {
       ctx.setLineDash([6, 6]);
       ctx.lineWidth = 5;
@@ -1966,55 +2189,74 @@ class Kraken {
     const mouthY = y + this.height * 0.60;
     const t = this.animT * (1.6 + this.phase * 0.35);
     ctx.save();
+    // Lean the whole beast into its direction of travel (set by update()), so
+    // it banks as it swims instead of gliding flat and stiff.
+    if (this.lean) {
+      ctx.translate(cx, y + this.height * 0.5);
+      ctx.rotate(this.lean * 0.18);
+      ctx.translate(-cx, -(y + this.height * 0.5));
+    }
 
     // ---- Arms + tentacles, drawn first so the mantle overlaps their roots ----
-    // A squid's eight shorter arms ring the mouth; a kraken adds two long
-    // feeding tentacles. Each limb is a tapering stroke (fat base, thin tip)
-    // that sways on its own phase, with a pale sucker ridge down the underside
-    // and a soft rim-light so it reads as a 3D limb in the dark water.
+    // A kraken has EIGHT arms ringing the mouth plus TWO enormous feeding
+    // tentacles — ten limbs total. Skin is deep ink-crimson and bruise-purple
+    // (a monstrous sea beast), NOT the bright cyan that read as a jellyfish.
+    // Each limb is a tapering, coiling stroke that sways on its own phase, with
+    // a sucker ridge, a wet rim-light and a darker underside for volume.
     const flash = this.hitFlash > 0;
     const skinTop = flash ? '#ffffff'
-      : this.phase === 3 ? '#5b21b6' : this.phase === 2 ? '#0e7490' : '#0891b2';
-    const skinMid = flash ? '#e0f2fe'
-      : this.phase === 3 ? '#3b0764' : this.phase === 2 ? '#155e75' : '#0e7490';
-    const skinTip = flash ? '#bae6fd'
-      : this.phase === 3 ? '#2e1065' : this.phase === 2 ? '#083344' : '#155e75';
+      : this.phase === 3 ? '#7f1d1d' : this.phase === 2 ? '#9f1239' : '#be123c';
+    const skinMid = flash ? '#fecaca'
+      : this.phase === 3 ? '#4c0519' : this.phase === 2 ? '#6b0f2a' : '#7f1d3a';
+    const skinTip = flash ? '#fca5a5'
+      : this.phase === 3 ? '#2b0410' : this.phase === 2 ? '#3f0a1c' : '#4c0d24';
     const suckerColor = flash ? '#ffffff'
-      : this.phase === 3 ? '#f0abfc' : this.phase === 2 ? '#a5f3fc' : '#a5f3fc';
+      : this.phase === 3 ? '#fda4af' : this.phase === 2 ? '#fda4af' : '#fecdd3';
+    const rimColor = flash ? '#ffffff'
+      : this.phase === 3 ? '#fb7185' : this.phase === 2 ? '#fb7185' : '#fda4af';
 
     /**
-     * Draw one limb: a quadratic from a fat base to a thin tip, with a paler
-     * inner ridge, translucent suckers marching down it, and a bright rim-light
-     * down the leading edge. `widthFn` sets the stroke taper along the curve.
+     * Draw one limb: a quadratic from a fat base to a thin tip, tapering in
+     * segments (a real limb, not a pipe), with a bright rim-light down the
+     * leading edge, a darker underside, and translucent suckers marching down
+     * it. `coil` bends the control point so tentacles curl instead of hanging
+     * straight.
      */
-    const limb = (bx, by, ctrlX, ctrlY, tipX, tipY, baseW, length, suckers) => {
-      // Taper: a handful of short segments from wide to narrow reads as a real
-      // limb, where a single lineWidth would look like a pipe.
-      const segs = 10;
+    const limb = (bx, by, ctrlX, ctrlY, tipX, tipY, baseW, length, suckers, coil = 0) => {
+      const segs = 12;
       ctx.lineCap = 'round';
-      for (let s = 0; s < segs; s++) {
-        const t0 = s / segs, t1 = (s + 1) / segs;
-        const w0 = baseW * (1 - t0) + 2 * t0;
-        const w1 = baseW * (1 - t1) + 2 * t1;
-        const p0 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t0);
-        const p1 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t1);
-        ctx.strokeStyle = t0 < 0.5 ? skinTop : t0 < 0.82 ? skinMid : skinTip;
-        ctx.lineWidth = w0;
-        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+      // Dark underside pass first (offset a touch), then the lit body on top.
+      for (let pass = 0; pass < 2; pass++) {
+        for (let s = 0; s < segs; s++) {
+          const t0 = s / segs, t1 = (s + 1) / segs;
+          const w0 = baseW * (1 - t0) + 2.5 * t0;
+          const w1 = baseW * (1 - t1) + 2.5 * t1;
+          const off = pass === 0 ? 2 : 0;
+          const p0 = qPoint(bx, by + off, ctrlX, ctrlY + off, tipX, tipY + off, t0);
+          const p1 = qPoint(bx, by + off, ctrlX, ctrlY + off, tipX, tipY + off, t1);
+          if (pass === 0) {
+            ctx.strokeStyle = skinTip;
+            ctx.lineWidth = w0;
+          } else {
+            ctx.strokeStyle = t0 < 0.5 ? skinTop : t0 < 0.82 ? skinMid : skinTip;
+            ctx.lineWidth = w0 * 0.7;
+          }
+          ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+        }
       }
-      // Rim-light: a thin bright stroke just behind the silhouette edge.
-      ctx.globalAlpha = 0.4;
-      ctx.strokeStyle = '#67e8f9';
-      ctx.lineWidth = Math.max(1.5, baseW * 0.32);
+      // Rim-light along the leading edge.
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = rimColor;
+      ctx.lineWidth = Math.max(1.5, baseW * 0.28);
       ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY); ctx.stroke();
       ctx.globalAlpha = 1;
-      // Suckers: pale ovals perpendicular to the limb, denser near the tip.
+      // Suckers: pale ovals perpendicular to the limb, denser toward the tip.
       if (suckers) {
         ctx.fillStyle = suckerColor;
-        for (const tt of [0.34, 0.5, 0.64, 0.78, 0.9]) {
+        for (const tt of [0.30, 0.42, 0.54, 0.66, 0.78, 0.88, 0.95]) {
           const pt = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, tt);
-          const r = 2.6 * (1 - tt) + 0.9;
-          ctx.beginPath(); ctx.ellipse(pt.x, pt.y, r, r * 0.7, tt * 1.6, 0, Math.PI * 2); ctx.fill();
+          const r = 2.8 * (1 - tt) + 1.0;
+          ctx.beginPath(); ctx.ellipse(pt.x, pt.y, r, r * 0.72, tt * 1.7, 0, Math.PI * 2); ctx.fill();
         }
       }
     };
@@ -2023,29 +2265,30 @@ class Kraken {
       return { x: it * it * x0 + 2 * it * t * x1 + t * t * x2, y: it * it * y0 + 2 * it * t * y1 + t * t * y2 };
     }
 
-    // Eight arms fanned in a crown around the mouth, arcing outward and down.
+    // Two colossal feeding tentacles FIRST (behind the arms): they curl out and
+    // up like striking serpents, the kraken's signature silhouette.
+    for (const side of [-1, 1]) {
+      const bx = cx + side * this.width * 0.10;
+      const sway = Math.sin(t * 0.6 + (side > 0 ? 0 : Math.PI)) * (30 + this.phase * 10);
+      const reach = this.height * 1.25;
+      const tipX = bx + side * (150 + Math.abs(sway));
+      const tipY = mouthY + reach * 0.55 + Math.cos(t * 0.5 + side) * 30 - 40;
+      const ctrlX = bx + side * (90 + sway);
+      const ctrlY = mouthY + reach * 0.55;
+      limb(bx, mouthY + 4, ctrlX, ctrlY, tipX, tipY, 20, reach, true, side);
+    }
+    // Eight shorter arms fanned in a crown around the mouth, arcing down.
     for (let i = 0; i < 8; i++) {
       const f = i / 7;                                    // 0..1 across the crown
-      const bx = x + this.width * (0.14 + 0.72 * f);
-      const outward = (f - 0.5) * 150;                    // outer arms reach wider
+      const bx = x + this.width * (0.12 + 0.76 * f);
+      const outward = (f - 0.5) * 165;                    // outer arms reach wider
       const sway = Math.sin(t * 0.9 + i * 1.2) * (16 + this.phase * 6);
-      const reach = this.height * (0.55 + 0.30 * Math.sin(i * 2.1)); // varied lengths
+      const reach = this.height * (0.55 + 0.32 * Math.sin(i * 2.1)); // varied lengths
       const tipX = bx + outward + sway;
       const tipY = mouthY + reach;
       const ctrlX = bx + outward * 0.3 + sway * 0.5;
       const ctrlY = mouthY + reach * 0.6;
-      limb(bx, mouthY, ctrlX, ctrlY, tipX, tipY, 11, reach, true);
-    }
-    // Two long feeding tentacles — the kraken signature — sweeping out and
-    // forward of the arm crown, much longer and heavier than the eight arms.
-    for (const side of [-1, 1]) {
-      const bx = cx + side * this.width * 0.12;
-      const sway = Math.sin(t * 0.7 + (side > 0 ? 0 : Math.PI)) * (26 + this.phase * 8);
-      const tipX = bx + side * (110 + Math.abs(sway));
-      const tipY = mouthY + this.height * 0.95 + Math.cos(t * 0.6 + side) * 12;
-      const ctrlX = bx + side * 46 + sway * 0.4;
-      const ctrlY = mouthY + this.height * 0.6;
-      limb(bx, mouthY + 6, ctrlX, ctrlY, tipX, tipY, 15, this.height * 1.0, true);
+      limb(bx, mouthY, ctrlX, ctrlY, tipX, tipY, 12, reach, true, (f - 0.5) * 2);
     }
 
 
@@ -2062,19 +2305,19 @@ class Kraken {
     const mantleGrad = ctx.createLinearGradient(cx - mantleRx, crownY, cx + mantleRx, skirtY);
     if (flash) {
       mantleGrad.addColorStop(0, '#ffffff');
-      mantleGrad.addColorStop(1, '#bae6fd');
+      mantleGrad.addColorStop(1, '#fecaca');
     } else if (this.phase === 3) {
-      mantleGrad.addColorStop(0, '#a855f7');
-      mantleGrad.addColorStop(0.5, '#6b21a8');
-      mantleGrad.addColorStop(1, '#3b0764');
+      mantleGrad.addColorStop(0, '#7f1d1d');
+      mantleGrad.addColorStop(0.5, '#571010');
+      mantleGrad.addColorStop(1, '#2b0608');
     } else if (this.phase === 2) {
-      mantleGrad.addColorStop(0, '#67e8f9');
-      mantleGrad.addColorStop(0.5, '#0e7490');
-      mantleGrad.addColorStop(1, '#0c4a6e');
+      mantleGrad.addColorStop(0, '#9f1239');
+      mantleGrad.addColorStop(0.5, '#6b0f2a');
+      mantleGrad.addColorStop(1, '#3f0a1c');
     } else {
-      mantleGrad.addColorStop(0, '#a5f3fc');
-      mantleGrad.addColorStop(0.5, '#0891b2');
-      mantleGrad.addColorStop(1, '#155e75');
+      mantleGrad.addColorStop(0, '#be123c');
+      mantleGrad.addColorStop(0.5, '#881337');
+      mantleGrad.addColorStop(1, '#4c0519');
     }
     ctx.fillStyle = mantleGrad;
     ctx.beginPath();
@@ -2092,9 +2335,9 @@ class Kraken {
       crownX, crownY);
     ctx.closePath();
     ctx.fill();
-    // Key-light sheen down the lit (left) shoulder of the mantle.
-    ctx.globalAlpha = flash ? 0.5 : 0.30;
-    ctx.fillStyle = '#e0f2fe';
+    // Key-light sheen down the lit (left) shoulder of the mantle — a wet highlight.
+    ctx.globalAlpha = flash ? 0.5 : 0.26;
+    ctx.fillStyle = '#fecdd3';
     ctx.beginPath();
     ctx.moveTo(crownX - mantleRx * 0.30, crownY + this.height * 0.10);
     ctx.bezierCurveTo(crownX - mantleRx * 0.55, crownY + this.height * 0.22,
@@ -2105,9 +2348,20 @@ class Kraken {
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
+    // Bumpy cephalopod skin: a scatter of small tubercles across the mantle so
+    // it reads as lumpy hide, not smooth plastic.
+    ctx.fillStyle = 'rgba(43, 6, 8, 0.35)';
+    for (let i = 0; i < 26; i++) {
+      const a = (i * 2.399); // golden-angle scatter
+      const rad = Math.sqrt(i / 26);
+      const bx2 = cx + Math.cos(a) * mantleRx * 0.82 * rad;
+      const by2 = crownY + (skirtY - crownY) * (0.12 + rad * 0.86);
+      const rr = 2 + (i % 3);
+      ctx.beginPath(); ctx.arc(bx2, by2, rr, 0, Math.PI * 2); ctx.fill();
+    }
     // Dark underside for volume along the bottom skirt of the mantle.
-    ctx.globalAlpha = 0.28;
-    ctx.fillStyle = '#020617';
+    ctx.globalAlpha = 0.30;
+    ctx.fillStyle = '#1c0307';
     ctx.beginPath();
     ctx.ellipse(cx, skirtY + this.height * 0.02, mantleRx * 0.80, this.height * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -2121,16 +2375,16 @@ class Kraken {
     const headGrad = ctx.createRadialGradient(cx - headRx * 0.3, headY - headRy * 0.3, headRx * 0.1, cx, headY, headRx * 1.2);
     if (flash) {
       headGrad.addColorStop(0, '#ffffff');
-      headGrad.addColorStop(1, '#bae6fd');
+      headGrad.addColorStop(1, '#fecaca');
     } else if (this.phase === 3) {
-      headGrad.addColorStop(0, '#7e22ce');
-      headGrad.addColorStop(1, '#2e1065');
+      headGrad.addColorStop(0, '#991b1b');
+      headGrad.addColorStop(1, '#450a0a');
     } else if (this.phase === 2) {
-      headGrad.addColorStop(0, '#22d3ee');
-      headGrad.addColorStop(1, '#0c4a6e');
+      headGrad.addColorStop(0, '#be123c');
+      headGrad.addColorStop(1, '#581026');
     } else {
-      headGrad.addColorStop(0, '#67e8f9');
-      headGrad.addColorStop(1, '#155e75');
+      headGrad.addColorStop(0, '#e11d48');
+      headGrad.addColorStop(1, '#6b0f2a');
     }
     ctx.fillStyle = headGrad;
     ctx.beginPath();
@@ -2138,22 +2392,45 @@ class Kraken {
     ctx.fill();
 
 
-    // ---- Terminal mantle fins: two translucent wings on the crown (top) ----
-    // A squid's fins sit at the tip of the mantle, not mid-belly, so anchoring
-    // them to the crown is what sells the silhouette as a swimming cephalopod.
+    // ---- Terminal mantle fins: tattered, ribbed wings on the crown (top) ----
+    // A squid's fins sit at the tip of the mantle. Each fin is a ragged diamond
+    // with notches torn out of the trailing edge, so it reads as torn membrane
+    // rather than a clean geometric wing.
     for (const side of [-1, 1]) {
-      const finX = cx + side * mantleRx * 0.34;
+      const finX = cx + side * mantleRx * 0.30;
       const finY = crownY + this.height * 0.05;
       const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) * 6;
-      ctx.globalAlpha = flash ? 0.5 : 0.42;
+      ctx.globalAlpha = flash ? 0.55 : 0.5;
       ctx.fillStyle = flash ? '#ffffff'
-        : this.phase === 3 ? '#a21caf' : this.phase === 2 ? '#22d3ee' : '#67e8f9';
+        : this.phase === 3 ? '#7f1d1d' : this.phase === 2 ? '#9f1239' : '#be123c';
       ctx.beginPath();
       ctx.moveTo(finX, finY);
-      ctx.quadraticCurveTo(finX + side * 54, finY - 22 + flap, finX + side * 96, finY + 4 + flap);
-      ctx.quadraticCurveTo(finX + side * 48, finY + 22 + flap * 0.5, finX, finY + 20);
+      // Out to the tip with a tattered, wavering trailing edge.
+      const notches = 4;
+      for (let n = 1; n <= notches; n++) {
+        const nn = n / notches;
+        const ex = finX + side * (96 * nn);
+        const ey = finY - 20 + flap + Math.sin(t * 2 + n + side) * 5;
+        const mid = finX + side * (96 * (nn - 0.5 / notches));
+        const midy = finY - 6 + flap * 0.5 + (n % 2 ? 10 : -6);
+        ctx.lineTo(mid, midy);
+        ctx.lineTo(ex, ey);
+      }
+      // Back along the lower edge to the mantle.
+      ctx.quadraticCurveTo(finX + side * 48, finY + 24 + flap * 0.5, finX, finY + 20);
       ctx.closePath();
       ctx.fill();
+      // Fin ribs: a few darker struts supporting the membrane.
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = '#2b0608';
+      ctx.lineWidth = 1.5;
+      for (let n = 1; n <= 3; n++) {
+        const nn = n / 4;
+        ctx.beginPath();
+        ctx.moveTo(finX, finY + 4);
+        ctx.lineTo(finX + side * 96 * nn, finY - 16 + flap + Math.sin(t * 2 + n + side) * 5);
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
     }
 
@@ -2166,7 +2443,7 @@ class Kraken {
     const ex = eye.x - camera.x;
     const ey = eye.y - camera.y;
     const glow = 1 + Math.sin(this.animT * 5) * 0.12;
-    const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 191, 36' : '253, 224, 71';
+    const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
 
     // Draw one eye at (px,py) with radius scale s. The primary weakpoint gets
     // the full halo + pulsing target ring; the secondary is calmer and dimmer.
@@ -2212,17 +2489,22 @@ class Kraken {
     ctx.closePath();
     ctx.fill();
 
-    // ---- Ink dripping off the skirt ----
-    ctx.fillStyle = '#3b0764';
-    for (let i = 0; i < 6; i++) {
-      const dx = x + this.width * (0.18 + i * 0.13);
-      const drip = (this.animT * 26 + i * 37) % (this.height * 0.3);
-      ctx.fillRect(dx, y + this.height * 0.52 + drip, 3, 6);
+    // ---- Ink dripping off the skirt: black globs of venomous ichor ----
+    ctx.fillStyle = '#0b0212';
+    for (let i = 0; i < 7; i++) {
+      const dx = x + this.width * (0.16 + i * 0.12);
+      const drip = (this.animT * 26 + i * 37) % (this.height * 0.34);
+      ctx.beginPath();
+      ctx.ellipse(dx, y + this.height * 0.54 + drip, 3, 4 + drip * 0.05, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    // ---- The boss wears its injuries: scars spread with the HP it has lost ----
+    // ---- The boss wears its injuries: glowing scars spread with lost HP ----
     if (injury > 0.05) {
-      ctx.strokeStyle = 'rgba(127, 29, 29, ' + Math.min(0.85, injury).toFixed(3) + ')';
+      ctx.save();
+      ctx.shadowColor = 'rgba(248, 113, 113, 0.8)';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = 'rgba(248, 113, 113, ' + Math.min(0.9, injury).toFixed(3) + ')';
       ctx.lineWidth = 3 + injury * 3;
       ctx.beginPath();
       for (let i = 0; i < 5; i++) {
@@ -2233,6 +2515,7 @@ class Kraken {
         ctx.lineTo(px2 - 4, py2 + 24);
       }
       ctx.stroke();
+      ctx.restore();
     }
 
     // Hit flash: whole-silhouette white, same deal as every other boss.
