@@ -433,13 +433,16 @@ class NPCManager {
     for (const npc of this.npcs) {
       const sx = Math.round(npc.x - camera.x);
       const sy = Math.round(npc.y - camera.y);
-      if (sx < -60 || sy < -70 || sx > camera.viewportWidth + 60 || sy > camera.viewportHeight + 60) continue;
+      if (sx < -60 || sy < -80 || sx > camera.viewportWidth + 60 || sy > camera.viewportHeight + 60) continue;
 
-      // A gentle idle bob lifts the whole body a pixel or two on a per-villager
-      // phase, so the camp feels alive — but the feet and their shadow stay
-      // pinned to the ground, which is what stops them reading as "floating".
-      const bob = Math.round(Math.sin(t + npc.x * 0.08) * 1);
-      const by = sy - bob;
+      // GROUND ANCHOR. npc.y + npc.height is exactly the top of the solid tile
+      // the villager stands on (see findStandableSpot), so this is the ground
+      // line in screen space. The boots and their contact shadow are pinned to
+      // it — only the head/hat/icon bob — so a villager can NEVER read as
+      // floating no matter what the terrain under them later does.
+      const groundY = sy + npc.height;
+      const bob = Math.sin(t + npc.x * 0.08);   // -1..1, sub-pixel, upper body only
+      const by = sy - Math.round(bob);          // bobbing reference for head/torso
 
       // Per-villager palette + hat, so every face in the camp is distinct.
       const look = NPC_LOOK[npc.id] || NPC_LOOK.guide;
@@ -449,22 +452,23 @@ class NPCManager {
       ctx.save();
 
       // ---- Contact shadow: the single thing that grounds the sprite ----
-      ctx.globalAlpha = 0.32;
+      // Sits exactly on the ground line, widest under the feet.
+      ctx.globalAlpha = 0.34;
       ctx.fillStyle = '#000000';
       ctx.beginPath();
-      ctx.ellipse(sx + 10, sy + 47, 9, 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(sx + 10, groundY - 1, 10, 3.2, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // ---- Legs + boots ----
+      // ---- Legs + boots, pinned so the boot soles rest ON the ground line ----
       ctx.fillStyle = look.pants;
-      ctx.fillRect(sx + 5, by + 33, 4, 10);
-      ctx.fillRect(sx + 11, by + 33, 4, 10);
+      ctx.fillRect(sx + 5, groundY - 16, 4, 11);
+      ctx.fillRect(sx + 11, groundY - 16, 4, 11);
       ctx.fillStyle = look.boot;
-      ctx.fillRect(sx + 4, by + 42, 6, 5);
-      ctx.fillRect(sx + 10, by + 42, 6, 5);
+      ctx.fillRect(sx + 4, groundY - 6, 6, 6);
+      ctx.fillRect(sx + 10, groundY - 6, 6, 6);
 
-      // ---- Robe / tunic: shoulders, body, belt ----
+      // ---- Robe / tunic: shoulders, body, belt (bobs with the upper body) ----
       ctx.fillStyle = look.robe;
       ctx.fillRect(sx + 3, by + 17, 14, 17);   // torso
       ctx.fillRect(sx + 2, by + 15, 16, 4);    // shoulders
@@ -547,23 +551,23 @@ class NPCManager {
           ctx.fillRect(sx + 2, by + 4, 6, 2);    // brim
       }
 
-      // ---- Portrait icon as a small badge beside the head ----
+      // ---- Portrait icon: a small badge hovering just over the hat ----
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = "12px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
-      ctx.fillText(npc.icon, sx + 10, by - 8);
+      ctx.fillText(npc.icon, sx + 10, by - 7);
 
       // ---- Quest state marker above the icon ----
       if (npc.state === 'active') {
         ctx.font = "9px 'Press Start 2P', monospace";
         ctx.fillStyle = '#94a3b8';
-        ctx.fillText('...', sx + 10, by - 22);
+        ctx.fillText('...', sx + 10, by - 20);
       } else if (this.isQuestHot(npc)) {
         ctx.font = "bold 12px 'Press Start 2P', monospace";
         ctx.fillStyle = 'rgba(2, 6, 23, 0.9)';
-        ctx.fillText('!', sx + 11, by - 21);
+        ctx.fillText('!', sx + 11, by - 19);
         ctx.fillStyle = npc.state === 'ready' ? '#fde047' : '#facc15';
-        ctx.fillText('!', sx + 10, by - 22);
+        ctx.fillText('!', sx + 10, by - 20);
       }
       ctx.restore();
     }

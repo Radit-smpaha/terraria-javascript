@@ -756,6 +756,35 @@ World.prototype.buildReefTemple = function(activePodiums = new Set(), clearInter
   const awake = activePodiums.size === this.reefPodiums.length;
   this.setTile(portalX, portalY,
     awake ? OCEAN_TILES.PORTAL : OCEAN_TILES.DORMANT_PORTAL);
+
+  // ---- Tide Gate frame: anchor the portal so it never reads as floating ----
+  // The gate TILE must stay mid-water (the whole reef ritual is built around a
+  // gate you swim up to), but a bare ellipse hanging in open water looked like
+  // a bug. A stone arch rises from the temple floor to cradle the gate: two
+  // pillars, a lintel over the top, and a foot pedestal under it. The gate now
+  // sits in a built gateway instead of dangling in the blue.
+  const floor = temple.floorY;
+  const frameTop = Math.max(this.reefBounds.seaY + 1, portalY - 5);
+  for (const side of [-1, 1]) {
+    const px = portalX + side * 3;
+    for (let y = frameTop; y < floor; y++) {
+      if (this.getTile(px, y) === TILES.AIR || this.getTile(px, y) === TILES.WATER) {
+        this.setTile(px, y, y % 3 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE);
+      }
+    }
+  }
+  // Lintel across the top of the two pillars.
+  for (let x = portalX - 3; x <= portalX + 3; x++) {
+    if (this.getTile(x, frameTop) === TILES.AIR || this.getTile(x, frameTop) === TILES.WATER) {
+      this.setTile(x, frameTop, TILES.MARBLE);
+    }
+  }
+  // Pedestal directly beneath the gate, seated on the temple floor.
+  for (let x = portalX - 2; x <= portalX + 2; x++) {
+    if (this.getTile(x, floor - 1) === TILES.AIR || this.getTile(x, floor - 1) === TILES.WATER) {
+      this.setTile(x, floor - 1, TILES.COPPER_BLOCK);
+    }
+  }
   this._tileCacheDirty = true;
 };
 
@@ -1013,6 +1042,42 @@ World.prototype.buildOceanShipwreck = function(cx, groundY, seaY) {
   this._tileCacheDirty = true;
 };
 
+/**
+ * A sunken ruins: a broken marble hall hunched on the seabed, half-swallowed by
+ * the abyss. Two standing wall stubs, a collapsed roof, a marble floor, a couple
+ * of loot chests and a lonely torch — a place that reads as "something important
+ * drowned here". Built on a confirmed seabed column so it never floats.
+ */
+World.prototype.buildSunkenRuins = function(cx, groundY) {
+  if (cx < 6 || cx >= this.width - 6) return;
+  const set = (x, y, tile) => {
+    if (x < 1 || x >= this.width || y < 1 || y >= this.height) return;
+    this.setTile(x, y, tile);
+  };
+  const halfW = 4;
+  const floorY2 = groundY;                 // the hall floor sits on the seabed
+  const wallH = 5;
+  // Floor slab.
+  for (let x = cx - halfW; x <= cx + halfW; x++) set(x, floorY2, TILES.POLISHED_STONE);
+  // Two end walls (the middle has collapsed away).
+  for (const wx of [cx - halfW, cx + halfW]) {
+    for (let k = 1; k <= wallH; k++) set(wx, floorY2 - k, k % 2 === 0 ? TILES.MARBLE : TILES.POLISHED_STONE);
+    set(wx, floorY2 - wallH - 1, TILES.MARBLE); // capstone
+  }
+  // A partial roof beam sagging between the walls.
+  for (let x = cx - halfW + 1; x <= cx + 1; x++) set(x, floorY2 - wallH - 1, TILES.MARBLE);
+  // A toppled column in the middle of the hall.
+  set(cx, floorY2 - 1, TILES.MARBLE);
+  set(cx, floorY2 - 2, TILES.MARBLE);
+  // Loot + a guttering torch so the ruin glows in the dark.
+  this.oceanWreckChests = this.oceanWreckChests || [];
+  this.oceanWreckChests.push({ x: cx - 2, y: floorY2 - 1 });
+  this.oceanWreckChests.push({ x: cx + 2, y: floorY2 - 1 });
+  set(cx - halfW + 1, floorY2 - 2, TILES.TORCH);
+  set(cx + halfW - 1, floorY2 - 2, TILES.TORCH);
+  this._tileCacheDirty = true;
+};
+
 World.prototype.generateOceanPlanet = function() {
   this.tiles.fill(TILES.AIR);
   this.walls.fill(0);
@@ -1112,6 +1177,60 @@ World.prototype.generateOceanPlanet = function() {
     }
   }
 
+  // ---- The abyssal UNDERGROUND: carved caverns beneath the seabed ----
+  // The planet used to be solid stone from the seabed straight to the map
+  // floor — nothing to dig, no reason to go deep. Now a handful of air
+  // caverns, ore seams and glowing crystals is tunnelled through the rock below
+  // the seabed, so the abyss has a real underworld to mine and explore. Caverns
+  // never break the seabed surface (they start a few tiles under `ground`) and
+  // never touch the island crowns, so the water above always stays sealed.
+  const cavernCount = 40 + Math.floor(Math.random() * 20);
+  for (let c = 0; c < cavernCount; c++) {
+    // Random walk: a blob of cavern grows from a seed, never above the local
+    // seabed plus a 4-tile roof, so the ocean can never drain into a cave.
+    let cx0 = 4 + Math.floor(Math.random() * (this.width - 8));
+    const localGround = groundHeight[Math.min(this.width - 1, Math.max(0, cx0))];
+    let cy0 = Math.min(this.height - 4,
+      localGround + 5 + Math.floor(Math.random() * Math.max(3, (this.height - localGround) - 8)));
+    const steps = 10 + Math.floor(Math.random() * 22);
+    let ang = Math.random() * Math.PI * 2;
+    for (let s = 0; s < steps; s++) {
+      ang += (Math.random() - 0.5) * 1.4;
+      cx0 += Math.round(Math.cos(ang));
+      cy0 += Math.round(Math.sin(ang) * 0.7);
+      const roof = groundHeight[Math.min(this.width - 1, Math.max(0, cx0))] + 4;
+      if (cx0 < 3 || cx0 > this.width - 4) break;
+      if (cy0 < roof || cy0 > this.height - 3) { cy0 = Math.max(roof, Math.min(this.height - 3, cy0)); }
+      // Carve a small round pocket of air.
+      const r = 1 + Math.floor(Math.random() * 2);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy > r * r + 1) continue;
+          const px = cx0 + dx, py = cy0 + dy;
+          if (px < 1 || px >= this.width - 1 || py < 1 || py >= this.height) continue;
+          if (py < groundHeight[px] + 3) continue; // keep the seabed roof solid
+          if (this.getTile(px, py) === TILES.STONE) this.setTile(px, py, TILES.AIR);
+        }
+      }
+    }
+  }
+  // Ore + crystals dress the cavern floors: iron and gold in the stone, and a
+  // vein of glowing crystal so the deep abyss is lit and worth diving for.
+  for (let x = 2; x < this.width - 2; x++) {
+    for (let y = groundHeight[x] + 5; y < this.height - 2; y++) {
+      const tile = this.getTile(x, y);
+      if (tile !== TILES.STONE) continue;
+      const roll = Math.random();
+      if (roll < 0.012) this.setTile(x, y, TILES.IRON_ORE);
+      else if (roll < 0.018) this.setTile(x, y, TILES.GOLD_ORE);
+      else if (roll < 0.0205) this.setTile(x, y, TILES.CRYSTAL);
+      // A crystal stuck to a cavern ceiling sparkles the whole chamber.
+      else if (roll < 0.024 && this.getTile(x, y - 1) === TILES.AIR) {
+        this.setTile(x, y, TILES.CRYSTAL);
+      }
+    }
+  }
+
   // ---- Shipwrecks: lootable ruins on the island shores ----
   // Each wreck is a broken hull half-buried in the beach, with a cracked mast,
   // and every plank tile carries loot (see OCEAN_TILES.WRECK_PLANK). A `wreck`
@@ -1133,6 +1252,21 @@ World.prototype.generateOceanPlanet = function() {
     const ground = groundHeight[wx];
     this.buildOceanShipwreck(wx, ground, seaY);
     this.shipwrecks.push({ x: wx, y: ground, side });
+  }
+
+  // ---- Sunken ruins on the open seabed, between the islands ----
+  // A couple of drowned marble halls hunched on the abyssal floor, well clear of
+  // any island crown, so the deep water has landmarks of its own to dive to.
+  this.sunkenRuins = [];
+  for (let attempt = 0; attempt < 24 && this.sunkenRuins.length < 3; attempt++) {
+    const rx = 10 + Math.floor(Math.random() * (this.width - 20));
+    // Only on genuine open seabed: no island crown within a wide margin, so the
+    // hall never collides with a beach or a wreck.
+    const near = allIslands.some(o => Math.abs(o.cx - rx) < o.halfWidth + 10);
+    if (near) continue;
+    if (groundHeight[rx] < seaY + 6) continue; // must be real deep floor, not a shore
+    this.buildSunkenRuins(rx, groundHeight[rx]);
+    this.sunkenRuins.push({ x: rx, y: groundHeight[rx] });
   }
 
   const portalX = Math.floor(this.width * 0.33);
@@ -1558,18 +1692,42 @@ class Kraken {
       const px = target.x + target.width / 2;
       const py = target.y + target.height / 2;
       const roll = Math.random();
-      if (roll < 0.40) {
+      if (roll < 0.26) {
         // INK BLINDNESS BURST — telegraphed circle on your position; caught
         // inside means the debuff, not just damage. Dodge = counterplay.
         this.pending = {
           type: 'ink_burst', x: px, y: py,
           radius: 130 + this.phase * 20, timer: 0.95, total: 0.95
         };
-      } else if (roll < 0.70) {
-        // TENTACLE SLAM — same telegraph shape, pure damage, no debuff.
+      } else if (roll < 0.46) {
+        // TENTACLE SLAM — telegraphed circle, pure damage, no debuff.
         this.pending = {
           type: 'slam', x: px, y: py,
           radius: 95 + this.phase * 15, timer: 0.7, total: 0.7
+        };
+      } else if (roll < 0.62) {
+        // INK GEYSER — three erupting columns burst out of the water around
+        // you a beat later. Reads as the seabed vomiting ink; stay moving.
+        this.pending = {
+          type: 'geyser', x: px, y: py,
+          radius: 120 + this.phase * 15, timer: 1.1, total: 1.1,
+          vents: [-1, 0, 1]
+        };
+      } else if (roll < 0.78) {
+        // WHIRLPOOL — a spiralling vortex opens under you and drags you toward
+        // its core while it spins up, then collapses. The pull is the threat.
+        this.pending = {
+          type: 'whirlpool', x: px, y: py,
+          radius: 150 + this.phase * 20, timer: 1.3, total: 1.3
+        };
+      } else if (roll < 0.90) {
+        // TENTACLE SWEEP — a single arm scythes across a wide arc in front of
+        // the Kraken. The telegraph is a sweeping wedge, not a circle.
+        const toward = Math.atan2(py - (this.y + this.height * 0.5),
+          px - (this.x + this.width * 0.5));
+        this.pending = {
+          type: 'sweep', x: this.x + this.width * 0.5, y: this.y + this.height * 0.6,
+          radius: 210 + this.phase * 25, angle: toward, timer: 0.85, total: 0.85
         };
       } else if (projectiles && typeof Projectile === 'function') {
         // INK GLOB VOLLEY — immediate spread of hostile globs.
@@ -1577,8 +1735,23 @@ class Kraken {
       }
       // (In a QA sandbox with no Projectile class the volley branch is
       // skipped and the cooldown simply recycles — never a thrown ReferenceError.)
-      this.attackTimer = Math.max(1.5, 3.3 - this.phase * 0.55);
+      this.attackTimer = Math.max(1.3, 3.1 - this.phase * 0.5);
       if (sound) sound.playBossRoar();
+    }
+
+    // ---- Whirlpool drag: while it spins up, haul the player toward the core --
+    if (this.pending && this.pending.type === 'whirlpool' && target) {
+      const p = this.pending;
+      const px = target.x + target.width / 2;
+      const py = target.y + target.height / 2;
+      const dx = p.x - px, dy = p.y - py;
+      const dist = Math.hypot(dx, dy) || 1;
+      if (dist < p.radius * 2.2 && dist > 4) {
+        // Pull strengthens as the timer runs down; a real inward current.
+        const pull = (1 - p.timer / p.total) * 150 * dt;
+        target.x += (dx / dist) * pull;
+        target.y += (dy / dist) * pull * 0.7;
+      }
     }
   }
 
@@ -1588,28 +1761,63 @@ class Kraken {
     this.pending = null;
     if (!p) return;
     const player = this.game && this.game.player;
+    const ppx = player ? player.x + player.width / 2 : 0;
+    const ppy = player ? player.y + player.height / 2 : 0;
     if (p.type === 'ink_burst') {
       if (particles) particles.magicSparkle(p.x, p.y, '#7c3aed', 24);
-      if (player) {
-        const px = player.x + player.width / 2;
-        const py = player.y + player.height / 2;
-        if (Math.hypot(px - p.x, py - p.y) <= p.radius) {
-          this.game.damagePlayer(30 + this.phase * 10, p.x,
-            'The Kraken’s ink cloud blinded you!', true, p.y);
-          if (this.game.buffs) this.game.buffs.add('ink_blindness', 14);
-          if (this.game.feel) this.game.feel.shake(0.35);
-        }
+      if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
+        this.game.damagePlayer(30 + this.phase * 10, p.x,
+          'The Kraken’s ink cloud blinded you!', true, p.y);
+        if (this.game.buffs) this.game.buffs.add('ink_blindness', 14);
+        if (this.game.feel) this.game.feel.shake(0.35);
       }
-    } else {
+    } else if (p.type === 'slam') {
       if (particles) particles.bloodBurst(p.x, p.y, '#155e75', 16);
-      if (player) {
-        const px = player.x + player.width / 2;
-        const py = player.y + player.height / 2;
-        if (Math.hypot(px - p.x, py - p.y) <= p.radius) {
-          this.game.damagePlayer(44 + this.phase * 14, p.x,
-            'A Kraken tentacle slam crushed you!', true, p.y);
+      if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
+        this.game.damagePlayer(44 + this.phase * 14, p.x,
+          'A Kraken tentacle slam crushed you!', true, p.y);
+      }
+    } else if (p.type === 'geyser') {
+      // Three columns erupt; each vent is its own damage + ink check.
+      if (particles) {
+        for (const v of (p.vents || [-1, 0, 1])) {
+          particles.magicSparkle(p.x + v * 70, p.y, '#6d28d9', 20);
         }
       }
+      for (const v of (p.vents || [-1, 0, 1])) {
+        const vx = p.x + v * 70;
+        if (player && Math.abs(ppx - vx) <= 46) {
+          this.game.damagePlayer(34 + this.phase * 12, vx,
+            'A geyser of black ink erupted beneath you!', true, p.y);
+          if (this.game.buffs) this.game.buffs.add('ink_blindness', 6);
+        }
+      }
+      if (this.game && this.game.feel) this.game.feel.shake(0.5);
+    } else if (p.type === 'whirlpool') {
+      // The vortex collapses: a final inward crush + blindness at the core.
+      if (particles) particles.magicSparkle(p.x, p.y, '#1e1b4b', 40);
+      if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
+        this.game.damagePlayer(38 + this.phase * 12, p.x,
+          'The whirlpool dragged you into its crushing core!', true, p.y);
+        if (this.game.buffs) this.game.buffs.add('ink_blindness', 8);
+      }
+      if (this.game && this.game.feel) this.game.feel.shake(0.6);
+    } else if (p.type === 'sweep') {
+      // A scything arc: hit if the player is within the radius AND within the
+      // swept angular band in front of the Kraken.
+      if (particles) particles.bloodBurst(p.x, p.y, '#0e7490', 22);
+      if (player) {
+        const dx = ppx - p.x, dy = ppy - p.y;
+        const dist = Math.hypot(dx, dy);
+        let dAng = Math.atan2(dy, dx) - p.angle;
+        while (dAng > Math.PI) dAng -= Math.PI * 2;
+        while (dAng < -Math.PI) dAng += Math.PI * 2;
+        if (dist <= p.radius && Math.abs(dAng) <= 0.9) {
+          this.game.damagePlayer(50 + this.phase * 16, ppx,
+            'A sweeping tentacle hurled you aside!', true, ppy);
+        }
+      }
+      if (this.game && this.game.feel) this.game.feel.shake(0.45);
     }
     if (sound) sound.playHit();
   }
@@ -1654,6 +1862,79 @@ class Kraken {
       ctx.beginPath();
       ctx.arc(sx, sy, p.radius * (0.7 + 0.3 * k), 0, Math.PI * 2);
       ctx.fill();
+    } else if (p.type === 'geyser') {
+      // Three warning columns that brighten and fill upward as they erupt.
+      for (const v of (p.vents || [-1, 0, 1])) {
+        const vx = sx + v * 70;
+        ctx.setLineDash([8, 6]);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(109, 40, 217, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
+        ctx.strokeRect(vx - 24, sy - 150, 48, 150);
+        ctx.setLineDash([]);
+        // Ink surging up the column toward the surface as the timer runs down.
+        const colH = 150 * k;
+        const grad = ctx.createLinearGradient(vx, sy, vx, sy - colH);
+        grad.addColorStop(0, 'rgba(76, 29, 149, 0.55)');
+        grad.addColorStop(1, 'rgba(167, 139, 250, 0.05)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(vx - 24, sy - colH, 48, colH);
+      }
+    } else if (p.type === 'whirlpool') {
+      // A spiralling vortex: concentric rings that rotate and close in, plus
+      // spiral arms, so the pull reads before it grabs you.
+      const spin = this.animT * 6;
+      for (let ring = 3; ring >= 1; ring--) {
+        const rr = p.radius * (ring / 3) * (1 - k * 0.35);
+        ctx.strokeStyle = 'rgba(129, 140, 248, ' + (0.25 + 0.35 * (1 - ring / 3)).toFixed(3) + ')';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(sx, sy, rr, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      for (let arm = 0; arm < 3; arm++) {
+        ctx.strokeStyle = 'rgba(168, 85, 247, ' + (0.4 + pulse * 0.4).toFixed(3) + ')';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        for (let s = 0; s <= 24; s++) {
+          const tt = s / 24;
+          const ang = spin + arm * (Math.PI * 2 / 3) + tt * 3.2;
+          const rr = p.radius * (1 - tt) * (0.4 + 0.6 * (1 - k * 0.3));
+          const px2 = sx + Math.cos(ang) * rr;
+          const py2 = sy + Math.sin(ang) * rr * 0.6;
+          if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+        }
+        ctx.stroke();
+      }
+      // Dark core that tightens as it collapses.
+      ctx.fillStyle = 'rgba(2, 6, 23, ' + (0.2 + 0.5 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(sx, sy, p.radius * 0.28 * (1 - k * 0.4), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.type === 'sweep') {
+      // A sweeping wedge that rotates across the arc as it winds up.
+      const sweepNow = p.angle - 0.9 + 1.8 * k;
+      ctx.setLineDash([10, 6]);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(103, 232, 249, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.arc(sx, sy, p.radius, sweepNow - 0.45, sweepNow + 0.45);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(14, 116, 144, ' + (0.18 + 0.3 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.arc(sx, sy, p.radius, sweepNow - 0.45, sweepNow + 0.45);
+      ctx.closePath();
+      ctx.fill();
+      // Leading edge of the arm, a bright line at the sweep front.
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + Math.cos(sweepNow + 0.45) * p.radius, sy + Math.sin(sweepNow + 0.45) * p.radius);
+      ctx.stroke();
     } else {
       ctx.setLineDash([6, 6]);
       ctx.lineWidth = 5;
@@ -1679,7 +1960,10 @@ class Kraken {
     const y = this.y - camera.y;
     const injury = 1 - this.hp / this.maxHp;
     const cx = x + this.width * 0.5;
-    const rootY = y + this.height * 0.5;
+    // Arms and tentacles radiate from the MOUTH at the base of the head, not
+    // from the middle of the mantle — that is what makes it read as a squid
+    // with a crown of limbs rather than a jellyfish with a fringe.
+    const mouthY = y + this.height * 0.60;
     const t = this.animT * (1.6 + this.phase * 0.35);
     ctx.save();
 
@@ -1739,145 +2023,192 @@ class Kraken {
       return { x: it * it * x0 + 2 * it * t * x1 + t * t * x2, y: it * it * y0 + 2 * it * t * y1 + t * t * y2 };
     }
 
-    // Eight arms fanning from the base of the mantle.
+    // Eight arms fanned in a crown around the mouth, arcing outward and down.
     for (let i = 0; i < 8; i++) {
-      const f = i / 7;
-      const bx = x + this.width * (0.16 + 0.68 * f);
-      const outward = (f - 0.5) * 120;                       // outer arms reach wider
+      const f = i / 7;                                    // 0..1 across the crown
+      const bx = x + this.width * (0.14 + 0.72 * f);
+      const outward = (f - 0.5) * 150;                    // outer arms reach wider
       const sway = Math.sin(t * 0.9 + i * 1.2) * (16 + this.phase * 6);
-      const reach = this.height * (0.72 + 0.2 * Math.sin(i * 2.1)); // varied lengths
+      const reach = this.height * (0.55 + 0.30 * Math.sin(i * 2.1)); // varied lengths
       const tipX = bx + outward + sway;
-      const tipY = rootY + reach;
+      const tipY = mouthY + reach;
       const ctrlX = bx + outward * 0.3 + sway * 0.5;
-      const ctrlY = rootY + reach * 0.6;
-      limb(bx, rootY, ctrlX, ctrlY, tipX, tipY, 10, reach, true);
+      const ctrlY = mouthY + reach * 0.6;
+      limb(bx, mouthY, ctrlX, ctrlY, tipX, tipY, 11, reach, true);
     }
-    // Two long feeding tentacles sweeping out and forward of the arms.
+    // Two long feeding tentacles — the kraken signature — sweeping out and
+    // forward of the arm crown, much longer and heavier than the eight arms.
     for (const side of [-1, 1]) {
       const bx = cx + side * this.width * 0.12;
       const sway = Math.sin(t * 0.7 + (side > 0 ? 0 : Math.PI)) * (26 + this.phase * 8);
-      const tipX = bx + side * (90 + Math.abs(sway));
-      const tipY = rootY + this.height * 1.15 + Math.cos(t * 0.6 + side) * 12;
+      const tipX = bx + side * (110 + Math.abs(sway));
+      const tipY = mouthY + this.height * 0.95 + Math.cos(t * 0.6 + side) * 12;
       const ctrlX = bx + side * 46 + sway * 0.4;
-      const ctrlY = rootY + this.height * 0.7;
-      limb(bx, rootY + 6, ctrlX, ctrlY, tipX, tipY, 14, this.height * 1.2, true);
+      const ctrlY = mouthY + this.height * 0.6;
+      limb(bx, mouthY + 6, ctrlX, ctrlY, tipX, tipY, 15, this.height * 1.0, true);
     }
 
 
-    // ---- Mantle: a tapered squid head, shaded with a radial gradient ----
-    // A squid's mantle is a rounded cone, wide and blunt at the skirt and
-    // narrowing toward the crown, with the eye low and forward on it. Shade it
-    // with a radial gradient offset toward a top-left key light so it reads as
-    // a glossy wet dome instead of a flat ellipse.
-    const mantleRx = this.width * 0.46;
-    const mantleRy = this.height * 0.34;
-    const mcX = cx;
-    const mcY = y + this.height * 0.40;
-    const gx = mcX - mantleRx * 0.35, gy = mcY - mantleRy * 0.45;
-    const gr = Math.max(mantleRx, mantleRy) * 1.25;
-    const mantleGrad = ctx.createRadialGradient(gx, gy, gr * 0.08, mcX, mcY, gr);
+    // ---- Mantle: a tall, tapering squid body with an integrated head ----
+    // A real giant squid is not a symmetric bell. It is an elongated mantle —
+    // blunt and wide at the skirt (bottom), narrowing smoothly up to a rounded
+    // crown (top) — with the head and mouth at its base where the arms radiate.
+    // Draw that silhouette as a closed bezier so it tapers instead of reading
+    // as a flat ellipse (the old "blue jellyfish").
+    const mantleRx = this.width * 0.40;          // half-width at the widest skirt
+    const crownX = cx;
+    const crownY = y + this.height * 0.04;       // rounded top of the mantle
+    const skirtY = y + this.height * 0.56;       // widest point / where head begins
+    const mantleGrad = ctx.createLinearGradient(cx - mantleRx, crownY, cx + mantleRx, skirtY);
     if (flash) {
       mantleGrad.addColorStop(0, '#ffffff');
       mantleGrad.addColorStop(1, '#bae6fd');
     } else if (this.phase === 3) {
-      mantleGrad.addColorStop(0, '#7e22ce');
-      mantleGrad.addColorStop(0.55, '#4c1d95');
-      mantleGrad.addColorStop(1, '#2e1065');
+      mantleGrad.addColorStop(0, '#a855f7');
+      mantleGrad.addColorStop(0.5, '#6b21a8');
+      mantleGrad.addColorStop(1, '#3b0764');
     } else if (this.phase === 2) {
-      mantleGrad.addColorStop(0, '#22d3ee');
+      mantleGrad.addColorStop(0, '#67e8f9');
       mantleGrad.addColorStop(0.5, '#0e7490');
       mantleGrad.addColorStop(1, '#0c4a6e');
     } else {
-      mantleGrad.addColorStop(0, '#67e8f9');
+      mantleGrad.addColorStop(0, '#a5f3fc');
       mantleGrad.addColorStop(0.5, '#0891b2');
       mantleGrad.addColorStop(1, '#155e75');
     }
     ctx.fillStyle = mantleGrad;
     ctx.beginPath();
-    ctx.ellipse(mcX, mcY, mantleRx, mantleRy, 0, 0, Math.PI * 2);
+    // Start at the crown, sweep down the right flank bulging out to the skirt,
+    // across the rounded skirt, and back up the left flank. Control points make
+    // the shoulders slope in so the body tapers toward the top like a squid.
+    ctx.moveTo(crownX, crownY);
+    ctx.bezierCurveTo(crownX + mantleRx * 0.95, crownY + this.height * 0.16,
+      crownX + mantleRx, skirtY - this.height * 0.16,
+      crownX + mantleRx * 0.92, skirtY);
+    ctx.quadraticCurveTo(crownX, skirtY + this.height * 0.10,
+      crownX - mantleRx * 0.92, skirtY);
+    ctx.bezierCurveTo(crownX - mantleRx, skirtY - this.height * 0.16,
+      crownX - mantleRx * 0.95, crownY + this.height * 0.16,
+      crownX, crownY);
+    ctx.closePath();
     ctx.fill();
-    // Crown sheen: a bright highlight arcing over the top-left of the dome.
-    ctx.globalAlpha = flash ? 0.5 : 0.28;
+    // Key-light sheen down the lit (left) shoulder of the mantle.
+    ctx.globalAlpha = flash ? 0.5 : 0.30;
     ctx.fillStyle = '#e0f2fe';
     ctx.beginPath();
-    ctx.ellipse(gx, gy - mantleRy * 0.15, mantleRx * 0.5, mantleRy * 0.34, -0.5, 0, Math.PI * 2);
+    ctx.moveTo(crownX - mantleRx * 0.30, crownY + this.height * 0.10);
+    ctx.bezierCurveTo(crownX - mantleRx * 0.55, crownY + this.height * 0.22,
+      crownX - mantleRx * 0.60, skirtY - this.height * 0.20,
+      crownX - mantleRx * 0.34, skirtY - this.height * 0.04);
+    ctx.quadraticCurveTo(crownX - mantleRx * 0.18, (crownY + skirtY) * 0.5,
+      crownX - mantleRx * 0.30, crownY + this.height * 0.10);
+    ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
-    // A soft dark underside gives the dome volume.
-    ctx.globalAlpha = 0.25;
+    // Dark underside for volume along the bottom skirt of the mantle.
+    ctx.globalAlpha = 0.28;
     ctx.fillStyle = '#020617';
     ctx.beginPath();
-    ctx.ellipse(mcX, mcY + mantleRy * 0.55, mantleRx * 0.8, mantleRy * 0.45, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, skirtY + this.height * 0.02, mantleRx * 0.80, this.height * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // ---- Mantle fins: two translucent wings flaring from the crown ----
+    // ---- Head: a narrower rounded bulge at the base of the mantle ----
+    // The eyes and beak live here, and the arms radiate from its mouth.
+    const headRx = this.width * 0.30;
+    const headRy = this.height * 0.13;
+    const headY = skirtY + this.height * 0.06;
+    const headGrad = ctx.createRadialGradient(cx - headRx * 0.3, headY - headRy * 0.3, headRx * 0.1, cx, headY, headRx * 1.2);
+    if (flash) {
+      headGrad.addColorStop(0, '#ffffff');
+      headGrad.addColorStop(1, '#bae6fd');
+    } else if (this.phase === 3) {
+      headGrad.addColorStop(0, '#7e22ce');
+      headGrad.addColorStop(1, '#2e1065');
+    } else if (this.phase === 2) {
+      headGrad.addColorStop(0, '#22d3ee');
+      headGrad.addColorStop(1, '#0c4a6e');
+    } else {
+      headGrad.addColorStop(0, '#67e8f9');
+      headGrad.addColorStop(1, '#155e75');
+    }
+    ctx.fillStyle = headGrad;
+    ctx.beginPath();
+    ctx.ellipse(cx, headY, headRx, headRy, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+
+    // ---- Terminal mantle fins: two translucent wings on the crown (top) ----
+    // A squid's fins sit at the tip of the mantle, not mid-belly, so anchoring
+    // them to the crown is what sells the silhouette as a swimming cephalopod.
     for (const side of [-1, 1]) {
-      const finX = cx + side * mantleRx * 0.62;
-      const finY = mcY - mantleRy * 0.55;
+      const finX = cx + side * mantleRx * 0.34;
+      const finY = crownY + this.height * 0.05;
       const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) * 6;
-      ctx.globalAlpha = flash ? 0.5 : 0.4;
+      ctx.globalAlpha = flash ? 0.5 : 0.42;
       ctx.fillStyle = flash ? '#ffffff'
         : this.phase === 3 ? '#a21caf' : this.phase === 2 ? '#22d3ee' : '#67e8f9';
       ctx.beginPath();
       ctx.moveTo(finX, finY);
-      ctx.quadraticCurveTo(finX + side * 60, finY - 26 + flap, finX + side * 104, finY + 6 + flap);
-      ctx.quadraticCurveTo(finX + side * 52, finY + 26 + flap * 0.5, finX, finY + 22);
+      ctx.quadraticCurveTo(finX + side * 54, finY - 22 + flap, finX + side * 96, finY + 4 + flap);
+      ctx.quadraticCurveTo(finX + side * 48, finY + 22 + flap * 0.5, finX, finY + 20);
       ctx.closePath();
       ctx.fill();
       ctx.globalAlpha = 1;
     }
 
-    // ---- The glowing eye: the weakpoint, and the fight's whole tutorial ----
-    // Layered for depth: an outer bioluminescent halo that bleeds into the
-    // water, a dark socket, a gradient iris with a vertical slit pupil (the
-    // kraken signature), a bright specular glint and a pulsing target ring.
+    // ---- The eyes: a squid has two. The big one is the glowing weakpoint ----
+    // and the fight's whole tutorial; the smaller opposite eye is what stops it
+    // reading as a one-eyed monster. Layered for depth: a bioluminescent halo
+    // that bleeds into the water, a dark socket, a gradient iris with a vertical
+    // slit pupil (the kraken signature), a specular glint and a pulsing ring.
     const eye = this.headTargets()[0];
     const ex = eye.x - camera.x;
     const ey = eye.y - camera.y;
     const glow = 1 + Math.sin(this.animT * 5) * 0.12;
     const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 191, 36' : '253, 224, 71';
-    // Halo bleed so the eye lights the water and body around it.
-    const halo = ctx.createRadialGradient(ex, ey, 4, ex, ey, 56 * glow);
-    halo.addColorStop(0, 'rgba(' + haloColor + ', 0.5)');
-    halo.addColorStop(1, 'rgba(' + haloColor + ', 0)');
-    ctx.fillStyle = halo;
-    ctx.beginPath(); ctx.arc(ex, ey, 56 * glow, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#020617'; // socket, so the iris pops off the mantle
-    ctx.beginPath();
-    ctx.arc(ex, ey, 30 * glow, 0, Math.PI * 2);
-    ctx.fill();
-    const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
-    // Iris is its own little gradient — white core fading to a warm rim.
-    const irisGrad = ctx.createRadialGradient(ex, ey, 2, ex, ey, 20 * glow);
-    irisGrad.addColorStop(0, '#ffffff');
-    irisGrad.addColorStop(0.5, irisColor);
-    irisGrad.addColorStop(1, this.phase === 3 ? '#7f1d1d' : this.phase === 2 ? '#b45309' : '#ca8a04');
-    ctx.fillStyle = irisGrad;
-    ctx.beginPath();
-    ctx.arc(ex, ey, 20 * glow, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#020617'; // vertical slit pupil
-    ctx.beginPath();
-    ctx.ellipse(ex, ey, 4.5, 13 * glow, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff'; // specular glint
-    ctx.beginPath();
-    ctx.arc(ex - 6, ey - 7, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    // Pulsing ring marks it as THE target, whatever the phase colour does.
-    ctx.strokeStyle = 'rgba(' + haloColor + ', ' + (0.4 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(ex, ey, 34 * glow, 0, Math.PI * 2);
-    ctx.stroke();
 
-    // ---- Beak: a dark parrot-like hook peeking below the eye ----
+    // Draw one eye at (px,py) with radius scale s. The primary weakpoint gets
+    // the full halo + pulsing target ring; the secondary is calmer and dimmer.
+    const drawEye = (px, py, s, isPrimary) => {
+      if (isPrimary) {
+        const halo = ctx.createRadialGradient(px, py, 4, px, py, 56 * s * glow);
+        halo.addColorStop(0, 'rgba(' + haloColor + ', 0.5)');
+        halo.addColorStop(1, 'rgba(' + haloColor + ', 0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath(); ctx.arc(px, py, 56 * s * glow, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#020617'; // socket, so the iris pops off the head
+      ctx.beginPath(); ctx.arc(px, py, 30 * s, 0, Math.PI * 2); ctx.fill();
+      const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
+      const irisGrad = ctx.createRadialGradient(px, py, 2, px, py, 20 * s);
+      irisGrad.addColorStop(0, '#ffffff');
+      irisGrad.addColorStop(0.5, irisColor);
+      irisGrad.addColorStop(1, this.phase === 3 ? '#7f1d1d' : this.phase === 2 ? '#b45309' : '#ca8a04');
+      ctx.fillStyle = irisGrad;
+      ctx.beginPath(); ctx.arc(px, py, 20 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#020617'; // vertical slit pupil
+      ctx.beginPath(); ctx.ellipse(px, py, 4.5 * s, 13 * s, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; // specular glint
+      ctx.beginPath(); ctx.arc(px - 6 * s, py - 7 * s, 3.5 * s, 0, Math.PI * 2); ctx.fill();
+      if (isPrimary) {
+        // Pulsing ring marks it as THE target, whatever the phase colour does.
+        ctx.strokeStyle = 'rgba(' + haloColor + ', ' + (0.4 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(px, py, 34 * s * glow, 0, Math.PI * 2); ctx.stroke();
+      }
+    };
+    // Secondary eye, mirrored to the far side of the head, a touch smaller.
+    drawEye(cx - (ex - cx) * 0.9, ey - 4, 0.6, false);
+    // Primary weakpoint eye, drawn last so it sits on top.
+    drawEye(ex, ey, 1, true);
+
+    // ---- Beak: a dark parrot-like hook at the centre of the arm crown ----
     ctx.fillStyle = '#1c1917';
     ctx.beginPath();
-    ctx.moveTo(ex - 9, ey + 22);
-    ctx.quadraticCurveTo(ex, ey + 42, ex + 11, ey + 21);
-    ctx.quadraticCurveTo(ex, ey + 28, ex - 9, ey + 22);
+    ctx.moveTo(cx - 11, mouthY - 6);
+    ctx.quadraticCurveTo(cx, mouthY + 20, cx + 13, mouthY - 7);
+    ctx.quadraticCurveTo(cx, mouthY + 4, cx - 11, mouthY - 6);
     ctx.closePath();
     ctx.fill();
 

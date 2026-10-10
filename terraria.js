@@ -7546,24 +7546,34 @@ this.player.dodgeTime = 0;
       return;
     }
     this.reefFishSpawnTimer += dt;
-    const maxFish = this.world.isInOcean() ? 24 : 16;
+    const maxFish = this.world.isInOcean() ? 18 : 16;
+    // Keep the school AROUND THE PLAYER, not scattered across the whole map.
+    // Spawning fish at a random column of a 440-wide world put almost all of
+    // them off-screen, so after the Kraken fell you were left staring at a
+    // map-wide swarm of lone blue ovals drifting through open water. A local
+    // ring reads as a living shoal you swim through instead.
     const reefRight = this.world.reefBounds ? this.world.reefBounds.right : this.world.width * 0.32;
     while (this.reefFish.length < maxFish && this.reefFishSpawnTimer >= 0.08) {
       this.reefFishSpawnTimer -= 0.08;
       const fishX = this.world.isInOcean()
-        ? Math.random() * this.world.pixelWidth
+        ? (cx + (Math.random() - 0.5) * 90) * TILE_SIZE
         : Math.max(3, Math.min(reefRight - 3, cx + (Math.random() - 0.5) * 75)) * TILE_SIZE;
       const minY = this.world.isInOcean()
         ? this.world.oceanArena.seaY + 2
         : (this.world.reefBounds ? this.world.reefBounds.seaY + 2 : 42);
       let fishY = minY * TILE_SIZE;
-      for (let tries = 0; tries < 24; tries++) {
+      let placed = false;
+      for (let tries = 0; tries < 40; tries++) {
         const candidate = (minY + Math.floor(Math.random() * Math.max(2, this.world.height - minY - 10))) * TILE_SIZE;
         if (this.world.getTile(Math.floor(fishX / TILE_SIZE), Math.floor(candidate / TILE_SIZE)) === TILES.WATER) {
           fishY = candidate;
+          placed = true;
           break;
         }
       }
+      // Never drop a fish into air or stone: an unplaced glob used to hang in
+      // open water as a lone floating oval. Skip it and try again next tick.
+      if (!placed) continue;
       this.reefFish.push(new OceanFish(fishX, fishY, Math.floor(Math.random() * 8)));
     }
     for (const fish of this.reefFish) fish.update(dt, this.world);
