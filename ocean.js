@@ -512,9 +512,12 @@ World.prototype.generateReef = function() {
   // sea level would float once the column is flooded, so they are shaved back
   // to seaY — but ONLY where the tile still matches the natural-generation
   // snapshot, which means player builds survive the save migration intact.
+  // TILES.SNOW covers the snow-dusted tips growSnowPine stamps on the outer
+  // ring (`tip ? TILES.SNOW : SNOW_PINE_LEAVES`): without it those white caps
+  // survived the flood at the reef/snow border and floated above the waterline.
   const veg = new Set([TILES.FLOWER, TILES.TALL_GRASS, TILES.LILY, TILES.CACTUS,
     TILES.SNOWBUSH, TILES.ICICLE, TILES.LEAVES, TILES.SNOW_PINE_LEAVES,
-    TILES.ACACIA_LEAVES, TILES.MANGROVE_LEAVES, TILES.WOOD]);
+    TILES.ACACIA_LEAVES, TILES.MANGROVE_LEAVES, TILES.WOOD, TILES.SNOW]);
   for (let x = left; x < edgeRight; x++) {
     const natSurf = this.naturalSurfaceHeights[x];
     for (let y = 1; y < seaY; y++) {
@@ -544,14 +547,24 @@ World.prototype.generateReef = function() {
   for (let x = left + 4; x < mainRight - 3; x += 8) {
     const floor = this.surfaceHeights[x];
     const roll = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
-    const height = 7 + Math.floor(roll * 6);
+    // Three size tiers so the reef floor reads as mixed growth rather than
+    // one uniform stand of chest-high coral: half the colonies are low 2-4
+    // tile clusters, a third are mid fans, and the rare one reaches 9-12.
+    // (The separate TALL_CORAL species stays 13+; QA caps this one at 12.)
+    const tier = Math.abs(Math.sin(x * 1.039) * 12345.6789) % 1;
+    const height = tier < 0.5 ? 2 + Math.floor(roll * 3)
+      : tier < 0.85 ? 5 + Math.floor(roll * 4)
+        : 9 + Math.floor(roll * 4);
     const waterDepth = floor - seaY;
     if (waterDepth >= height + 1 && !legacyShrineColumns.includes(x) &&
         !podiumColumns.some(podiumX => Math.abs(podiumX - x) <= 3) &&
         Math.abs(x - portalX) > 17) {
       for (let k = 1; k <= height; k++) this.setTile(x, floor - k, TILES.CORAL);
-      for (const level of [2, 4, 6]) {
-        const branchY = floor - height + level;
+      // Branch levels are fractions of the colony's OWN height — at the old
+      // uniform height of 7 these are exactly the old 2/4/6 — so a short
+      // cluster fans out near its own top instead of branching from the floor.
+      for (const fraction of [0.3, 0.55, 0.8]) {
+        const branchY = floor - height + Math.max(1, Math.round(height * fraction));
         for (const side of [-1, 1]) {
           for (let length = 1; length <= 3; length++) {
             const branchX = x + side * length;

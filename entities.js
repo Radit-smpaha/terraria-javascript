@@ -833,7 +833,9 @@ class Player {
         this.vx += accel;
         this.facing = 1;
       } else {
-        this.vx *= this.friction;
+        // Water stops you faster than land does, so releasing a key in a
+        // swim does not leave you drifting sideways.
+        this.vx *= this.swimming ? 0.75 : this.friction;
         if (Math.abs(this.vx) < 0.1) this.vx = 0;
       }
       this.vx = Math.max(-maxSpeed, Math.min(maxSpeed, this.vx));
@@ -875,12 +877,24 @@ class Player {
     const dropThrough = input.keys[bindings.crouch] || input.keys['KeyS'] || input.keys['ArrowDown'];
 
     // Gravity
-    this.vy += this.swimming ? 0.075 : this.gravity;
-    const maxFallSpeed = this.swimming ? 2.4 : this.terminalVel;
-    if (this.vy > maxFallSpeed) this.vy = maxFallSpeed;
-    if (this.swimming && (input.keys[bindings.jump] || input.keys['Space'] ||
-        input.keys['KeyW'] || input.keys['ArrowUp'])) {
-      this.vy = Math.max(-2.5, this.vy - 0.18);
+    if (this.swimming) {
+      // Water control. The old swim added gravity every frame but never
+      // bled velocity off: releasing a key kept you coasting for half a
+      // second vertically, and there was no way to swim DOWN — hovering
+      // was impossible. Now: no input = drag that settles you to a gentle
+      // sink almost immediately, and S/Down thrusts downward so both
+      // directions are symmetric and precise. Up thrust matches the old
+      // net force exactly (+gravity -0.18 = -0.105/frame).
+      const swimUp = input.keys[bindings.jump] || input.keys['Space'] ||
+        input.keys['KeyW'] || input.keys['ArrowUp'];
+      const swimDown = input.keys[bindings.crouch] || input.keys['KeyS'] ||
+        input.keys['ArrowDown'];
+      if (swimUp) this.vy = Math.max(-2.5, this.vy + 0.075 - 0.18);
+      else if (swimDown) this.vy = Math.min(2.4, this.vy + 0.075 + 0.18);
+      else this.vy = Math.max(-2.5, Math.min(2.4, this.vy * 0.78 + 0.075));
+    } else {
+      this.vy += this.gravity;
+      if (this.vy > this.terminalVel) this.vy = this.terminalVel;
     }
 
     // ---- Wings: hold jump in the air to beat them -------------------------

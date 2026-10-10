@@ -1659,7 +1659,10 @@ class World {
     // dawn/dusk boundary; a smooth factor blends them in with the sky colour.
     const daylight = this.daylightFactor();
 
+    // Same reef rule as the ridges: land props never hover over open water.
+    const decorReefClip = this._clipOutsideReef(ctx, camera, w, h);
     this.renderBiomeDecor(ctx, camera, biome, w, h, t, night);
+    if (decorReefClip) ctx.restore();
     const landBiome = this.dimension !== 'ocean' && this.dimension !== 'space' &&
       ['snow', 'forest', 'plains', 'savanna', 'swamp'].includes(biome);
     if (landBiome) this.renderSkyBirds(ctx, w, h, t, daylight, biome);
@@ -1751,6 +1754,32 @@ class World {
       // Haze is an rgba() string; mixHex handles that form too.
       haze: blend(a.haze, b.haze)
     };
+  }
+
+  /**
+   * Clip subsequent drawing to whatever is NOT covered by the ocean reef.
+   *
+   * The reef is open water, so no land scenery (mountain ranges, dunes,
+   * treelines, decor props) may be drawn over it — but the forest backdrop
+   * paints one full-frame scene, and a view straddling the reef/land border
+   * used to lay the mountain ranges straight across the water. Returns true
+   * when a clip is active; the caller must pair it with ctx.restore().
+   */
+  _clipOutsideReef(ctx, camera, w, h) {
+    const rb = this.reefBounds;
+    if (!rb) return false;
+    const left = rb.left * TILE_SIZE - camera.x;
+    const right = rb.right * TILE_SIZE - camera.x;
+    // Reef entirely off-frame: there is nothing to exclude.
+    if (right <= 0 || left >= w) return false;
+    ctx.save();
+    ctx.beginPath();
+    if (left > 0) ctx.rect(0, 0, left, h);
+    if (right < w) ctx.rect(right, 0, w - right, h);
+    // Whole frame is reef: clip to nothing so no land scenery is drawn.
+    if (left <= 0 && right >= w) ctx.rect(0, 0, 0, 0);
+    ctx.clip();
+    return true;
   }
 
   /** The sky itself: gradient, haze, celestial bodies, clouds, stars, ridges. */
@@ -1931,6 +1960,11 @@ class World {
     const ridgeNear = this.mixHex(palette.ridge, skyHaze, 0.08);
     // skyHaze is handed to each layer so its BASE can fog out into the sky —
     // that ground-fog wash is what separates one range from the next.
+    //
+    // The ocean reef gets NO land scenery: a frame that straddles the reef
+    // border must not draw mountain ranges, dunes, or treelines across the
+    // open water, so every layer below is clipped out of the reef's span.
+    const reefClipped = this._clipOutsideReef(ctx, camera, w, h);
     this.renderMountainLayer(ctx, camera, 0.035, ridgeFar, h * 0.44, 132, null, skyHaze);
     this.renderMountainLayer(ctx, camera, 0.055, ridgeMid, h * 0.50, 112, null, skyHaze);
     this.renderMountainLayer(ctx, camera, 0.08, ridgeNear, h * 0.57, 88, palette.ridgeSnow, skyHaze);
@@ -1940,6 +1974,7 @@ class World {
     else if (biome === 'snow') this.renderSnowDriftLayer(ctx, camera, 0.14, h * 0.66);
     this.renderPineForestLayer(ctx, camera, 0.2, palette.far, h * 0.62, 50, biome);
     this.renderDeciduousForestLayer(ctx, camera, 0.4, palette.near, h * 0.7, 75, biome);
+    if (reefClipped) ctx.restore();
 
     // Sun position is needed by the god-ray layer below, so hand it back.
     return { sunX, sunY };
