@@ -13,7 +13,7 @@ const path = require('path');
 const dir = process.argv[2] || '.';
 const SCRIPTS = [
   'audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'
 ];
 
 const results = [];

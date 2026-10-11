@@ -11,7 +11,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const files = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js', 'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
+const files = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js', 'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
 
 function makeCtx() {
   return new Proxy({}, {

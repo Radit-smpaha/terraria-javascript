@@ -75,7 +75,7 @@ global.localStorage = {
   removeItem: (k) => store.delete(k), clear: () => store.clear()
 };
 const files = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
 const ctx = vm.createContext(global);
 for (const f of files) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
 

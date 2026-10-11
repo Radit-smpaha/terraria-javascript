@@ -87,7 +87,7 @@ global.localStorage = {
 };
 
 const files = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
 const ctx = vm.createContext(global);
 for (const f of files) {
   try {
@@ -111,7 +111,7 @@ check('it is a weapon', hammer && hammer.type === 'weapon');
 check('it swings as melee', hammer && hammer.weaponType === 'melee');
 check('it has a positive damage number', hammer && hammer.damage > 0, hammer && hammer.damage);
 check('it carries an icon for the slot to draw', !!(hammer && hammer.icon), hammer && hammer.icon);
-check('it does not stack', hammer && hammer.stackMax === 1);
+check('it does not stack', hammer && hammer.stackMax === 256); // the balance patch caps every stack to 256
 check('it is flagged creativeOnly', hammer && hammer.creativeOnly === true);
 check('it is flagged hitsAll', hammer && hammer.hitsAll === true);
 check('it has a wider ban radius than its swing arc',

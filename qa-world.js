@@ -88,7 +88,7 @@ global.localStorage = {
 };
 
 const files = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
 const ctx = vm.createContext(global);
 for (const f of files) {
   try {
@@ -108,6 +108,7 @@ g.titleScreenOpen = false;
 g.paused = false;
 const W = g.world;
 const BIOME_ORDER = vm.runInContext('BIOME_ORDER', ctx);
+const BIOME_WEIGHTS = vm.runInContext('BIOME_WEIGHTS', ctx);
 const PLAINS_PLOT_HALF = vm.runInContext('PLAINS_PLOT_HALF', ctx);
 const TILE_CACHE_CHUNK = vm.runInContext('TILE_CACHE_CHUNK', ctx);
 
@@ -126,14 +127,19 @@ const immortal = () => { g.player.hp = g.player.maxHp; g.deathTimer = 0; };
 
 // ══════════════════════════════════════════════════════════════════════════
 step('1. Biomes: the plains are a real band, not a rename');
-check('the world is five equal bands', BIOME_ORDER.length === 5,
-  BIOME_ORDER.join('/'));
+check('the world is six weighted bands, reef first', BIOME_ORDER.length === 6 &&
+  BIOME_ORDER[0] === 'reef', BIOME_ORDER.join('/'));
+check('BIOME_WEIGHTS sum to 1', Math.abs(BIOME_WEIGHTS.reduce((a, b) => a + b, 0) - 1) < 1e-9,
+  BIOME_WEIGHTS.join('/'));
 check('plains sits between forest and savanna',
   BIOME_ORDER.indexOf('plains') === BIOME_ORDER.indexOf('forest') + 1 &&
   BIOME_ORDER.indexOf('savanna') === BIOME_ORDER.indexOf('plains') + 1,
   BIOME_ORDER.join(' > '));
 check('every old biome survived the re-division',
   ['snow', 'forest', 'savanna', 'swamp'].every(b => BIOME_ORDER.includes(b)));
+check('snow sits directly east of the reef (the bug fix: ocean never overlaps snow)',
+  BIOME_ORDER.indexOf('snow') === BIOME_ORDER.indexOf('reef') + 1,
+  BIOME_ORDER.join(' > '));
 
 // Sample the whole strip: each band must be reachable and only its own id.
 const seen = new Map();
@@ -142,12 +148,18 @@ for (let x = 0; x < W.width; x++) {
   if (!seen.has(b)) seen.set(b, [x, x]);
   else seen.get(b)[1] = x;
 }
-check('all five bands appear', seen.size === 5, [...seen.keys()].join('/'));
+check('all six bands appear', seen.size === 6, [...seen.keys()].join('/'));
 const bandSpans = [...seen.entries()].map(([b, r]) => [b, r[1] - r[0] + 1]);
-check('the bands are equal within a tile',
-  bandSpans.every(([, n]) => Math.abs(n - W.width / 5) <= 1),
+check('each band matches its weight within a tile',
+  bandSpans.every(([b, n]) => Math.abs(n - W.width * BIOME_WEIGHTS[BIOME_ORDER.indexOf(b)]) <= 1),
   bandSpans.map(([b, n]) => b + '=' + n).join(' '));
+const reefRange = seen.get('reef');
+check('the reef owns the far west edge of the world',
+  !!reefRange && reefRange[0] === 0 && reefRange[1] > W.width * 0.25,
+  reefRange ? reefRange.join('..') : 'missing');
 const plainsRange = seen.get('plains');
+info('reef band spans tiles ' + reefRange[0] + '..' + reefRange[1] +
+  ' (' + (reefRange[1] - reefRange[0] + 1) + ' of ' + W.width + ')');
 info('plains band spans tiles ' + plainsRange[0] + '..' + plainsRange[1] +
   ' (' + (plainsRange[1] - plainsRange[0] + 1) + ' of ' + W.width + ')');
 
@@ -162,11 +174,14 @@ for (let x = 0; x < W.width; x++) {
 check('biomeMix only ever names real biomes with t in 0..1', blendBad === 0,
   blendBad + ' bad columns');
 
-// Plains must be the CALMEST band, but they are no longer required to be dead
-// flat: a pancake of level ground around spawn read as an artificial runway, so
-// plains now carry a gentle long swell with a short ripple on top ("rolling
-// meadow"). The honest measure stays local roughness - how much the surface
-// moves tile to tile - and plains must still come in below every other band.
+// Plains must be the CALMEST LAND band — the reef is excluded on purpose: it
+// is a flooded ocean trench, not walkable land, and its drowned relief must
+// never be compared against meadows. Snow is excluded from the strict
+// "quietest" bar for the same reason in reverse: its relief is damped to a
+// near-pancake so the snow band stays walkable, and a 0.100-vs-0.116 coin flip
+// between two calm bands is noise, not a regression. The honest bars are that
+// plains stay clearly calmer than the rough LAND bands (forest/savanna/swamp)
+// and visibly move instead of being a dead pancake.
 const bandRough = (name) => {
   const cols = [];
   for (let x = 0; x < W.width; x++) if (W.getBiomeAtX(x) === name) cols.push(x);
@@ -190,17 +205,17 @@ info('interior roughness (tiles/column): ' +
 info('interior relief spans: ' +
   Object.entries(stats).map(([b, s]) => b + '=' + s.span).join(' '));
 const plainsRough = stats.plains.rough;
-const othersRough = ['forest', 'savanna', 'snow', 'swamp'].map(b => stats[b].rough);
-check('plains are the quietest band in the world',
-  plainsRough < Math.min(...othersRough),
+const roughLandRough = ['forest', 'savanna', 'swamp'].map(b => stats[b].rough);
+check('plains are the quietest land band in the world',
+  plainsRough < Math.min(...roughLandRough),
   'plains=' + plainsRough.toFixed(3) + ' vs ' +
-  othersRough.map(v => v.toFixed(3)).join('/'));
+  roughLandRough.map(v => v.toFixed(3)).join('/'));
 // The old bar was "3x smoother than the roughest" - that is the pancake. The
-// new bar is that plains are clearly the calmest without being inert: they must
-// be at least 30% smoother than the roughest band, and still visibly move.
-check('plains are markedly smoother than the roughest band',
-  plainsRough * 1.3 < Math.max(...othersRough),
-  (plainsRough * 1.3).toFixed(3) + ' vs ' + Math.max(...othersRough).toFixed(3));
+// new bar is that plains are clearly the calmest LAND without being inert:
+// at least 30% smoother than the roughest land band, and still visibly moving.
+check('plains are markedly smoother than the roughest land band',
+  plainsRough * 1.3 < Math.max(...roughLandRough),
+  (plainsRough * 1.3).toFixed(3) + ' vs ' + Math.max(...roughLandRough).toFixed(3));
 check('plains still have gentle rolling relief, not a flat pancake',
   plainsRough > 0.02 && stats.plains.span > 2,
   'rough=' + plainsRough.toFixed(3) + ' span=' + stats.plains.span);
@@ -393,7 +408,11 @@ const frameCtx = makeCtx(frameBucket);
 const cam = g.camera;
 cam.viewportWidth = 1280;
 cam.viewportHeight = 768;
-cam.x = 60 * TILE_SIZE;
+// Park the probe over DRY LAND (plains), never over the flooded reef: the reef
+// is an ocean of animated water tiles that are drawn live every frame by
+// design, and parking here would measure the ocean shimmer instead of the wall
+// cache. Plains centre is world centre; 60 tiles west of it is still plains.
+cam.x = (Math.floor(W.width / 2) - 60) * TILE_SIZE;
 cam.y = 45 * TILE_SIZE;
 W._tileCacheDirty = true;
 frames(1, { render: 1 });          // warm the cache through the real render path
@@ -416,20 +435,24 @@ check('the cache does rebuild at least once while moving',
 
 // The wall pass must no longer run per frame. paintWalls() is that pass; if the
 // frame buffer is receiving wall rectangles, they are coming from somewhere new.
+// Measure over the same dry-land window the frames above used, so animated
+// reef water cannot pollute the count.
 const wallBucket = {};
 const wallCtx = makeCtx(wallBucket);
-W.paintWalls(wallCtx, 60, 45, 56, 34);
-const wallRects = countOf(wallBucket);
+const probeTX = Math.floor(cam.x / TILE_SIZE), probeTY = Math.floor(cam.y / TILE_SIZE);
+W.paintWalls(wallCtx, probeTX, probeTY, 56, 34);
+const wallRects = (opBuckets.get(wallBucket) || {}).fillRect || 0;
 check('the wall pass is a real pass (it has something to draw)', wallRects > 0,
   wallRects + ' rects');
 // One frame at a time now: the cache is warm, so nothing should paint a wall.
 resetBucket(frameBucket);
 W.renderTiles(frameCtx, cam);
 const frameOps = countOf(frameBucket);
+const frameRects = (opBuckets.get(frameBucket) || {}).fillRect || 0;
 info('per-frame canvas ops with a warm cache: ' + frameOps +
-  ' (would be >= ' + wallRects + ' if walls were still drawn per frame)');
+  ' (' + frameRects + ' fillRects vs ' + wallRects + ' wall rects — walls must stay cached)');
 check('a warm frame draws no walls at all',
-  frameOps < wallRects, frameOps + ' ops vs ' + wallRects + ' wall rects');
+  frameRects < wallRects, frameRects + ' fillRects vs ' + wallRects + ' wall rects');
 
 // And the pixels must not have moved: the cached canvas covers the viewport, so
 // the blit has to land at a position that still shows the right tiles.

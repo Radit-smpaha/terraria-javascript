@@ -42,7 +42,7 @@ global.cancelAnimationFrame = () => {};
 const store = new Map();
 global.localStorage = { getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k), clear: () => store.clear() };
 const ctx = vm.createContext(global);
-for (const f of ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js', 'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js']) {
+for (const f of ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js', 'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js']) {
   vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
 }
 const g = global.game;

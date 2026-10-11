@@ -80,7 +80,7 @@ global.localStorage = {
 };
 
 const FILES = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
 const ctx = vm.createContext(global);
 for (const f of FILES) {
   try {
@@ -272,18 +272,19 @@ check('dropping from an empty hotbar slot does nothing', (() => {
   loadSlot(2, 0);
   return g.dropSelectedStack() === false && g.drops.length === 0;
 })());
-check('Shift+G with no free slot refuses rather than eating items', (() => {
+check('Shift+G with no free slot drops exactly one item', (() => {
   g.drops = [];
   g.player.selectedSlot = 3;
   loadSlot(3, 5);
   for (let i = 0; i < g.inventory.length; i++) {
     if (i !== 3) g.inventory[i] = { id: 'stone', count: 999 };
   }
-  const refused = g.dropSelectedStack(1) === false;
-  const intact = g.inventory[3].count === 5;
+  const dropped = g.dropSelectedStack(1);
+  const intact = g.inventory[3].count === 4;
   for (let i = 0; i < g.inventory.length; i++) g.inventory[i] = { id: 'empty', count: 0 };
-  return refused && intact && g.drops.length === 0;
-})());
+  return dropped === true && intact && g.drops.length === 1 &&
+    g.drops[0].id === 'wood' && g.drops[0].count === 1;
+})(), 'dropped=' + (g.drops.length ? g.drops[0].id + 'x' + g.drops[0].count : 'none'));
 check('a favourited stack cannot be dropped with G', (() => {
   g.drops = [];
   g.player.selectedSlot = 4;
@@ -303,20 +304,21 @@ check('G drops whatever slot is selected, not always slot 0', (() => {
 })());
 check('the guide documents the new key', (() => {
   const html = fs.readFileSync('terraria.html', 'utf8');
-  return /<kbd>G<\/kbd>/.test(html) && /Shift<\/kbd>\+<kbd>G<\/kbd>/.test(html);
+  // The guide renders keybinds through data-keybind-label="drop", so match
+  // <kbd>G</kbd> with optional attributes rather than a bare <kbd>G</kbd>.
+  return /<kbd[^>]*>G<\/kbd>/.test(html) &&
+    /Shift<\/kbd>\+<kbd[^>]*>G<\/kbd>/.test(html);
 })());
 const keyBindings = (() => {
   const src = fs.readFileSync('terraria.js', 'utf8');
-  const counts = {};
-  for (const m of src.matchAll(/e\.code === '([A-Za-z0-9]+)'/g)) {
-    counts[m[1]] = (counts[m[1]] || 0) + 1;
-  }
-  return { counts, keyG: (src.match(/e\.code === 'KeyG'/g) || []).length };
+  const drop = (src.match(/drop\s*:\s*['"]KeyG['"]/g) || []).length;
+  const buff = (src.match(/buff\s*:\s*['"]KeyQ['"]/g) || []).length;
+  return { drop, buff };
 })();
 check('G does not collide with an existing binding',
   // A second KeyG binding would be an accidental shadow of the drop.
-  keyBindings.counts.KeyG === 1 && keyBindings.counts.KeyQ === 1,
-  'KeyG=' + keyBindings.keyG + ' KeyQ=' + keyBindings.counts.KeyQ);
+  keyBindings.drop === 1 && keyBindings.buff === 1,
+  'KeyG=' + keyBindings.drop + ' KeyQ=' + keyBindings.buff);
 
 step('6. A partly-full bag must never duplicate a dropped stack');
 // --------------------------------------------------------------------
@@ -337,8 +339,9 @@ check('addItemUpTo exists and reports what it took', (() => {
   const before = bagTotal('dirt');
   const took = g.addItemUpTo('dirt', 1500);
   const gained = bagTotal('dirt') - before;
-  // One free slot holds 999, so 1500 cannot fit and 999 must come back.
-  return took === 999 && gained === 999;
+  // The balance patch caps every stack to 256, so one free slot takes 256 and
+  // the remaining 1244 stay on the floor.
+  return took === 256 && gained === 256;
 })(), 'took=' + (typeof g.addItemUpTo === 'function' ? 'see below' : 'MISSING'));
 
 // And the loop that used to lose items, end to end and over many frames.

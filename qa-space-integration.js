@@ -34,12 +34,14 @@ const probes = [
   ['wormhole rendered', has(t, /this\.wormhole\.render\(ctx/)],
   ['wormhole screen overlay', has(t, /renderScreenOverlay\(/)],
   ['weather suppressed in space', count(t, /this\.weather && !this\.world\.isInSpace\(\)/) >= 2],
-  ['critter spawn guarded', has(t, /!this\.world\.isInSpace\(\) && !this\.world\.isNight\(\)/)],
-  ['monster spawn guarded', has(t, /this\.world\.isInSpace\(\) \|\| Math\.random\(\) > darkChance/)],
+  ['critter spawn guarded', has(t, /!this\.world\.isInSpace\(\) && !this\.world\.isInOcean\(\) && !this\.world\.isNight\(\)/)],
+  ['monster spawn guarded', has(t, /this\.world\.isInSpace\(\) \|\| this\.world\.isInOcean\(\) \|\| Math\.random\(\) > darkChance/)],
   ['dragon motes', has(t, /kind === 'dragon' \? \(this\.boss\.phase === 3/)],
   ['dragon touch damage', has(t, /this\.boss\.touchDamage\(\)/)],
   ['dragon defeat branch', has(t, /defeatedDragon/) && has(t, /this\.onDragonDefeated\(\)/)],
-  ['respawn handles space death', has(t, /isInSpace\(\)\) \{\s*\n?\s*this\.returnToOverworld\(\)/)],
+  // Space death banks the fight and restores the overworld first; the ocean
+  // branch shares that line now, so match either dimension.
+  ['respawn handles space death', has(t, /diedInSpace \|\| this\.world\.isInOcean\(\)\) \{\s*\n?\s*this\.returnToOverworld\(\)/)],
   ['save uses persistTiles', has(t, /persistTiles\(\)/)],
   ['save uses persistWalls', has(t, /persistWalls\(\)/)],
   ['save stores dragonHP', has(t, /dragonHP:/)],

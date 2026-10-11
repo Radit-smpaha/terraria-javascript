@@ -71,7 +71,7 @@ global.matchMedia = () => ({ matches: false });
 
 const ctx = vm.createContext(global);
 for (const f of ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js']) {
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js']) {
   try {
     vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
   } catch (e) {
@@ -207,7 +207,10 @@ for (const lm of W.landmarks.filter((l) => ['cabin', 'snow_lodge', 'swamp_hut', 
 // The Prospector's offset used to be exactly the cottage's right-hand wall
 // column, so he was embedded in solid timber for the entire game.
 const villagers = (global.game.npcs && global.game.npcs.npcs) || [];
-check('the villagers exist', villagers.length === 3, 'found ' + villagers.length);
+// Five since the reef landed (Guide, Prospector, Scavenger + lore carriers the
+// Old Sailor and the Star Watcher). The count must at least cover the original
+// three — the reef QA pins the full five.
+check('the villagers exist', villagers.length >= 3, 'found ' + villagers.length);
 for (const npc of villagers) {
   const tx = Math.floor((npc.x + npc.width / 2) / 24);
   const feetRow = Math.floor((npc.y + npc.height - 1) / 24);

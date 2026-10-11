@@ -79,7 +79,7 @@ global.localStorage = {
 };
 
 const FILES = ['audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
-  'underworld.js', 'space.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
+  'underworld.js', 'space.js', 'ocean.js', 'juice.js', 'npcs.js', 'journey.js', 'terraria.js'];
 const ctx = vm.createContext(global);
 for (const f of FILES) {
   try {

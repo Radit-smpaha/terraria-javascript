@@ -3273,55 +3273,54 @@ class Kraken {
     const injury = 1 - this.hp / this.maxHp;
     const cx = x + this.width * 0.5;
     const ph = this.phase;
-    // Phase power ladder: every phase is a real step up, so the silhouette
-    // itself grows — phase 4 is a bigger, brighter, angrier beast.
-    const power = 1 + (ph - 1) * 1.7;
+    // VISUAL SCALE, capped. Grows a touch per phase (1.0 -> 1.35) and NEVER
+    // the runaway 6x that used to blank the screen. Damage/rate live on a
+    // separate ladder in update(); the silhouette only has to read bigger.
+    const grow = Math.min(1.35, 1 + (ph - 1) * 0.12);
     const t = this.animT * (1.6 + ph * 0.35);
     const lash = this.lashPhase || 0;
     const hiddenNow = this.hideAlpha < 0.6;
     const flash = this.hitFlash > 0;
     const faceDir = this.faceDir || 1;
+    // Snap every drawn coordinate to a 2px grid so the art keeps the chunky,
+    // pixel-sprite read Terraria tiles have instead of drifting sub-pixels.
+    const P = (v) => Math.round(v / 2) * 2;
 
-    // ---- Terraria palette: a small, flat set of tones, nothing blended ----
-    const skinLit = flash ? '#ffffff' : ph === 4 ? '#ffffff' : ph === 3 ? '#dc2626' : ph === 2 ? '#f43f5e' : '#fb7185';
-    const skinTop = flash ? '#fecaca' : ph === 4 ? '#fde68a' : ph === 3 ? '#b91c1c' : ph === 2 ? '#e11d48' : '#f43f5e';
-    const skinMid = flash ? '#fca5a5' : ph === 4 ? '#f97316' : ph === 3 ? '#7f1d1d' : ph === 2 ? '#9f1239' : '#be123c';
-    const skinTip = flash ? '#fecaca' : ph === 4 ? '#450a0a' : ph === 3 ? '#450a0a' : ph === 2 ? '#4c0519' : '#7f1d3a';
+    // ---- Terraria palette: a SMALL, FLAT set. Nothing is blended on the
+    // body — tone comes from hard-banded fills, not gradients. `heat` only
+    // swaps which flat colours are used; it never scales geometry.
+    const skinLit  = flash ? '#ffffff' : ph === 4 ? '#fffbeb' : ph === 3 ? '#fca5a5' : ph === 2 ? '#fda4af' : '#fecdd3';
+    const skinTop  = flash ? '#ffe4e6' : ph === 4 ? '#fde68a' : ph === 3 ? '#ef4444' : ph === 2 ? '#f43f5e' : '#fb7185';
+    const skinMid  = flash ? '#fecaca' : ph === 4 ? '#f97316' : ph === 3 ? '#b91c1c' : ph === 2 ? '#be123c' : '#e11d48';
+    const skinLow  = flash ? '#fca5a5' : ph === 4 ? '#7f1d1d' : ph === 3 ? '#7f1d1d' : ph === 2 ? '#881337' : '#9f1239';
     const skinDark = '#2b0608';
-    const ink = '#1a0308';            // the hard outline colour
-    const suckerColor = flash ? '#ffffff' : ph === 4 ? '#fef08a' : ph === 3 ? '#fecaca' : '#fecdd3';
-    const rimColor = flash ? '#ffffff' : ph === 4 ? '#fde68a' : ph === 3 ? '#fb7185' : '#fda4af';
+    const ink = '#16060a';            // the hard outline colour
+    const suckerColor = flash ? '#ffffff' : ph >= 3 ? '#fecdd3' : '#ffe4e6';
 
     ctx.save();
-    // ---- The WHOLE body moves: bank, pitch, skew, squash, breathe ----
-    // Lean banks the beast into its swim; pitch noses the mantle with dives
-    // and climbs; skew shears the silhouette on horizontal bursts; the squash
-    // spring compresses/widens the cone on every turn beat and releases with
-    // a bounce; breath swells everything ±4% on the inhale. All of it stacks,
-    // so the silhouette is never the same shape twice in a row.
+    // ---- The WHOLE body moves: bank, pitch, skew, squash, breathe, lunge.
+    // All of it stacks off bounded springs so the silhouette is alive but
+    // never flies apart. grow is applied ONCE, here, as a uniform scale —
+    // individual features are NOT re-multiplied by it.
     const squash = this.squash || 0;
     const breath = this.breath || 1;
     const pitch = this.pitch || 0;
     const skew = this.skew || 0;
-    // lunge: the anticipation coil pulls the body back, the recoil snaps it
-    // FORWARD toward whatever it is facing — so every skill fires with a
-    // physical lunge the player can read off the silhouette.
     const lunge = this.lunge || 0;
     const bodyCX = cx + (this.sway || 0);
     const bodyCY = y + this.height * 0.5 + (this.bob || 0);
     ctx.translate(bodyCX, bodyCY);
+    ctx.scale(grow, grow);
     ctx.rotate((this.lean || 0) * 0.18 + pitch * 0.35 + lunge * 0.06 * faceDir);
     ctx.transform(1 + skew * 0.6 + squash * 0.35, skew * 0.25,
       skew * 0.25, (1 - squash * 0.45) * breath, 0, 0);
     ctx.scale(breath, breath);
     ctx.translate(-bodyCX, -bodyCY);
-    // The lunge shifts the whole silhouette along the facing axis, so the beast
-    // physically throws itself into each attack instead of standing and glowing.
     ctx.translate((this.sway || 0) + faceDir * lunge * 26, (this.bob || 0) - Math.abs(lunge) * 8);
     ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
     ctx.lineJoin = 'round';
-    // Travelling ripple: a wave running apex→arms the limbs spend as lag.
-    // spineOff(k) offsets any point at body-fraction k (0 = apex, 1 = arms).
+    ctx.lineCap = 'round';
+    // Travelling ripple: a wave running apex->arms the limbs spend as lag.
     const swimPh = this.swimPhase || 0;
     const speedNow = Math.hypot(this.vx || 0, this.vy || 0);
     const rippleAmp = 4 + Math.min(10, speedNow / 22) + (this.lashTimer > 0 ? 5 : 0);
@@ -3330,24 +3329,19 @@ class Kraken {
     // ====================================================================
     // Geometry. A kraken is: a TALL tapering mantle (apex up), a narrow
     // head with two big eyes below it, then a heavy crown of ten limbs below
-    // the head. The mantle is deliberately much taller than it is wide.
-    // There is no mouth/beak: the face is eyes only, which reads cleaner at
-    // boss scale and never looks like a weird beak. The eyes grow with phase.
-    const apexY = y + this.height * 0.02;       // pointed tip of the mantle
-    const shoulderY = y + this.height * 0.30;   // widest point of the cone
-    const headY = y + this.height * 0.57;       // eyes, low above the arms
-    const limbRootY = headY + this.height * 0.04;  // where the arm crown roots
-    // The mantle is deliberately NARROW: at 0.20 of the body width the cone is
-    // clearly taller than it is wide, which is the whole difference between a
-    // kraken and a jellyfish bell. The shoulder flares only gently and the
-    // collar tucks back in toward the head.
+    // the head. NO mouth — the face is the twin eyes only.
+    const apexY = y + this.height * 0.02;        // pointed tip of the mantle
+    const shoulderY = y + this.height * 0.30;    // widest point of the cone
+    const headY = y + this.height * 0.57;        // eyes, low above the arms
+    const limbRootY = headY + this.height * 0.04; // where the arm crown roots
     const shoulderW = this.width * 0.20;   // mantle half-width at the shoulder
     const collarW = this.width * 0.13;     // mantle half-width at the head
     const headW = this.width * 0.22;
 
     // ---- Helper: a tapering limb from a base to a curling tip -----------
-    // lagRx/lagRy bend the control point opposite the swim direction so fast
-    // limbs trail behind the mantle instead of sticking out rigidly.
+    // Terraria limbs are FAT at the root and taper hard, banded into flat
+    // tone steps with a single dark outline — no soft sheen. lagRx/lagRy
+    // bend the control point opposite the swim so fast limbs trail behind.
     const lagRx = -(this.vx || 0) * 0.16;
     const lagRy = -(this.vy || 0) * 0.10;
     const qPoint = (x0, y0, x1, y1, x2, y2, tt) => {
@@ -3356,16 +3350,15 @@ class Kraken {
         y: it * it * y0 + 2 * it * tt * y1 + tt * tt * y2 };
     };
     const limb = (bx, by, ctrlX, ctrlY, tipX, tipY, baseW) => {
-      const segs = 14;
-      ctx.lineCap = 'round';
-      // 1. Hard outline, one step wider than the limb.
+      const segs = 10;
+      // 1. Hard outline, one step wider than the limb body.
       ctx.strokeStyle = ink;
       ctx.lineWidth = baseW + 5;
-      ctx.beginPath(); ctx.moveTo(bx, by);
-      ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY); ctx.stroke();
-      // 2. Flat body tones, quantised into four bands.
-      const tones = [skinLit, skinTop, skinMid, skinTip];
-      const bounds = [0.20, 0.45, 0.78, 1.0];
+      ctx.beginPath(); ctx.moveTo(P(bx), P(by));
+      ctx.quadraticCurveTo(P(ctrlX), P(ctrlY), P(tipX), P(tipY)); ctx.stroke();
+      // 2. Flat body tones, quantised into four hard bands (no gradient).
+      const tones = [skinLit, skinTop, skinMid, skinLow];
+      const bounds = [0.18, 0.42, 0.74, 1.0];
       for (let s = 0; s < segs; s++) {
         const t0 = s / segs, t1 = (s + 1) / segs;
         const w0 = baseW * (1 - t0) + 2.5 * t0;
@@ -3374,34 +3367,19 @@ class Kraken {
         const p1 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t1);
         ctx.strokeStyle = tones[band];
         ctx.lineWidth = w0;
-        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(P(p0.x), P(p0.y)); ctx.lineTo(P(p1.x), P(p1.y)); ctx.stroke();
       }
-      // 3. A pale rim-light down the leading edge for a wet sheen.
-      const prevA = ctx.globalAlpha;
-      ctx.globalAlpha = prevA * 0.5;
-      ctx.strokeStyle = rimColor;
-      ctx.lineWidth = Math.max(1.5, baseW * 0.26);
-      ctx.beginPath(); ctx.moveTo(bx, by);
-      ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY); ctx.stroke();
-      ctx.globalAlpha = prevA;
-      // 4. Suckers: discs down the underside, each ringed with a pale rim and
-      //    a soft bioluminescent glow — the arms light up as they move, like a
-      //    deep-sea hunter. The glow brightens with swim speed, the skill
-      //    pulse and the turn-beat squash so the whole beast flickers with
-      //    living light, brightest mid-lash.
+      // 3. Suckers: SQUARE pixel discs down the underside, flat-toned with a
+      //    dark rim. They pop a touch brighter with swim speed + skill glow.
       const suckerPulse = Math.min(1, 0.30 + Math.min(0.35, speedNow / 400) +
         this.skillGlow * 0.5 + squash * 0.5);
       for (const tt of [0.28, 0.40, 0.52, 0.64, 0.76, 0.88]) {
         const pt = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, tt);
-        const r = 3.4 * (1 - tt) + 1.1;
-        const sg = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, r * 2.0);
-        sg.addColorStop(0, 'rgba(147, 197, 253, ' + suckerPulse.toFixed(3) + ')');
-        sg.addColorStop(1, 'rgba(147, 197, 253, 0)');
-        ctx.fillStyle = sg;
-        ctx.beginPath(); ctx.arc(pt.x, pt.y, r * 1.6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = suckerColor;
-        ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(26, 3, 8, 0.7)'; ctx.lineWidth = 1; ctx.stroke();
+        const r = Math.max(2, Math.round((3.4 * (1 - tt) + 1.1) / 2) * 2);
+        ctx.fillStyle = suckerPulse > 0.6 ? suckerColor : '#f9a8d4';
+        ctx.fillRect(P(pt.x - r), P(pt.y - r), r * 2, r * 2);
+        ctx.strokeStyle = 'rgba(22, 6, 10, 0.8)'; ctx.lineWidth = 1;
+        ctx.strokeRect(P(pt.x - r), P(pt.y - r), r * 2, r * 2);
       }
     };
 
@@ -3409,15 +3387,10 @@ class Kraken {
     // 1. TWO long feeding tentacles, drawn first (furthest back). They curl
     //    out and UP like striking serpents -- the kraken's signature shape.
     // ====================================================================
-    // Player (world -> screen) the feeding tentacles strike toward when attacking.
-    // Idle they keep their rest curl (out and down); only a strike lets them track prey.
     const _P = this.game && this.game.player;
     const aimX = _P ? _P.x + _P.width / 2 - camera.x : cx + faceDir * 320;
     const aimY = _P ? _P.y + _P.height / 2 - camera.y : limbRootY + 80;
     const aimA = Math.atan2(aimY - limbRootY, aimX - cx);
-    // Strike readiness: the hide/lash punch OR an aimed skill (aqua lance, ink
-    // spew, sweep, ink burst, whirlpool) charging — then the tentacles snap to
-    // attention and lash OUT at the prey instead of resting at their sides.
     let feedStrike = 0;
     if (this.lashTimer > 0) feedStrike = Math.max(feedStrike, lash * 0.9);
     if (this.pending && /^(beam|ink_spew|sweep|ink_burst|whirlpool)$/.test(this.pending.type)) {
@@ -3429,38 +3402,31 @@ class Kraken {
 
     for (const side of [-1, 1]) {
       const bx = cx + side * this.width * 0.10 + spineOff(0.85);
-      const sway = Math.sin(t * 0.6 + (side > 0 ? 0 : Math.PI)) * (26 + ph * 8) * power;
-      // Idle: the two feeding tentacles curl out and slightly down like serpents
-      // at rest. On a strike they pivot to aim at the prey and extend, hooking
-      // around it — the classic kraken "strike and grab".
+      const sway = Math.sin(t * 0.6 + (side > 0 ? 0 : Math.PI)) * (26 + ph * 8);
       const idleA = side < 0 ? Math.PI - 0.46 : 0.46;   // down-and-out, per side
       const lead = striking ? (aimA + side * 0.28) : idleA;
-      const reach = striking
-        ? (205 + ph * 12 + feedStrike * 115) * power
-        : (185 + Math.abs(sway)) * power;
+      const reach = striking ? (205 + ph * 12 + feedStrike * 115) : (185 + Math.abs(sway));
       const tipX = bx + Math.cos(lead) * reach;
       const tipY = limbRootY + Math.sin(lead) * reach;
-      // Travelling serpent wave down the shaft, louder when surging / striking.
       const wave = Math.sin(t * 2.9 + side * 3.1) *
-        (striking ? (16 + this.surge * 20 + feedStrike * 16) : (10 + this.surge * 14 + 3)) * power;
+        (striking ? (16 + this.surge * 20 + feedStrike * 16) : (10 + this.surge * 14 + 3));
       const perX = -Math.sin(lead), perY = Math.cos(lead);
-      const bStrength = (striking ? 52 : 38) * power;
+      const bStrength = (striking ? 52 : 38);
       const ctrlX = bx + Math.cos(lead) * (reach * 0.52) + perX * bStrength +
         lagRx * 0.5 + wave * perX * 0.3;
       const ctrlY = limbRootY + Math.sin(lead) * (reach * 0.52) + perY * bStrength +
-        lagRy * 0.5 + wave * perY * 0.3 + (striking ? 16 : 12) * power;
-      limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 24 * power);
+        lagRy * 0.5 + wave * perY * 0.3 + (striking ? 16 : 12);
+      limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 24);
       // Hooked tip: a wider, ink-rimmed sucker cup that flares on the strike.
       const tipScale = 1 + feedStrike * 0.35;
       ctx.fillStyle = skinMid;
-      ctx.strokeStyle = ink; ctx.lineWidth = 2.5 * power;
-      ctx.beginPath(); ctx.arc(tipX, tipY, 7 * tipScale * power, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      // An ink flick trails the hook on the downstroke — the tentacle lashes.
+      ctx.strokeStyle = ink; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(P(tipX), P(tipY), 7 * tipScale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       if (feedStrike > 0.6) {
-        ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.25 + 0.35 * feedStrike).toFixed(3) + ')';
+        ctx.fillStyle = 'rgba(22, 6, 10, ' + (0.25 + 0.35 * feedStrike).toFixed(3) + ')';
         ctx.beginPath();
-        ctx.ellipse(tipX + Math.cos(lead) * 12, tipY + Math.sin(lead) * 12,
-          4 * tipScale * power, 10 * tipScale * power, lead, 0, Math.PI * 2);
+        ctx.ellipse(P(tipX + Math.cos(lead) * 12), P(tipY + Math.sin(lead) * 12),
+          4 * tipScale, 10 * tipScale, lead, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -3471,19 +3437,12 @@ class Kraken {
     // ====================================================================
     for (let i = 0; i < 8; i++) {
       const f = i / 7;
-      // Sweep the LOWER half-circle: arms hang down and fan outward like a
-      // kraken's crown. (An upper-half sweep is what made the last version
-      // look like a starfish with its arms in the air.)
       const ang = Math.PI * (0.06 + 0.88 * f);   // 0 = right, PI = left, under
       const dirX = Math.cos(ang);
       const dirY = Math.sin(ang);                 // 0..1, always downward-ish
-      // Varied lengths so the crown is not a tidy star: the middle arms float
-      // shorter, the outer pairs reach longest.
-      const reach = this.height * (0.40 + 0.30 * Math.abs(Math.cos(ang * 1.5))) * power;
-      const sway = Math.sin(t * 0.9 + i * 1.2) * (14 + ph * 5) * power;
+      const reach = this.height * (0.40 + 0.30 * Math.abs(Math.cos(ang * 1.5)));
+      const sway = Math.sin(t * 0.9 + i * 1.2) * (14 + ph * 5);
       const punch = lash * (0.4 + 0.6 * Math.abs(dirX));
-      // Each arm roots along the travelling ripple and its tip lags a full
-      // beat behind — the crown ripples apex→tips in sequence, never in sync.
       const rootLag = spineOff(0.9);
       const bx = cx + dirX * (collarW * 0.8) + rootLag;
       const tipLag2 = Math.sin(swimPh * 2.1 - 3.6 - i * 0.35) * rippleAmp * 0.9;
@@ -3492,364 +3451,278 @@ class Kraken {
       const tipY = limbRootY + dirY * (reach * 0.9) + punch * 30 +
         lagRy * (0.5 + 0.08 * i) +
         Math.cos(swimPh * 2.1 - 3.0 - i * 0.35) * rippleAmp * 0.5;
-      // Curl DOWN: the control point is pushed low and wide so each arm bows
-      // outward then hooks toward the seabed, like a limb feeling for prey. A
-      // per-arm wave phase makes the crown ripple — ten limbs reading as ten
-      // independent, writhing arms, not one stiff star.
-      const wave = Math.sin(t * 3.1 + i * 0.9) * (6 + this.surge * 8) * power;
+      const wave = Math.sin(t * 3.1 + i * 0.9) * (6 + this.surge * 8);
       const ctrlX = bx + dirX * (reach * 0.55) + sway * 0.5 + lagRx * 0.3;
       const ctrlY = limbRootY + dirY * (reach * 0.25) + reach * 0.30 + wave + lagRy * 0.3;
-      limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 13 * power);
+      limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 13);
     }
 
     // ====================================================================
-    // 3. THE MANTLE: a tall tapering cone, apex up. This is the part that
-    //    has to beat the old "mushroom bell" read -- so it is long and
-    //    narrow, with a pointed apex and a soft flare at the shoulder.
+    // 3. THE MANTLE: a tall tapering cone, apex up, drawn with FLAT tone
+    //    bands (not a gradient). The cone keeps its long, narrow read so it
+    //    is unmistakably a squid mantle and not a jellyfish bell.
     // ====================================================================
-    const mantleGrad = ctx.createLinearGradient(cx - shoulderW, apexY, cx + shoulderW, shoulderY);
-    if (flash) {
-      mantleGrad.addColorStop(0, '#ffffff'); mantleGrad.addColorStop(1, '#fecaca');
-    } else if (this.phase === 4) {
-      // Final ink: the mantle burns white-hot at the spine, bleeding to black.
-      mantleGrad.addColorStop(0, '#ffffff');
-      mantleGrad.addColorStop(0.4, '#fde68a');
-      mantleGrad.addColorStop(0.7, '#dc2626');
-      mantleGrad.addColorStop(1, '#1a0204');
-    } else if (this.phase === 3) {
-      mantleGrad.addColorStop(0, '#dc2626');
-      mantleGrad.addColorStop(0.5, '#991b1b');
-      mantleGrad.addColorStop(1, '#450a0a');
-    } else if (this.phase === 2) {
-      mantleGrad.addColorStop(0, '#f43f5e');
-      mantleGrad.addColorStop(0.5, '#be123c');
-      mantleGrad.addColorStop(1, '#4c0519');
-    } else {
-      mantleGrad.addColorStop(0, '#fb7185');
-      mantleGrad.addColorStop(0.5, '#e11d48');
-      mantleGrad.addColorStop(1, '#7f1d3a');
-    }
-    ctx.fillStyle = mantleGrad;
     ctx.beginPath();
-    ctx.moveTo(cx, apexY);                                        // pointed apex
-    ctx.bezierCurveTo(cx + shoulderW * 0.22, apexY + this.height * 0.12,
-      cx + shoulderW * 0.78, shoulderY - this.height * 0.06,
-      cx + shoulderW, shoulderY);                                 // R flank
-    ctx.bezierCurveTo(cx + shoulderW * 0.80, shoulderY + this.height * 0.16,
-      cx + collarW * 1.20, headY - this.height * 0.06,
-      cx + collarW, headY);                                       // R collar
-    // The mantle flows into a broad, forward-facing head. Its lower edge
-    // overlaps the limb roots, so the face and arms read as one animal.
-    ctx.bezierCurveTo(cx + collarW * 1.2, headY + this.height * 0.10,
-      cx + headW * 0.9, limbRootY - this.height * 0.02,
-      cx + headW * 0.5, limbRootY + this.height * 0.02);
-    ctx.quadraticCurveTo(cx, limbRootY + this.height * 0.09,
-      cx - headW * 0.5, limbRootY + this.height * 0.02);
-    ctx.bezierCurveTo(cx - headW * 0.9, limbRootY - this.height * 0.02,
-      cx - collarW * 1.2, headY + this.height * 0.10,
-      cx - collarW, headY);                                       // under-head
-    ctx.bezierCurveTo(cx - collarW * 1.20, headY - this.height * 0.06,
-      cx - shoulderW * 0.80, shoulderY + this.height * 0.16,
-      cx - shoulderW, shoulderY);                                 // L collar
-    ctx.bezierCurveTo(cx - shoulderW * 0.78, shoulderY - this.height * 0.06,
-      cx - shoulderW * 0.22, apexY + this.height * 0.12,
-      cx, apexY);                                                 // back to apex
+    ctx.moveTo(P(cx), P(apexY));
+    ctx.bezierCurveTo(P(cx + shoulderW * 0.22), P(apexY + this.height * 0.12),
+      P(cx + shoulderW * 0.78), P(shoulderY - this.height * 0.06),
+      P(cx + shoulderW), P(shoulderY));
+    ctx.bezierCurveTo(P(cx + shoulderW * 0.80), P(shoulderY + this.height * 0.16),
+      P(cx + collarW * 1.20), P(headY - this.height * 0.06),
+      P(cx + collarW), P(headY));
+    ctx.bezierCurveTo(P(cx + collarW * 1.2), P(headY + this.height * 0.10),
+      P(cx + headW * 0.9), P(limbRootY - this.height * 0.02),
+      P(cx + headW * 0.5), P(limbRootY + this.height * 0.02));
+    ctx.quadraticCurveTo(P(cx), P(limbRootY + this.height * 0.09),
+      P(cx - headW * 0.5), P(limbRootY + this.height * 0.02));
+    ctx.bezierCurveTo(P(cx - headW * 0.9), P(limbRootY - this.height * 0.02),
+      P(cx - collarW * 1.2), P(headY + this.height * 0.10),
+      P(cx - collarW), P(headY));
+    ctx.bezierCurveTo(P(cx - collarW * 1.20), P(headY - this.height * 0.06),
+      P(cx - shoulderW * 0.80), P(shoulderY + this.height * 0.16),
+      P(cx - shoulderW), P(shoulderY));
+    ctx.bezierCurveTo(P(cx - shoulderW * 0.78), P(shoulderY - this.height * 0.06),
+      P(cx - shoulderW * 0.22), P(apexY + this.height * 0.12),
+      P(cx), P(apexY));
     ctx.closePath();
+    ctx.fillStyle = skinMid;
     ctx.fill();
     // Hard cut-out outline.
-    ctx.strokeStyle = ink; ctx.lineWidth = 5 * power; ctx.stroke();
-    // Dorsal spine ridge: the fin-ray crown along the mantle spine. A row of
-    // tipped spines that rise with the swim cycle, so the beast reads as a
-    // living apex instead of a smooth teardrop — a squid's mantle teeth.
-    // The ridge rides the travelling ripple, so the whole spine ripples.
-    const spineAmp = this.surge * 0.4 + (1 - hiddenNow) * 0.25 + this.phaseFlash * 0.4;
-    for (let i = 0; i < 7; i++) {
-      const k = i / 6;
-      const midY = apexY + (shoulderY - apexY) * (0.22 + k * 0.52);
-      const ridgeX = cx + Math.cos(this.animT * 3.3 + i) * shoulderW * 0.11 * spineAmp +
-        spineOff(k * 0.55);
-      const spH = (9 + (i % 3) * 2 + spineAmp * 3) * power;
-      const spW = (6 + spineAmp * 2) * power;
-      ctx.fillStyle = flash ? '#ffffff' : '#2b0608';
-      ctx.beginPath();
-      ctx.moveTo(ridgeX - spW, midY);
-      ctx.lineTo(ridgeX, midY - spH);
-      ctx.lineTo(ridgeX + spW, midY);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 1.4 * power;
-      ctx.beginPath(); ctx.arc(ridgeX, midY - spH * 0.3, 1.5 * power, 0, Math.PI * 2); ctx.stroke();
-    }
-    // Jet spout: a real squid vents a pressurised ink/water plume from the
-    // apex to thrust. The brighter the surge, the harder the jet.
-    if (this.surge > 0.45) {
-      const jx = cx;
-      const jy = apexY - this.height * 0.04;
-      const spoutLen = this.surge * 26 * (1 + (1 - this.hideAlpha) * 0.4) * power;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.beginPath(); ctx.moveTo(jx - 4, jy); ctx.lineTo(jx - 2, jy - spoutLen);
-      ctx.lineTo(jx + 2, jy - spoutLen); ctx.lineTo(jx + 4, jy); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
-      ctx.beginPath(); ctx.arc(jx, jy - spoutLen * 0.6, 3 + this.surge * 4 * power, 0, Math.PI * 2); ctx.fill();
-    }
-    // ---- Abyssal aura: the water around the beast glows ----
-    // A deep violet meniscus behind the whole silhouette + a hot rim under
-    // the mantle in the phase colour. This is what makes it read as a BOSS
-    // and not a big fish: the sea itself reacts to it. Intensity follows
-    // skillGlow + turn-beat squash + injury.
-    const auraBase = hiddenNow ? 0.10 : 0.22;
-    const auraHot = auraBase + this.skillGlow * 0.25 + squash * 0.3 + injury * 0.15
-      + this.phaseFlash * 0.35;
-    const aura = ctx.createRadialGradient(bodyCX, bodyCY, this.height * 0.2,
-      bodyCX, bodyCY, this.width * 0.85 * power);
-    const auraCore = this.phase === 4 ? '255, 255, 255'
-      : this.phase === 3 ? '248, 113, 113'
-      : this.phase === 2 ? '251, 146, 60' : '168, 85, 247';
-    aura.addColorStop(0, 'rgba(' + auraCore + ', ' + Math.min(0.65, auraHot).toFixed(3) + ')');
-    aura.addColorStop(0.6, 'rgba(76, 5, 25, ' + (auraHot * 0.45).toFixed(3) + ')');
-    aura.addColorStop(1, 'rgba(76, 5, 25, 0)');
-    ctx.fillStyle = aura;
-    ctx.beginPath(); ctx.arc(bodyCX, bodyCY, this.width * 0.85 * power, 0, Math.PI * 2); ctx.fill();
-    // ---- Bioluminescent rune-rings circling the mantle ----
-    // Two dashed rings orbiting opposite ways, brighter with skillGlow: the
-    // kraken wears its charge-up like a spell circle. Terraria-style flat
-    // strokes, no gradients — they read as carved light. Rings grow with phase.
-    ctx.save();
-    ctx.globalAlpha = (hiddenNow ? 0.15 : 0.35) + this.skillGlow * 0.45 + this.phaseFlash * 0.3;
-    for (const ring of [0, 1]) {
-      const rr = this.width * (0.30 + ring * 0.09) * power;
-      const rot = this.animT * (ring ? -1.1 : 0.8) + ring * 1.7;
-      ctx.strokeStyle = ring ? '#fda4af' : '#e9d5ff';
-      ctx.lineWidth = (ring ? 2.5 : 3.5) * power;
-      ctx.setLineDash(ring ? [4, 10] : [16, 9]);
-      ctx.lineDashOffset = rot * 22;
-      ctx.beginPath();
-      ctx.ellipse(bodyCX, bodyCY - this.height * 0.08, rr, rr * 0.42, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    // Lit shoulder (a flat block of light, not a soft gradient).
-    ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.5 : 0.26);
-    ctx.fillStyle = '#ffe4e6';
+    ctx.strokeStyle = ink; ctx.lineWidth = 5; ctx.stroke();
+    // Flat dorsal highlight: a single lighter band down the spine (a hard
+    // parallelogram of light, NOT a gradient) so the cone reads as rounded
+    // volume the Terraria way.
+    ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.5 : 0.5);
+    ctx.fillStyle = skinTop;
     ctx.beginPath();
-    ctx.moveTo(cx - shoulderW * 0.10, apexY + this.height * 0.16);
-    ctx.bezierCurveTo(cx - shoulderW * 0.45, apexY + this.height * 0.20,
-      cx - shoulderW * 0.62, shoulderY - this.height * 0.02,
-      cx - shoulderW * 0.50, shoulderY - this.height * 0.02);
-    ctx.bezierCurveTo(cx - shoulderW * 0.30, shoulderY - this.height * 0.16,
-      cx - shoulderW * 0.16, apexY + this.height * 0.30,
-      cx - shoulderW * 0.10, apexY + this.height * 0.16);
+    ctx.moveTo(P(cx - shoulderW * 0.30), P(apexY + this.height * 0.10));
+    ctx.lineTo(P(cx + shoulderW * 0.06), P(apexY + this.height * 0.10));
+    ctx.lineTo(P(cx + shoulderW * 0.20), P(shoulderY));
+    ctx.lineTo(P(cx - shoulderW * 0.55), P(shoulderY));
     ctx.closePath(); ctx.fill();
     ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    // Dark side, quantised to the right flank for volume.
-    ctx.globalAlpha = ctx.globalAlpha * 0.30;
+    // Flat ventral shadow: one dark band on the lower-left flank for weight.
+    ctx.globalAlpha = ctx.globalAlpha * 0.35;
     ctx.fillStyle = skinDark;
     ctx.beginPath();
-    ctx.moveTo(cx + collarW * 0.4, headY - this.height * 0.06);
-    ctx.bezierCurveTo(cx + shoulderW * 0.9, shoulderY + this.height * 0.06,
-      cx + shoulderW * 0.9, shoulderY - this.height * 0.10,
-      cx + shoulderW * 0.55, apexY + this.height * 0.16);
-    ctx.quadraticCurveTo(cx + collarW * 0.6, headY - this.height * 0.10,
-      cx + collarW * 0.4, headY - this.height * 0.06);
+    ctx.moveTo(P(cx - shoulderW * 0.55), P(shoulderY));
+    ctx.lineTo(P(cx + shoulderW * 0.20), P(shoulderY));
+    ctx.lineTo(P(cx + collarW * 0.9), P(headY));
+    ctx.lineTo(P(cx - collarW * 0.9), P(headY));
     ctx.closePath(); ctx.fill();
     ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    // Bumpy hide: a golden-angle scatter of small darker spots.
-    // Battle damage: at high injury some spots crack into glowing embers —
-    // the beast visibly falls apart as you win. Spots ride the ripple too.
-    ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
-    for (let i = 0; i < 22; i++) {
-      const a = i * 2.399;
-      const rad = Math.sqrt(i / 22);
-      const kSpot = 0.18 + rad * 0.8;
-      const bx2 = cx + Math.cos(a) * shoulderW * 0.72 * rad + spineOff(kSpot * 0.6);
-      const by2 = apexY + (shoulderY - apexY) * kSpot;
-      const cracked = injury > 0.45 && (i % 4 === 0);
-      if (cracked) {
-        const ember = ctx.createRadialGradient(bx2, by2, 0, bx2, by2, 7);
-        ember.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
-        ember.addColorStop(0.5, 'rgba(249, 115, 22, 0.6)');
-        ember.addColorStop(1, 'rgba(249, 115, 22, 0)');
-        ctx.fillStyle = ember;
-        ctx.beginPath(); ctx.arc(bx2, by2, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
-      }
-      ctx.beginPath(); ctx.arc(bx2, by2, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
+    // Dorsal spine ridges: a short row of pixel ticks up the mantle midline,
+    // brightening with the jet surge — a living apex, not a smooth teardrop.
+    const spineAmp = this.surge * 0.4 + (1 - hiddenNow) * 0.25 + (this.phaseFlash || 0) * 0.4;
+    ctx.strokeStyle = 'rgba(22, 6, 10, 0.9)'; ctx.lineWidth = 1.4;
+    for (let i = 0; i < 6; i++) {
+      const ridgeX = P(cx + Math.cos(this.animT * 3.3 + i) * shoulderW * 0.11 * spineAmp);
+      const midY = P(apexY + (shoulderY - apexY) * (0.12 + i * 0.13));
+      const spH = (9 + (i % 3) * 2 + spineAmp * 3);
+      const spW = (6 + spineAmp * 2);
+      ctx.beginPath();
+      ctx.moveTo(ridgeX - spW, midY); ctx.lineTo(ridgeX, midY - spH); ctx.lineTo(ridgeX + spW, midY);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(ridgeX, midY - spH * 0.3, 1.5, 0, Math.PI * 2); ctx.stroke();
     }
 
     // ====================================================================
-    // 4. Terminal FINS on the apex: two tattered, ribbed wings at the very
-    //    top of the mantle, exactly as a squid/giant squid wears them.
+    // 4. Terminal FINS on the mantle: two low, wide arrowhead fins laid
+    //    flat along the upper flanks, exactly as a giant squid wears them.
     // ====================================================================
-    // Two terminal fins sweep down-and-out along the upper flanks: the wide
-    // arrowhead silhouette a giant squid wears at the tip of its mantle. Drawn
-    // BEHIND the mantle by placing them at the apex and letting the cone's own
-    // outline sit over their roots.
-    // Two low, wide fins laid flat along the upper flanks: the classic squid
-    // arrowhead. They are rooted partway DOWN the mantle (never at the tip, or
-    // they read as ears) and sweep outward and down, hugging the cone.
-    // The two terminal fins sit about a third of the way down the mantle and
-    // lie almost flat along its flanks -- low, wide, and trailing, exactly the
-    // way a giant squid wears them. Rooted well below the apex so they can
-    // never read as ears or horns.
     for (const side of [-1, 1]) {
       const rootX = cx + side * shoulderW * 0.42 + spineOff(0.35);
       const rootY = apexY + this.height * 0.20;
-      // Fins beat with the swim: faster when moving, snapping on turn beats.
       const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) *
         (3 + Math.min(6, speedNow / 45)) + (squash || 0) * side * 9;
-      ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.92 : 0.88);
-      ctx.fillStyle = flash ? '#ffffff'
-        : this.phase === 3 ? '#b91c1c' : this.phase === 2 ? '#e11d48' : '#fb7185';
+      ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.92 : 0.9);
+      ctx.fillStyle = flash ? '#ffffff' : skinTop;
       ctx.beginPath();
-      ctx.moveTo(rootX, rootY - 16);
-      // Leading edge: out and gently down, hugging the mantle's curve.
-      ctx.quadraticCurveTo(rootX + side * 40, rootY - 6 + flap,
-        rootX + side * 66, rootY + 18 + flap * 0.4);
-      // Trailing edge: a shallow scallop back to the flank, low.
-      ctx.quadraticCurveTo(rootX + side * 52, rootY + 34, rootX + side * 28, rootY + 36);
-      ctx.quadraticCurveTo(rootX + side * 12, rootY + 24, rootX, rootY + 6);
+      ctx.moveTo(P(rootX), P(rootY - 16));
+      ctx.quadraticCurveTo(P(rootX + side * 40), P(rootY - 6 + flap),
+        P(rootX + side * 66), P(rootY + 18 + flap * 0.4));
+      ctx.quadraticCurveTo(P(rootX + side * 52), P(rootY + 34), P(rootX + side * 28), P(rootY + 36));
+      ctx.quadraticCurveTo(P(rootX + side * 12), P(rootY + 24), P(rootX), P(rootY + 6));
       ctx.closePath(); ctx.fill();
       ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
       ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
     }
 
     // ====================================================================
-    // 5. THE EYES: two big black-rimmed orbs set into the head, with the
-    //    glowing weakpoint on the right. The keystone of the whole face.
+    // 5. THE EYES: two big black-rimmed orbs, STRICTLY SYMMETRIC. Both
+    //    share ONE centre row `ey` and ONE radius `s`; the only difference
+    //    is the right eye carries the weakpoint glow. No per-eye size or
+    //    vertical offset of any kind — that asymmetry was the bug reported.
     // ====================================================================
-    // The eyes are drawn INSIDE the body's own transform (sway/bob translate +
-    // lean rotation already applied to `cx`), so they can never drift away from
-    // the head or sit asymmetrically: both orbs share ONE centre line through
-    // `cx` and ONE shared row `ey`, identical size, identical pupil, identical
-    // glint. No per-eye offset of any kind.
-    const ey = y + this.height * 0.60 + spineOff(0.75) * 0.5;
-    // The eye pulse: a slow breathe plus a hard flash the instant a skill fires,
-    // so the weakpoint telegraphs the fight's rhythm. Turn beats dilate it. When
-    // the aqua lance locks on, the eye swells white-hot — the fight's loudest tell.
+    const ey = P(y + this.height * 0.60 + spineOff(0.75) * 0.5);
     const _beamCharge = this.pending && this.pending.type === 'beam'
       ? (1 - Math.max(0, this.pending.timer) / this.pending.total) : 0;
-    // The eye swells with ANY charging skill, not just the aqua lance, so the
-    // weakpoint always telegraphs the fight's rhythm — and the bigger the phase,
-    // the hotter the flare, keeping the eye the loudest tell on the whole boss.
     const chargeGlow = (this.chargePose || 0) * (0.5 + ph * 0.25);
     const glow = 1 + Math.sin(this.animT * 5) * 0.12 + this.skillGlow * 0.6 +
       (squash || 0) * 0.4 + _beamCharge * 0.9 + chargeGlow;
-    const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
-    const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
-    const drawEye = (px, py, s, primary) => {
+    const haloColor = this.phase >= 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
+    const irisColor = this.phase >= 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
+    // ONE shared eye radius for both orbs.
+    const eyeR = 14;
+    const drawEye = (px, primary) => {
+      px = P(px);
       if (primary) {
-        // Weakpoint glow: a flat disc of light behind the eye that blooms when
-        // skills fire and tightens when the aqua lance locks on.
-        const halo = ctx.createRadialGradient(px, py, 6, px, py, 40 * s * glow);
-        halo.addColorStop(0, 'rgba(' + haloColor + ', 0.5)');
-        halo.addColorStop(1, 'rgba(' + haloColor + ', 0)');
-        ctx.fillStyle = halo;
-        ctx.beginPath(); ctx.arc(px, py, 40 * s * glow, 0, Math.PI * 2); ctx.fill();
+        // Weakpoint glow: a flat ring of light behind the eye (a stroked
+        // annulus, not a soft gradient) that blooms when skills fire.
+        const haloR = P((eyeR + 6) * Math.min(1.6, glow));
+        ctx.globalAlpha = Math.min(0.55, 0.22 + this.skillGlow * 0.25 + chargeGlow * 0.3);
+        ctx.strokeStyle = 'rgba(' + haloColor + ', 0.9)';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(px, ey, haloR, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
       }
-      // Round socket: a disc set flush with the head, not a floating eyeball.
+      // Round socket: a disc set flush with the head.
       ctx.fillStyle = skinDark;
-      ctx.beginPath(); ctx.arc(px, py, 14 * s, 0, Math.PI * 2); ctx.fill();
-      // Wet ink rim around the lid.
-      ctx.strokeStyle = 'rgba(26, 3, 8, 0.8)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(px, py, 14 * s, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, ey, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(22, 6, 10, 0.9)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(px, ey, eyeR, 0, Math.PI * 2); ctx.stroke();
       ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
-      // Iris: a wet disc, slightly off toward the face direction.
-      const ix = px + faceDir * 2.4 * s;
-      const ild = ctx.createRadialGradient(ix - 1.8 * s, py - 1.8 * s, 2 * s, ix, py, 10 * s);
-      ild.addColorStop(0, irisColor);
-      ild.addColorStop(1, '#0b0712');
-      ctx.fillStyle = ild;
-      ctx.beginPath(); ctx.arc(ix, py, 10 * s, 0, Math.PI * 2); ctx.fill();
-      // Round pupil: the deep-sea hunter's mark.
+      // Iris: a flat wet disc, slightly off toward the face direction.
+      const ix = P(px + faceDir * 2.4);
+      ctx.fillStyle = irisColor;
+      ctx.beginPath(); ctx.arc(ix, ey, 10, 0, Math.PI * 2); ctx.fill();
+      // Round pupil.
       ctx.fillStyle = '#0b0712';
-      ctx.beginPath(); ctx.arc(ix, py, 3 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ix, ey, 3, 0, Math.PI * 2); ctx.fill();
       // Wet glint for a living eye.
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(ix - 3.2 * s, py - 3.4 * s, 2.3 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(P(ix - 3.2), P(ey - 3.4), 2.3, 0, Math.PI * 2); ctx.fill();
       if (primary) {
-        // Aqua-lance lock-on: a contracting ring around the weakpoint as it charges.
+        // Aqua-lance lock-on: a contracting dashed ring as it charges.
         if (_beamCharge > 0.05) {
-          const ringR = 28 * s + 12 * _beamCharge;
+          const ringR = eyeR + 12 + 12 * _beamCharge;
           ctx.strokeStyle = 'rgba(255, 241, 194, ' + (0.2 + 0.55 * _beamCharge).toFixed(3) + ')';
           ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, 14 - 10 * _beamCharge]);
-          ctx.beginPath(); ctx.arc(px, py, ringR, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([5, Math.max(2, 14 - 10 * _beamCharge)]);
+          ctx.beginPath(); ctx.arc(px, ey, ringR, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
         }
         // Corneal sheen: a crescent catchlight on the iris.
         ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.2 * Math.sin(this.animT * 7)).toFixed(3) + ')';
         ctx.beginPath();
-        ctx.ellipse(ix + 2 * s, py - 3.2 * s, 2.8 * s, 1.4 * s, 0, 0, Math.PI * 2);
+        ctx.ellipse(P(ix + 2), P(ey - 3.2), 2.8, 1.4, 0, 0, Math.PI * 2);
         ctx.fill();
       }
     };
-    const eyeSpread = this.width * 0.075;
-    drawEye(cx - eyeSpread, ey + 2, 0.84, false);
-    drawEye(cx + eyeSpread, ey, 1, true);
+    // Mirror-symmetric placement about cx: |offset| identical on both sides.
+    const eyeSpread = this.width * 0.085;
+    drawEye(cx - eyeSpread, false);
+    drawEye(cx + eyeSpread, true);
 
-    // ====================================================================
-    // 6. NO MOUTH. The kraken is a beakless, mawless abyss — its face is the
-    //    twin glowing eyes and nothing else. A toothy maw read as a weird beak
-    //    at boss scale and clashed with the clean mantle silhouette, so the
-    //    lower face is left bare ink and the eyes carry all the expression.
-    // ====================================================================
+    // ---- Jet spout: a pressurised plume vents from the apex mid-swim ----
+    if (this.surge > 0.45) {
+      const jx = P(cx);
+      const jy = P(apexY - this.height * 0.04);
+      const spoutLen = this.surge * 26 * (1 + (1 - this.hideAlpha) * 0.4);
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.moveTo(jx - 4, jy); ctx.lineTo(jx - 2, jy - spoutLen);
+      ctx.lineTo(jx + 2, jy - spoutLen); ctx.lineTo(jx + 4, jy); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
+      ctx.beginPath(); ctx.arc(jx, jy - spoutLen * 0.6, 3 + this.surge * 4, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
+    }
+    // ---- Abyssal aura: a BOUNDED glow so it frames the beast and never
+    // blankets the screen. Capped to ~0.7x body width and modestly alpha'd —
+    // the old unbounded aura (radius up to 1860px) is what hid the tiles.
+    const auraBase = hiddenNow ? 0.10 : 0.20;
+    const auraHot = auraBase + this.skillGlow * 0.18 + squash * 0.2 + injury * 0.12
+      + (this.phaseFlash || 0) * 0.25;
+    const auraR = Math.min(this.width * 0.7, this.width * 0.55 * (1 + (ph - 1) * 0.08));
+    const auraCore = this.phase === 4 ? '255, 231, 179'
+      : this.phase === 3 ? '248, 113, 113'
+      : this.phase === 2 ? '251, 146, 60' : '168, 85, 247';
+    const aura = ctx.createRadialGradient(bodyCX, bodyCY, this.height * 0.2,
+      bodyCX, bodyCY, auraR);
+    aura.addColorStop(0, 'rgba(' + auraCore + ', ' + Math.min(0.32, auraHot).toFixed(3) + ')');
+    aura.addColorStop(0.6, 'rgba(76, 5, 25, ' + (auraHot * 0.3).toFixed(3) + ')');
+    aura.addColorStop(1, 'rgba(76, 5, 25, 0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(bodyCX, bodyCY, auraR, 0, Math.PI * 2); ctx.fill();
+    // ---- Bioluminescent rune-rings: flat dashed ellipses, bounded radius.
+    ctx.save();
+    ctx.globalAlpha = (hiddenNow ? 0.15 : 0.3) + this.skillGlow * 0.35 + (this.phaseFlash || 0) * 0.25;
+    for (const ring of [0, 1]) {
+      const rr = this.width * (0.28 + ring * 0.08) * grow;
+      const rot = this.animT * (ring ? -1.1 : 0.8) + ring * 1.7;
+      ctx.strokeStyle = ring ? '#fda4af' : '#e9d5ff';
+      ctx.lineWidth = (ring ? 2.5 : 3);
+      ctx.setLineDash(ring ? [4, 10] : [16, 9]);
+      ctx.lineDashOffset = rot * 22;
+      ctx.beginPath();
+      ctx.ellipse(bodyCX, bodyCY - this.height * 0.08, rr, rr * 0.42, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
 
-    // ====================================================================
-    // 7. Ink dripping off the crown, and the wounds the boss has taken.
-    // ====================================================================
+    // ---- Bumpy hide: a golden-angle scatter of small flat spots; at high
+    // injury some crack into pixel embers — the beast visibly falls apart.
+    ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
+    for (let i = 0; i < 22; i++) {
+      const a = i * 2.399;
+      const rad = Math.sqrt(i / 22);
+      const kSpot = 0.18 + rad * 0.8;
+      const bx2 = P(cx + Math.cos(a) * shoulderW * 0.72 * rad + spineOff(kSpot * 0.6));
+      const by2 = P(apexY + (shoulderY - apexY) * kSpot);
+      const cracked = injury > 0.45 && (i % 4 === 0);
+      if (cracked) {
+        ctx.fillStyle = injury > 0.7 ? '#fde68a' : '#f97316';
+        ctx.fillRect(bx2 - 3, by2 - 3, 6, 6);
+        ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
+      } else {
+        ctx.fillRect(bx2 - 1, by2 - 1, 2 + (i % 3), 2 + (i % 3));
+      }
+    }
+
+    // ---- Ink dripping off the crown, and the wounds the boss has taken ---
     ctx.fillStyle = '#0b0212';
     for (let i = 0; i < 7; i++) {
-      const dx = cx - shoulderW * 0.8 + i * (shoulderW * 1.6 / 6);
+      const dx = P(cx - shoulderW * 0.8 + i * (shoulderW * 1.6 / 6));
       const drip = (this.animT * 26 + i * 37) % (this.height * 0.34);
-      ctx.beginPath();
-      ctx.ellipse(dx, headY + drip, 3, 4 + drip * 0.05, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(dx - 1, P(headY + drip), 3, 4 + drip * 0.05);
     }
     if (injury > 0.05) {
-      ctx.save();
-      ctx.shadowColor = 'rgba(248, 113, 113, 0.8)';
-      ctx.shadowBlur = 8;
       ctx.strokeStyle = 'rgba(248, 113, 113, ' + Math.min(0.9, injury).toFixed(3) + ')';
       ctx.lineWidth = 3 + injury * 3;
       ctx.beginPath();
       for (let i = 0; i < 5; i++) {
-        const px2 = cx - 60 + i * 30;
-        const py2 = apexY + (shoulderY - apexY) * (0.25 + (i % 2) * 0.4);
-        ctx.moveTo(px2, py2);
-        ctx.lineTo(px2 + 9, py2 + 13);
-        ctx.lineTo(px2 - 4, py2 + 24);
+        const px2 = P(cx - 60 + i * 30);
+        const py2 = P(apexY + (shoulderY - apexY) * (0.25 + (i % 2) * 0.4));
+        ctx.moveTo(px2, py2); ctx.lineTo(px2 + 9, py2 + 13); ctx.lineTo(px2 - 4, py2 + 24);
       }
       ctx.stroke();
-      ctx.restore();
     }
 
     // Hit flash: whole-silhouette white, same as every other boss.
     if (this.hitFlash > 0) {
       ctx.globalAlpha = Math.min(0.6, this.hitFlash * 3);
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x - 20, y - 20, this.width + 40, this.height + 40);
+      ctx.fillRect(P(x - 20), P(y - 20), this.width + 40, this.height + 40);
       ctx.globalAlpha = 1;
     }
+    // ALWAYS pop the body transform — guarantees no leak even if a branch
+    // above bailed early. This closes the screen-fill bug class for good.
     ctx.restore();
 
-    // Ink pools stain the seabed where a slammed attack landed. Drawn in world
-    // space (after the body transform is popped) so they sit flat on the floor
-    // and persist after the kraken dives back into the dark — a visible record
-    // of every skill that landed.
+    // Ink pools stain the seabed where a slammed attack landed. Drawn in
+    // world space (after the body transform is popped) so they sit flat and
+    // persist after the kraken dives — a visible record of every skill.
     for (let i = this.inkPools.length - 1; i >= 0; i--) {
       const p = this.inkPools[i];
       const fade = 1 - p.t / p.life;
-      // Rim brightens as the pool blooms, then fades to a thin scar.
       const open = 0.5 + 0.5 * Math.min(1, p.t / p.peak);
       const rNow = p.r * (0.55 + 0.45 * open) * Math.min(1, fade * 1.3);
       ctx.globalAlpha = Math.min(0.55, (0.2 + 0.35 * open) * fade);
       ctx.fillStyle = '#0b0212';
       ctx.beginPath(); ctx.arc(p.x - camera.x, p.y - camera.y, rNow, 0, Math.PI * 2); ctx.fill();
-      const inner = ctx.createRadialGradient(p.x - camera.x, p.y - camera.y, 0,
-        p.x - camera.x, p.y - camera.y, rNow);
-      inner.addColorStop(0, 'rgba(168, 85, 247, 0.22)');
-      inner.addColorStop(1, 'rgba(168, 85, 247, 0)');
-      ctx.fillStyle = inner;
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.22)';
       ctx.beginPath(); ctx.arc(p.x - camera.x, p.y - camera.y, rNow * 0.6, 0, Math.PI * 2); ctx.fill();
     }
     if (this.inkPools.length) ctx.globalAlpha = 1;
