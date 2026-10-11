@@ -1406,19 +1406,29 @@ class Game {
     };
 
     const drawTree = (x, ground, scale, leafA, leafB, trunk) => {
-      const trunkHi = mixRGB(trunk, [232, 204, 166], 0.35);
+      const ts = scale;
+      // Trunk: bark body with a light grain streak and a knotted, flared base —
+      // cut timber, not a painted pole. Three bands read as trunk volume.
+      const trunkHi = mixRGB(trunk, [232, 204, 166], 0.38);
+      const trunkShade = mixRGB(trunk, [0, 0, 0], 0.28);
       context.fillStyle = trunk;
-      context.fillRect(x - 2 * scale, ground - 24 * scale, 5 * scale, 25 * scale);
+      context.fillRect(x - 3 * ts, ground - 25 * ts, 6 * ts, 26 * ts);
       context.fillStyle = css(trunkHi);
-      context.fillRect(x - scale, ground - 23 * scale, scale, 20 * scale);
+      context.fillRect(x - 1 * ts, ground - 24 * ts, 2 * ts, 21 * ts);          // light streak
+      context.fillStyle = css(trunkShade);
+      context.fillRect(x - 3 * ts, ground - 25 * ts, 6 * ts, 3 * ts);            // root overhang
+      context.fillRect(x - 3 * ts, ground - 6 * ts, 6 * ts, 4 * ts);           // knotted base
+      // Canopy: three overlapping, stepped lobes (the classic terraria tree
+      // shape) plus a couple of leaf clumps for pixel texture.
       context.fillStyle = leafA;
-      context.fillRect(x - 10 * scale, ground - 35 * scale, 20 * scale, 15 * scale);
-      context.fillRect(x - 7 * scale, ground - 40 * scale, 14 * scale, 8 * scale);
-      context.fillRect(x - 14 * scale, ground - 32 * scale, 7 * scale, 9 * scale);
-      context.fillRect(x + 7 * scale, ground - 31 * scale, 7 * scale, 8 * scale);
+      const top = ground - 26 * ts;
+      context.fillRect(x - 12 * ts, top - 4 * ts, 24 * ts, 12 * ts);            // top cap
+      context.fillRect(x - 17 * ts, top + 6 * ts, 34 * ts, 12 * ts);            // mid
+      context.fillRect(x - 20 * ts, top + 17 * ts, 40 * ts, 10 * ts);           // wide base
       context.fillStyle = leafB;
-      context.fillRect(x - 6 * scale, ground - 36 * scale, 4 * scale, 4 * scale);
-      context.fillRect(x + 4 * scale, ground - 30 * scale, 4 * scale, 4 * scale);
+      context.fillRect(x - 9 * ts, top - 2 * ts, 6 * ts, 4 * ts);               // clump
+      context.fillRect(x + 7 * ts, top + 8 * ts, 5 * ts, 5 * ts);
+      context.fillRect(x - 15 * ts, top + 18 * ts, 6 * ts, 4 * ts);
     };
 
     const mountains = [

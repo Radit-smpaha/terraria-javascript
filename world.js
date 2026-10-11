@@ -2737,9 +2737,14 @@ class World {
       const crownRadius = 38 + (treeIdx % 4) * 5;
       const cy = baseY - heightVar;
 
-      // Trunk
-      ctx.fillStyle = biome === 'savanna' ? '#5b3413' : biome === 'swamp' ? '#2f2417' : biome === 'snow' ? '#4a3b2c' : '#3f2e1e';
+      // Trunk with vertical grain bands, so it reads as timber and not a pole.
+      const trunkC = biome === 'savanna' ? '#5b3413' : biome === 'swamp' ? '#2f2417' : biome === 'snow' ? '#4a3b2c' : '#3f2e1e';
+      const trunkShade = biome === 'savanna' ? '#45240c' : biome === 'swamp' ? '#251a0f' : biome === 'snow' ? '#3a2e21' : '#302214';
+      ctx.fillStyle = trunkC;
       ctx.fillRect(screenX + spacing * 0.5 - 6, cy, 12, heightVar + 40);
+      ctx.fillStyle = trunkShade;
+      ctx.fillRect(screenX + spacing * 0.5 - 6, cy + 5, 3, heightVar + 28);
+      ctx.fillRect(screenX + spacing * 0.5 + 3, cy + 10, 3, heightVar + 22);
 
       // Lush crown: overlapping lobes rather than one circle, so the canopy
       // edge is broken up and reads as foliage. The lobes are placed from a
