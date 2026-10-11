@@ -31,13 +31,15 @@ function getOceanWaterTile(ripple) {
     tile.imageSmoothingEnabled = false;
     tile.fillStyle = '#062b43';
     tile.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    tile.fillStyle = '#0c4a6e';
-    tile.fillRect(0, 0, TILE_SIZE, 4);
-    tile.fillStyle = '#0e7490';
-    tile.fillRect(2, 8 + ripple, 7, 2);
-    tile.fillRect(13, 15 - ripple, 8, 2);
-    tile.fillStyle = 'rgba(103,232,249,0.55)';
-    tile.fillRect(5, 1, 3, 2);
+    tile.fillStyle = 'rgba(56, 189, 248, 0.10)';
+    tile.fillRect(1, 7 + ripple, 9, 2);
+    tile.fillRect(14, 13 - ripple, 6, 2);
+    tile.fillStyle = 'rgba(165, 243, 252, 0.08)';
+    tile.fillRect(6, 2 + ripple, 5, 1);
+    tile.fillRect(10, 18 - ripple, 7, 1);
+    tile.fillStyle = 'rgba(226, 232, 240, 0.10)';
+    tile.fillRect(3, 9 + (ripple > 2 ? 3 : 0), 1, 1);
+    tile.fillRect(17, 16 - (ripple > 2 ? 4 : 0), 1, 1);
     OCEAN_WATER_TILE_CACHE[ripple] = canvas;
   }
   return OCEAN_WATER_TILE_CACHE[ripple];
@@ -86,6 +88,59 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     return OCEAN_BASE_DRAW_TILE.call(this, ctx, tile, sx, sy, tx, ty, exposedTop);
   }
   const pulse = 0.65 + Math.sin(Date.now() * 0.003 + tx * 0.7 + ty) * 0.2;
+  const inOceanDim = this.isInOcean();
+  if (inOceanDim && tile === TILES.SAND) {
+    ctx.fillStyle = '#3b2f1e';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    if (exposedTop) {
+      ctx.fillStyle = '#57452c';
+      ctx.fillRect(sx, sy, TILE_SIZE, 4);
+      ctx.fillStyle = 'rgba(123, 101, 64, 0.5)';
+      ctx.fillRect(sx + 2, sy + 6, 8, 1);
+      ctx.fillRect(sx + 11, sy + 11, 8, 1);
+      ctx.fillRect(sx + 5, sy + 17, 7, 1);
+    }
+    ctx.fillStyle = 'rgba(216, 197, 155, 0.5)';
+    ctx.fillRect(sx + (tx * 7 + ty * 5) % 16, sy + (tx * 3 + ty * 11) % 18, 2, 2);
+    ctx.fillStyle = 'rgba(240, 230, 210, 0.35)';
+    ctx.fillRect(sx + (tx * 11 + ty * 3) % 14, sy + (tx * 5 + ty * 7) % 16, 3, 2);
+    return;
+  }
+  if (inOceanDim && tile === TILES.SANDSTONE) {
+    ctx.fillStyle = '#4a3b26';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = '#5c4a30';
+    ctx.fillRect(sx, sy + 2, TILE_SIZE, 3);
+    ctx.fillRect(sx, sy + 11, TILE_SIZE, 3);
+    ctx.fillStyle = '#3a2e1e';
+    ctx.fillRect(sx, sy + 8, TILE_SIZE, 2);
+    ctx.fillRect(sx, sy + 19, TILE_SIZE, 2);
+    ctx.fillStyle = 'rgba(216, 197, 155, 0.35)';
+    ctx.fillRect(sx + (tx * 5 + ty * 13) % 15, sy + (tx * 9 + ty * 3) % 17, 2, 1);
+    return;
+  }
+  if (inOceanDim && tile === TILES.STONE) {
+    ctx.fillStyle = '#141d26';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    if (exposedTop) {
+      ctx.fillStyle = '#1f2c38';
+      ctx.fillRect(sx, sy, TILE_SIZE, 3);
+    }
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.07)';
+    ctx.fillRect(sx + (tx * 7 + ty * 11) % 17, sy + (tx * 3 + ty * 5) % 19, 3, 1);
+    ctx.fillStyle = 'rgba(148, 197, 226, 0.06)';
+    ctx.fillRect(sx + (tx * 13 + ty * 7) % 14, sy + (tx * 5 + ty * 3) % 17, 4, 1);
+    return;
+  }
+  if (inOceanDim && tile === TILES.DIRT) {
+    ctx.fillStyle = '#2b2318';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = 'rgba(123, 101, 64, 0.4)';
+    ctx.fillRect(sx + (tx * 9 + ty * 3) % 15, sy + (tx * 3 + ty * 9) % 18, 6, 1);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(sx + (tx * 5 + ty * 13) % 12, sy + (tx * 7 + ty * 5) % 16, 4, 2);
+    return;
+  }
   if (tile === OCEAN_TILES.PEARL) {
     ctx.fillStyle = '#0e7490';
     ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
@@ -1094,8 +1149,13 @@ World.prototype.buildSunkenRuins = function(cx, groundY) {
 World.prototype.generateOceanPlanet = function() {
   this.tiles.fill(TILES.AIR);
   this.walls.fill(0);
-  const seaY = Math.max(24, Math.floor(this.height * 0.24));
-  const floorY = this.height - 18;
+  const seaY = Math.max(24, Math.floor(this.height * 0.30));
+  const floorY = this.height - 34;
+  const duneFloor = new Int16Array(this.width);
+  for (let x = 0; x < this.width; x++) {
+    duneFloor[x] = floorY - 4 + Math.round(
+      Math.sin(x * 0.09) * 3 + Math.sin(x * 0.031 + 1.7) * 4);
+  }
   this.surfaceHeights.fill(floorY);
 
   // ---- The abyssal planet is a WORLD OF ISLANDS, not a tank of water ----
@@ -1145,19 +1205,23 @@ World.prototype.generateOceanPlanet = function() {
       if (cx < margin || cx > this.width - margin - 1) continue;
       if (islands.some(o => Math.abs(o.cx - cx) < 16)) continue;
       if (islets.some(o => Math.abs(o.cx - cx) < isletSpacing)) continue;
-      islets.push({ cx, halfWidth: 2 + Math.floor(Math.random() * 4),
-        height: 2 + Math.floor(Math.random() * 4), islet: true });
+      // A wide, flat, elevated shoal: 5-8 tiles of walkable table that rises
+      // 3-5 tiles above the waterline, floating on the sea like a sand bar
+      // rather than a thin spike spearing up from the deep.
+      islets.push({ cx, halfWidth: 5 + Math.floor(Math.random() * 4),
+        height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
     }
   }
   // A generous independent scatter fills the open water between the rows above
-  // so no stretch of sea is ever featureless.
+  // so no stretch of sea is ever featureless. These free-floating shoals are
+  // the same flat-table shape.
   for (let attempt = 0; attempt < this.width; attempt++) {
     const cx = margin + Math.floor(Math.random() * usable);
     if (islands.some(o => Math.abs(o.cx - cx) < 16)) continue;
     if (islets.some(o => Math.abs(o.cx - cx) < isletSpacing)) continue;
-    islets.push({ cx, halfWidth: 1 + Math.floor(Math.random() * 3),
-      height: 2 + Math.floor(Math.random() * 3), islet: true });
-    if (islets.length >= 90) break;
+    islets.push({ cx, halfWidth: 4 + Math.floor(Math.random() * 4),
+      height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
+    if (islets.length >= 70) break;
   }
 
   const allIslands = islands.concat(islets);
@@ -1168,13 +1232,21 @@ World.prototype.generateOceanPlanet = function() {
   // seaY as a beach and its crown is dry land.
   const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
-    let ground = floorY;
+    let ground = duneFloor[x];
     for (const island of allIslands) {
       const d = Math.abs(x - island.cx);
       if (d > island.halfWidth) continue;
       const t = d / island.halfWidth;
-      const bump = Math.cos((t * Math.PI) / 2);
-      const surf = Math.round(floorY - (floorY - (seaY - island.height)) * bump);
+      const flat = island.flat ? 0.58 : 0.42;
+      const crown = seaY - island.height;
+      let surf;
+      if (t < flat) {
+        surf = crown;
+      } else {
+        const k = (t - flat) / (1 - flat);
+        const eased = 1 - k * k * (3 - 2 * k);
+        surf = Math.round(crown + (duneFloor[x] - crown) * (1 - eased));
+      }
       if (surf < ground) ground = surf;
     }
     groundHeight[x] = ground;
@@ -1199,10 +1271,28 @@ World.prototype.generateOceanPlanet = function() {
       this.setTile(x, ground, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
       for (let y = ground + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
     }
-    // Coral gardens still dress the deep reef, but never inside an island.
-    if (!islandColumn && x % 13 === 0) {
-      for (let k = 1; k <= 1 + (x % 3); k++) {
-        if (this.getTile(x, ground - k) === TILES.WATER) this.setTile(x, ground - k, TILES.CORAL);
+    // ---- Living seabed dressing -----------------------------------------
+    // The old coral grew as tall vertical columns, which read as thin coloured
+    // poles covering the whole ocean. It is now a flat 1-tile crust scattered
+    // across the dune floor, plus swaying sea grass: a living sea floor, not
+    // a picket fence of coral spikes.
+    if (!islandColumn && ground >= seaY + 2) {
+      const crustRoll = (x * 2654435761 % 97) / 97;
+      if (crustRoll < 0.30 && this.getTile(x, ground - 1) === TILES.WATER) {
+        this.setTile(x, ground - 1, TILES.CORAL);
+      }
+      // Sea grass: the biggest "this is a living ocean" tell. Blades grow up
+      // to 4 tiles in the deep water and stay short near the shallows.
+      const grassRoll = (x * 40503) % 101 / 101;
+      if (grassRoll < 0.34) {
+        const depth = ground - seaY;
+        const maxLen = depth > 20 ? 4 : 2;
+        const len = 1 + ((x * 31) % maxLen);
+        for (let k = 1; k <= len; k++) {
+          if (this.getTile(x, ground - k) === TILES.WATER) {
+            this.setTile(x, ground - k, TILES.TALL_GRASS);
+          }
+        }
       }
     }
   }
@@ -1859,7 +1949,13 @@ class Kraken {
       if (Math.abs(pcx - ccx) > 14) this.faceDir = pcx >= ccx ? 1 : -1;
       if (world) {
         this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
-        this.y = Math.max(0, Math.min(world.pixelHeight - this.height, this.y));
+        // A kraken is a sea creature, not a balloon: keep the body in the
+        // water. The mantle top must stay at-or-below the waterline (a small
+        // crown breach is allowed) and the skirt must stay above the floor.
+        const seaTop = (world.oceanArena ? world.oceanArena.seaY : 12) * TILE_SIZE;
+        const floorTop = world.pixelHeight || world.height * TILE_SIZE;
+        this.y = Math.max(seaTop - this.height * 0.10,
+          Math.min(floorTop - this.height * 1.25, this.y));
       }
     }
 
@@ -2568,11 +2664,12 @@ class Kraken {
     // 5. THE EYES: two big black-rimmed orbs set into the head, with the
     //    glowing weakpoint on the right. The keystone of the whole face.
     // ====================================================================
-    const eye = this.headTargets()[0];
-    const ex = eye.x - camera.x + (this.sway || 0);
-    // Seat the eyes lower, on the head just above the arm crown, so the glowing
-    // weakpoint reads as a face rather than two orbs floating on top.
-    const ey = eye.y - camera.y + (this.bob || 0);
+    // The eyes are drawn INSIDE the body's own transform (sway/bob translate +
+    // lean rotation already applied to `cx`), so they can never drift away from
+    // the head or sit asymmetrically: both orbs share ONE centre line through
+    // `cx` and ONE shared row `ey`, identical size, identical pupil, identical
+    // glint. No per-eye offset of any kind.
+    const ey = y + this.height * 0.60;
     const glow = 1 + Math.sin(this.animT * 5) * 0.12;
     const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
     const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
@@ -2603,9 +2700,13 @@ class Kraken {
         ctx.beginPath(); ctx.arc(px, py, 34 * s * glow, 0, Math.PI * 2); ctx.stroke();
       }
     };
-    // Two eyes set symmetrically across the head, near the front.
-    drawEye(ex, ey, 1, true);
-    drawEye(cx - (ex - cx), ey + 2, 0.72, false);
+    // Two eyes, perfectly mirrored about the head's centre line and identical
+    // in every respect: same radius, same row, same pupil, same glint. Only
+    // the primary carries the pulsing target ring, and that ring is drawn
+    // OUTSIDE the orb so it can never make one eye look bigger than the other.
+    const eyeSpread = this.width * 0.11;
+    drawEye(cx - eyeSpread, ey, 1, false);
+    drawEye(cx + eyeSpread, ey, 1, true);
 
     // ====================================================================
     // 6. The BEAK: a dark parrot-hook at the centre of the arm crown.

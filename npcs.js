@@ -358,6 +358,49 @@ class NPCManager {
   }
 
   update(dt) {
+    // ---- GROUND SNAPPING: the flying-NPC fix ----------------------------
+    // Villagers were placed once and then never touched by physics again, so
+    // any change to the world under them (a mined block, a regenerated
+    // dimension, a save loaded into a differently-shaped world) left them
+    // hovering in mid-air permanently. Each tick, find the real ground below
+    // each NPC and ease them onto it. Easing (not teleporting) keeps the fix
+    // invisible for the 99% of frames where an NPC is already standing right.
+    const world = this.game.world;
+    if (world && world.surfaceHeights) {
+      for (const npc of this.npcs) {
+        if (!npc || !npc.width) continue;
+        const tx = Math.floor((npc.x + npc.width / 2) / TILE_SIZE);
+        if (tx < 0 || tx >= world.surfaceHeights.length) continue;
+        const sy = world.surfaceHeights[tx];
+        // surfaceHeights only points at the TOP of the terrain — on a world with
+        // open water (ocean/abyssal) it is the seabed, far below the island the
+        // NPC actually stands on, and on underground caverns it can be a ceiling
+        // tile above them. Scan for the real solid footing under the NPC before
+        // easing anywhere.
+        const tile = world.getTile ? world.getTile(tx, sy) : null;
+        let groundY = sy * TILE_SIZE;
+        if (tile && world.isSolid(tx, sy)) {
+          // Solid at surfaceHeights: fine, that is the ground line.
+        } else {
+          // Not solid there — look for the first solid tile from below the feet
+          // upward (e.g. NPC placed on an island, seabed is far underneath).
+          const feetTile = Math.floor((npc.y + npc.height) / TILE_SIZE);
+          let found = -1;
+          for (let y = Math.min(world.height - 1, feetTile + 1); y >= 1; y--) {
+            if (world.isSolid(tx, y)) { found = y; break; }
+          }
+          if (found >= 0) groundY = found * TILE_SIZE;
+        }
+        const feet = npc.y + npc.height;
+        const off = feet - groundY;
+        if (Math.abs(off) > 2) {
+          const step = Math.min(6, Math.abs(off));
+          npc.y += off > 0 ? -step : step;
+          if (npc.vy !== undefined) npc.vy = 0;
+        }
+      }
+    }
+
     // Nearest-villager prompt.
     const pcx = this.game.player.x + this.game.player.width / 2;
     const pcy = this.game.player.y + this.game.player.height / 2;

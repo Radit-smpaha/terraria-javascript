@@ -8209,7 +8209,15 @@ this.player.dodgeTime = 0;
           ? this.mp.nearestChaseTarget(this.boss.x + this.boss.width / 2,
             this.boss.y + this.boss.height / 2)
           : null) || this.player;
-        this.boss.update(dt, bossTarget, this.projectiles, this.sound, this.particles, this.world);
+        // When the player is dead the fight is over: freeze the boss so it
+        // stops firing and stop its projectiles, otherwise ink globs keep
+        // drifting around behind the death screen (the "black ovals" bug).
+        if (this.isDead) {
+          this.boss.pending = null;
+          if (this.boss.lashTimer !== undefined) this.boss.lashTimer = 0;
+        } else {
+          this.boss.update(dt, bossTarget, this.projectiles, this.sound, this.particles, this.world);
+        }
 
         // Venom on the boss too. Feature-detected because DemonBoss carries its
         // own poison implementation while Monster/UnderworldMonster have theirs.
@@ -8219,6 +8227,13 @@ this.player.dodgeTime = 0;
         }
       }
 
+      // Dead player: the fight is over. Purge any hostile projectiles the
+      // boss still had in flight so nothing floats around the death screen.
+      if (this.isDead && this.boss && !this.boss.dead) {
+        for (const proj of this.projectiles) {
+          if (proj && proj.fromBoss) proj.life = 0;
+        }
+      }
       // Arcane motes drift off every boss — cheap, constant, very cool.
       if (Math.random() < 0.5) {
         const moteColor = this.boss.kind === 'dragon' ? (this.boss.phase === 3 ? '#fde047' : this.boss.phase === 2 ? '#c084fc' : '#a5f3fc')
