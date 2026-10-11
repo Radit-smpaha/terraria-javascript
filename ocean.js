@@ -2904,14 +2904,15 @@ class Kraken {
     // ====================================================================
     const apexY = y + this.height * 0.02;       // pointed tip of the mantle
     const shoulderY = y + this.height * 0.30;   // widest point of the cone
-    const headY = y + this.height * 0.60;       // head/eyes, low above the arms
-    const mouthY = y + this.height * 0.70;      // beak, centre of the arm crown
+    const headY = y + this.height * 0.57;       // eyes, low above the arms
+    const mouthY = y + this.height * 0.69;      // beak, centre of the arm crown
     // The mantle is deliberately NARROW: at 0.20 of the body width the cone is
     // clearly taller than it is wide, which is the whole difference between a
     // kraken and a jellyfish bell. The shoulder flares only gently and the
     // collar tucks back in toward the head.
     const shoulderW = this.width * 0.20;   // mantle half-width at the shoulder
     const collarW = this.width * 0.13;     // mantle half-width at the head
+    const headW = this.width * 0.22;
 
     // ---- Helper: a tapering limb from a base to a curling tip -----------
     // lagRx/lagRy bend the control point opposite the swim direction so fast
@@ -3073,7 +3074,15 @@ class Kraken {
     ctx.bezierCurveTo(cx + shoulderW * 0.80, shoulderY + this.height * 0.16,
       cx + collarW * 1.20, headY - this.height * 0.06,
       cx + collarW, headY);                                       // R collar
-    ctx.quadraticCurveTo(cx, headY + this.height * 0.05,
+    // The mantle flows into a broad, forward-facing head. Its lower edge
+    // overlaps the limb roots, so the face and arms read as one animal.
+    ctx.bezierCurveTo(cx + collarW * 1.2, headY + this.height * 0.10,
+      cx + headW * 0.9, mouthY - this.height * 0.02,
+      cx + headW * 0.5, mouthY + this.height * 0.02);
+    ctx.quadraticCurveTo(cx, mouthY + this.height * 0.09,
+      cx - headW * 0.5, mouthY + this.height * 0.02);
+    ctx.bezierCurveTo(cx - headW * 0.9, mouthY - this.height * 0.02,
+      cx - collarW * 1.2, headY + this.height * 0.10,
       cx - collarW, headY);                                       // under-head
     ctx.bezierCurveTo(cx - collarW * 1.20, headY - this.height * 0.06,
       cx - shoulderW * 0.80, shoulderY + this.height * 0.16,
@@ -3254,59 +3263,79 @@ class Kraken {
     const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
     const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
     const drawEye = (px, py, s, primary) => {
-      // Soft bioluminescent halo behind the weakpoint eye: a faint glow disc
-      // that makes the eye read as lit-from-within, terraria-style. Drawn
-      // BEHIND the orb so it never inflates the eye's apparent size.
       if (primary) {
-        const halo = ctx.createRadialGradient(px, py, 4, px, py, 44 * s * glow);
+        const halo = ctx.createRadialGradient(px, py, 4, px, py, 34 * s * glow);
         halo.addColorStop(0, 'rgba(' + haloColor + ', 0.45)');
         halo.addColorStop(1, 'rgba(' + haloColor + ', 0)');
         ctx.fillStyle = halo;
-        ctx.beginPath(); ctx.arc(px, py, 44 * s * glow, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, py, 34 * s * glow, 0, Math.PI * 2); ctx.fill();
       }
-      // Black socket + hard rim, SCALED SMALL so the face reads less googly
-      // and the eye sits like a proper kraken's: a focused, feral slit, not a
-      // billboard.
-      ctx.fillStyle = '#0b0712';
-      ctx.beginPath(); ctx.arc(px, py, 17 * s, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
-      // Iris — a gradient disc that darkens to the socket, with a thin lit
-      // inner edge for a wet, living look.
-      const ild = ctx.createRadialGradient(px, py, 2 * s, px, py, 11 * s);
+      // Slanted sockets sit flush with the head instead of floating like
+      // round cartoon eyeballs.
+      ctx.fillStyle = skinDark;
+      ctx.beginPath();
+      ctx.moveTo(px - 19 * s, py + s);
+      ctx.quadraticCurveTo(px - 8 * s, py - 16 * s, px + 15 * s, py - 9 * s);
+      ctx.quadraticCurveTo(px + 20 * s, py - 2 * s, px + 11 * s, py + 10 * s);
+      ctx.quadraticCurveTo(px - 5 * s, py + 16 * s, px - 19 * s, py + s);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.stroke();
+      ctx.strokeStyle = rimColor; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px - 15 * s, py - s);
+      ctx.quadraticCurveTo(px - 4 * s, py - 12 * s, px + 13 * s, py - 7 * s);
+      ctx.stroke();
+      const ix = px + faceDir * 2 * s;
+      const ild = ctx.createRadialGradient(ix, py, s, ix, py, 8 * s);
       ild.addColorStop(0, irisColor);
       ild.addColorStop(1, '#0b0712');
       ctx.fillStyle = ild;
-      ctx.beginPath(); ctx.arc(px, py, 11 * s, 0, Math.PI * 2); ctx.fill();
-      // Vertical slit pupil.
+      ctx.beginPath(); ctx.ellipse(ix, py, 7 * s, 8 * s, faceDir * -0.12, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#0b0712';
-      ctx.beginPath(); ctx.ellipse(px, py, 3 * s, 9 * s, 0, 0, Math.PI * 2); ctx.fill();
-      // Specular glint.
+      ctx.beginPath(); ctx.ellipse(ix, py, 2.2 * s, 6.5 * s, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(px - 4 * s, py - 5 * s, 2.2 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ix - 2.5 * s, py - 4 * s, 1.8 * s, 0, Math.PI * 2); ctx.fill();
       if (primary) {
         ctx.strokeStyle = 'rgba(' + haloColor + ', ' + (0.4 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(px, py, 22 * s * glow, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(px, py, 24 * s * glow, 17 * s * glow, 0, 0, Math.PI * 2); ctx.stroke();
       }
     };
-    // Two eyes, perfectly mirrored about the head's centre line and identical
-    // in every respect: same radius, same row, same pupil, same glint. Only
-    // the primary carries the pulsing target ring, and that ring is drawn
-    // OUTSIDE the orb so it can never make one eye look bigger than the other.
-    const eyeSpread = this.width * 0.10;
-    drawEye(cx - eyeSpread, ey, 1, false);
+    const eyeSpread = this.width * 0.075;
+    drawEye(cx - eyeSpread, ey + 2, 0.84, false);
     drawEye(cx + eyeSpread, ey, 1, true);
 
     // ====================================================================
-    // 6. The BEAK: a dark parrot-hook at the centre of the arm crown.
+    // 6. A deep mouth and hooked keratin beak, tucked into the arm crown.
     // ====================================================================
-    ctx.fillStyle = '#0b0712';
-    ctx.strokeStyle = ink; ctx.lineWidth = 2;
+    ctx.fillStyle = '#3b0718';
+    ctx.strokeStyle = ink; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, mouthY + 2, 24, 17, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#10030a';
+    ctx.beginPath();
+    ctx.ellipse(cx, mouthY + 1, 17, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const beak = ctx.createLinearGradient(cx - 12, mouthY - 9, cx + 12, mouthY + 23);
+    beak.addColorStop(0, '#fff1c2');
+    beak.addColorStop(0.45, '#d6a76a');
+    beak.addColorStop(1, '#70402f');
+    ctx.fillStyle = beak;
+    ctx.strokeStyle = '#2b1115'; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(cx - 12, mouthY - 8);
-    ctx.quadraticCurveTo(cx, mouthY + 22, cx + 14, mouthY - 9);
-    ctx.quadraticCurveTo(cx, mouthY + 3, cx - 12, mouthY - 8);
+    ctx.quadraticCurveTo(cx, mouthY - 13, cx + 12, mouthY - 7);
+    ctx.quadraticCurveTo(cx + 8, mouthY + 1, cx + 7, mouthY + 8);
+    ctx.quadraticCurveTo(cx + 6, mouthY + 18, cx - 3, mouthY + 22);
+    ctx.quadraticCurveTo(cx - 8, mouthY + 15, cx - 5, mouthY + 7);
+    ctx.quadraticCurveTo(cx - 14, mouthY + 2, cx - 12, mouthY - 8);
     ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 241, 194, 0.8)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, mouthY - 5);
+    ctx.quadraticCurveTo(cx - 1, mouthY - 7, cx + 6, mouthY - 4);
+    ctx.stroke();
 
     // ====================================================================
     // 7. Ink dripping off the crown, and the wounds the boss has taken.
