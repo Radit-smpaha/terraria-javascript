@@ -2884,7 +2884,7 @@ class Kraken {
     ctx.translate(bodyCX, bodyCY);
     ctx.rotate((this.lean || 0) * 0.18 + pitch * 0.35);
     ctx.transform(1 + skew * 0.6 + squash * 0.35, skew * 0.25,
-      skew * 0.25, (1 - squash * 0.45) * breath);
+      skew * 0.25, (1 - squash * 0.45) * breath, 0, 0);
     ctx.scale(breath, breath);
     ctx.translate(-bodyCX, -bodyCY);
     ctx.translate(this.sway || 0, this.bob || 0);
