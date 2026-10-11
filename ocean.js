@@ -1579,6 +1579,12 @@ World.prototype.generateOceanPlanet = function() {
     const ringBand = 12;         // outer band width of seating
     const pitR = 11;             // pit (no seating, open center)
     const cols = Math.floor(r * 2);  // approx seating capacity
+    // Arena centre column, in tiles. This used to be declared INSIDE the tier
+    // loop below, so every use after that loop (carving the pit, the pillars,
+    // the corner pillars) hit a ReferenceError and killed the whole ocean
+    // world-gen — which is what made the Abyssal Planet render black/white
+    // with only the UI alive. Hoisted here so all three passes agree on it.
+    const cx = Math.floor(this.width * 0.5);
 
     // Build a ring of tiers around the center: each tier is a circular
     // bench ring that climbs up the sides of the arena pit.
@@ -1593,7 +1599,6 @@ World.prototype.generateOceanPlanet = function() {
     // the abyssal floor, going up in tiers around the central pit.
     const seatTiles = [];
     for (const tier of tiers) {
-      const cx = Math.floor(this.width * 0.5);
       for (let a = 0; a < Math.PI * 2; a += 0.12) {
         const angle = a;
         const bx = Math.round(cx + Math.cos(angle) * tier.tierR);

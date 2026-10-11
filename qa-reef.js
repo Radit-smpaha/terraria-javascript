@@ -463,6 +463,26 @@ check('entering the ocean planet spawns the boss',
   srcT.includes('new Kraken(arena.bossX, arena.bossY, this)'));
 check('the Tide Gate really opens the ocean dimension',
   srcT.includes("openWormhole('ocean'") && srcT.includes('enterOceanDimension()'));
+// Runtime regression: ocean world-gen must complete without throwing. A var
+// reference that escaped its loop scope once killed generateOceanPlanet, which
+// left the Abyssal Planet rendering black/white with only the UI alive.
+const savedDimension = W.dimension;
+let oceanGenError = null;
+try {
+  const arena = W.enterOceanDimension();
+  check('ocean world-gen completes and returns a placed arena',
+    !!arena && Number.isFinite(arena.arenaCX) && Number.isFinite(arena.arenaCY) &&
+    arena.arenaCX > 0 && arena.arenaCY > 0);
+  check('the colosseum centre agrees with the carved pit',
+    arena.arenaCX === Math.floor(W.width * 0.5) * TILE_SIZE);
+} catch (e) {
+  oceanGenError = e;
+} finally {
+  check('entering the ocean never throws (black-screen guard)',
+    oceanGenError === null, oceanGenError ? (oceanGenError.stack || oceanGenError.message) : '');
+  if (W.dimension === 'ocean') W.exitOceanDimension();
+  W.dimension = savedDimension;
+}
 
 // ==========================================================================
 step('8. Clue NPCs and the guide');
