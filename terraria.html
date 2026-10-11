@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Terracraft: Forest Survivor & Boss Slayer</title>
+  <link rel="stylesheet" href="terraria.css?v=34">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div id="boot-error" class="boot-error hidden" role="alert"></div>
+  <script>
+    // Boot watchdog: runs BEFORE the game scripts (they're at the end of
+    // <body>). If any script fails to parse or the Game constructor throws
+    // (stale/cached/mismatched files), the canvas stays black and no input
+    // works — so surface the real error on screen. Essential inside iframes
+    // (Streamlit) where devtools usually aren't open.
+    (function () {
+      window.__terraBootError = null;
+      window.__terraLoadLog = [];
+      function note(msg) {
+        window.__terraLoadLog.push(msg);
+        try { console.log('[terra-load] ' + msg); } catch (_) {}
+      }
+      window.__terraNoteScript = note;
+      function showBootError(msg) {
+        var el = document.getElementById('boot-error');
+        if (!el) return;
+        el.classList.remove('hidden');
+        el.innerHTML = '';
+        var title = document.createElement('div');
+        title.className = 'boot-error-title';
+        title.textContent = 'Terracraft failed to start';
+        var body = document.createElement('div');
+        body.className = 'boot-error-body';
+        body.textContent = String(msg).slice(0, 800);
+        var hint = document.createElement('div');
+        hint.className = 'boot-error-hint';
+        hint.textContent = 'Hard-refresh (Ctrl+Shift+R). If embedded, the host may be serving stale game files — open terraria.html directly instead.';
+        el.appendChild(title); el.appendChild(body); el.appendChild(hint);
+      }
+      window.__terraShowBootError = showBootError;
+      window.addEventListener('error', function (e) {
+        if (window.game || !e || !e.message) return;
+        var file = (e.filename ? e.filename.split('/').pop() : '(inline boot)');
+        // Ignore resource/font noise: only boot-phase script errors matter.
+        if (!e.filename && !/is not defined|Unexpected|SyntaxError/i.test(e.message)) return;
+        note('ERROR in ' + file + ': ' + e.message);
+        window.__terraBootError = e.message;
+        showBootError(e.message + ' [' + file + ']\nload: ' +
+          window.__terraLoadLog.slice(-8).join(' | '));
+      }, true);
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (!window.game && !window.__terraBootError) {
+            // typeof on an undeclared name is safe (yields 'undefined'), so
+            // this inventory never throws and shows exactly which script
+            // block failed to evaluate.
+            var inv = 'inventory-failed';
+            try {
+              inv = 'SoundSystem=' + (typeof SoundSystem) +
+                ' ParticleSystem=' + (typeof ParticleSystem) +
+                ' World=' + (typeof World) +
+                ' WeatherSystem=' + (typeof WeatherSystem) +
+                ' Player=' + (typeof Player) +
+                ' Monster=' + (typeof Monster) +
+                ' UnderworldMonster=' + (typeof UnderworldMonster) +
+                ' GameFeel=' + (typeof GameFeel) +
+                ' NPCManager=' + (typeof NPCManager) +
+                ' JourneySystem=' + (typeof JourneySystem) +
+                ' Game=' + (typeof Game);
+            } catch (_) {}
+            showBootError('Game scripts did not start a world (a script file may have failed to load).\nglobals: ' + inv +
+              '\nload: ' + window.__terraLoadLog.slice(-12).join(' | '));
+          }
+        }, 4000);
+      });
+    })();
+  </script>
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <canvas id="lightingCanvas"></canvas>
+    <canvas id="glowCanvas"></canvas>
+
+    <!-- Screen flash overlays (hurt = red, heal = green), opacity driven by GameFeel -->
+    <div id="hurt-vignette" class="screen-vignette"></div>
+    <div id="heal-vignette" class="screen-vignette heal-vignette"></div>
+
+    <!-- UI Overlay -->
+    <div id="ui-layer">
+      <!-- Hover tooltip for items in the inventory, chests and creative menu.
+           Deliberately NOT wired to the hotbar: hotbar slots announce
+           themselves through #item-name-popup instead. -->
+      <div id="item-tooltip" class="item-tooltip" role="tooltip" hidden></div>
+
+      <!-- Top Left: Time of Day, World Info, Health & Mana -->
+      <div class="top-left-panel">
+        <div class="clock-display">
+          <span id="time-icon">☀️</span>
+          <span id="time-text">08:30 AM (Day 1)</span>
+          <span id="cycle-badge" class="badge-day">DAY</span>
+          <span id="weather-badge" class="weather-badge hidden">🌧️ RAIN</span>
+          <span id="dimension-badge" class="dimension-badge hidden">🌌 THE OSSUARY</span>
+        </div>
+        <div class="survival-bars">
+          <div class="bar-container hp-container">
+            <div class="bar-header">
+              <span class="label">❤️ LIFE</span>
+              <span id="hp-text">100 / 100</span>
+            </div>
+            <div class="bar-outer">
+              <div id="hp-bar" class="bar-fill hp-fill" style="width: 100%;"></div>
+            </div>
+            <div id="hp-hearts" class="heart-row"></div>
+            <div id="armor-chip" class="armor-chip hidden">🛡️ <span id="armor-chip-text">0%</span></div>
+            <div id="wings-chip" class="armor-chip hidden">🪽 <span id="wings-chip-text">100%</span></div>
+          </div>
+          <div class="bar-container mana-container">
+            <div class="bar-header">
+              <span class="label">✨ MANA</span>
+              <span id="mana-text">50 / 50</span>
+            </div>
+            <div class="bar-outer">
+              <div id="mana-bar" class="bar-fill mana-fill" style="width: 100%;"></div>
+            </div>
+            <div id="mana-stars" class="star-row"></div>
+          </div>
+          <div class="bar-container stamina-container">
+            <div class="bar-header">
+              <span class="label">⚡ STAMINA (DODGE)</span>
+              <span id="stamina-text">100 / 100</span>
+            </div>
+            <div class="bar-outer">
+              <div id="stamina-bar" class="bar-fill stamina-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+          <div class="bar-container hunger-container">
+            <div class="bar-header">
+              <span class="label">🍖 HUNGER</span>
+              <span id="hunger-text">100 / 100</span>
+            </div>
+            <div class="bar-outer">
+              <div id="hunger-bar" class="bar-fill hunger-fill" style="width: 100%;"></div>
+            </div>
+          </div>
+        </div>
+        <div id="oxygen-panel" class="oxygen-panel hidden" aria-live="polite">
+          <span id="oxygen-label">OXYGEN</span>
+          <div class="oxygen-bar-outer"><div id="oxygen-bar" class="oxygen-bar-fill"></div></div>
+          <span id="oxygen-text">100%</span>
+        </div>
+      </div>
+
+      <!-- Top Right: Boss Health Bar (hidden by default) -->
+      <div id="boss-panel" class="boss-panel hidden">
+        <div class="boss-title">
+          <span id="boss-name">ANCIENT FOREST GUARDIAN</span>
+          <span id="boss-phase-badge">PHASE 1</span>
+        </div>
+
+        <div class="boss-bar-outer">
+          <div id="boss-hp-bar" class="boss-hp-fill" style="width: 100%;"></div>
+          <div id="boss-hp-text" class="boss-hp-text">3000 / 3000</div>
+        </div>
+      </div>
+
+      <!-- Top Right: primary actions only; secondary actions live in Settings -->
+      <div class="top-right-status">
+        <button id="btn-creative" class="ui-btn creative-btn" title="Creative Mode — give yourself any item">✨ CREATIVE</button>
+        <button id="btn-settings" class="ui-btn settings-btn" title="Open Settings">⚙ SETTINGS</button>
+      </div>
+
+      <!-- Right-hand column: journey, buffs, minimap and quests -->
+      <div class="right-hud-column">
+        <section id="journey-panel" class="journey-panel" aria-label="Current journey objective">
+          <div class="journey-rank-row">
+            <span id="journey-rank-icon" class="journey-rank-icon">🧭</span>
+            <div class="journey-rank-copy">
+              <span>JOURNEY RANK</span>
+              <strong id="journey-rank">Wandering Sprout</strong>
+            </div>
+            <span id="journey-score" class="journey-score">0 PTS</span>
+          </div>
+          <div class="journey-location">
+            <span id="journey-location">🌲 VERDANT REACH</span>
+            <span id="journey-zone">SURFACE</span>
+          </div>
+          <div class="journey-objective">
+            <span id="journey-step" class="journey-step">JOURNEY 1 / 12</span>
+            <strong id="journey-title">🪵 Gather 12 Wood</strong>
+            <p id="journey-hint">Chop trees, then collect the drops.</p>
+          </div>
+          <div class="journey-meter" aria-hidden="true"><i id="journey-progress-fill"></i></div>
+          <div class="journey-footer">
+            <span id="journey-progress-text">0 / 12</span>
+            <span id="journey-streak" class="journey-streak hidden"></span>
+          </div>
+          <div id="journey-threat" class="journey-threat hidden"></div>
+        </section>
+        <div id="buff-bar" class="buff-bar"></div>
+        <div id="minimap-panel" class="minimap-panel">
+          <canvas id="minimap" width="132" height="132"></canvas>
+          <div id="minimap-label" class="minimap-label">FOREST</div>
+        </div>
+        <div id="quest-tracker" class="quest-tracker hidden"></div>
+      </div>
+
+      <!-- Quick Action notification toasts -->
+      <div id="toast-container" class="toast-container"></div>
+
+      <!-- Center Notifications (Night Arrived, Boss Spawned, etc.) -->
+      <div id="announcement-banner" class="announcement-banner hidden">
+        <div id="announcement-text">THE BLOOD MOON IS RISING...</div>
+      </div>
+
+      <!-- Bottom Center: Hotbar & Quick Crafting -->
+      <div class="bottom-panel">
+        <div class="hotbar-wrapper">
+          <!-- Minecraft-style: the newly selected item's name floats up above the
+               hotbar and fades away. Lives inside .hotbar-wrapper (which is the
+               positioning context) so it tracks the hotbar at any size. -->
+          <div id="item-name-popup" class="item-name-popup" aria-live="polite"></div>
+          <div id="hotbar" class="hotbar-slots">
+            <!-- 9 slots dynamically populated -->
+          </div>
+        </div>
+        <div class="controls-hint">
+          <span><kbd id="hotbar-key-range">1-9</kbd> Select Item</span>
+          <span><kbd>L-Click</kbd> Attack/Mine</span>
+          <span><kbd>R-Click</kbd> Place/Use</span>
+          <span><kbd data-keybind-label="moveLeft">A</kbd>/<kbd data-keybind-label="moveRight">D</kbd> Move</span>
+          <span><kbd data-keybind-label="jump">SPACE</kbd> Jump / Double Jump</span>
+          <span><kbd data-keybind-label="dodge">SHIFT</kbd> Dodge Roll</span>
+          <span><kbd data-keybind-label="craft">E</kbd> Crafting</span>
+          <span><kbd data-keybind-label="inventory">I</kbd> Inventory</span>
+          <span><kbd data-keybind-label="creative">C</kbd> Creative</span>
+          <span><kbd data-keybind-label="journal">J</kbd> Journal</span>
+          <span><kbd data-keybind-label="fps">F</kbd> FPS</span>
+        </div>
+        <!-- The same cheat-sheet for thumbs. Only one of the two is ever
+             displayed (see body.controls-touch), so the bottom panel never
+             grows taller than it was. -->
+        <div class="controls-hint controls-hint-touch">
+          <span><kbd>◀</kbd><kbd>▶</kbd> Move</span>
+          <span><kbd>⤒</kbd> Jump / Double Jump</span>
+          <span><kbd>⤓</kbd> Drop Through</span>
+          <span><kbd>💨</kbd> Dodge Roll</span>
+          <span><kbd>⛏️</kbd> Attack / Mine</span>
+          <span><kbd>✋</kbd> Place / Use</span>
+          <span><kbd>Tap the world</kbd> Aim</span>
+          <span><kbd>⏸</kbd> Pause Menu</span>
+        </div>
+      </div>
+
+      <!-- Settings: secondary actions and performance controls -->
+      <div id="settings-modal" class="modal hidden">
+        <div class="modal-content settings-modal-content">
+          <div class="modal-header">
+            <h3>⚙ SETTINGS</h3>
+            <button id="settings-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body settings-body">
+            <p class="settings-help">Keep the adventure HUD compact. Performance changes apply immediately and are saved for this browser.</p>
+            <section class="settings-section">
+              <h4>PERFORMANCE</h4>
+              <label class="settings-row">
+                <span><strong>Rendering quality</strong><small>Lower settings reduce internal detail while keeping the game full-screen</small></span>
+                <select id="settings-quality">
+                  <option value="auto">Auto</option>
+                  <option value="high">High</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="low">Low</option>
+                </select>
+              </label>
+              <label class="settings-row">
+                <span><strong>Effects density</strong><small>Particles, weather, slashes, and glow effects</small></span>
+                <select id="settings-effects">
+                  <option value="full">Full</option>
+                  <option value="reduced">Reduced</option>
+                  <option value="minimal">Minimal</option>
+                </select>
+              </label>
+               <label class="settings-row">
+                 <span><strong>Glow / bloom</strong><small>Reduce the expensive additive light pass</small></span>
+                 <select id="settings-glow">
+                   <option value="full">Full</option>
+                   <option value="reduced">Reduced</option>
+                   <option value="off">Off</option>
+                 </select>
+               </label>
+
+              <label class="settings-row settings-toggle">
+                <span><strong>Performance readout</strong><small>Show FPS, frame time, resolution, and effects</small></span>
+                <input id="settings-fps" type="checkbox">
+              </label>
+
+              <label class="settings-row">
+                <span><strong>Autosave interval</strong><small>How often the world is written to this browser</small></span>
+                <select id="settings-autosave">
+                  <option value="30">Every 30s</option>
+                  <option value="60">Every 60s</option>
+                  <option value="90">Every 90s</option>
+                  <option value="180">Every 3 min</option>
+                  <option value="300">Every 5 min</option>
+                </select>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>AUDIO</h4>
+              <label class="settings-row">
+                <span><strong>Master volume</strong><small>Overall loudness of music and effects</small></span>
+                <span class="settings-slider">
+                  <input id="settings-volume" type="range" min="0" max="100" step="5" value="90">
+                  <output id="settings-volume-value">90%</output>
+                </span>
+              </label>
+              <label class="settings-row settings-toggle">
+                <span><strong>Music</strong><small>Ambient soundtrack; sound effects are separate</small></span>
+                <input id="settings-music" type="checkbox" checked>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>GAME FEEL</h4>
+              <label class="settings-row">
+                <span><strong>Screen shake</strong><small>Camera kick from hits, explosions and boss slams</small></span>
+                <select id="settings-shake">
+                  <option value="full">Full</option>
+                  <option value="reduced">Reduced</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              <label class="settings-row settings-toggle">
+                <span><strong>Impact hit-stop</strong><small>Brief freeze on heavy hits and crits</small></span>
+                <input id="settings-hitstop" type="checkbox" checked>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>DISPLAY</h4>
+              <label class="settings-row settings-toggle">
+                <span><strong>Floating damage numbers</strong><small>Combat text above whatever you hit</small></span>
+                <input id="settings-damagetext" type="checkbox" checked>
+              </label>
+              <label class="settings-row">
+                <span><strong>Minimap size</strong><small>Starting size — M still cycles it</small></span>
+                <select id="settings-minimap">
+                  <option value="hidden">Hidden</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+              <label class="settings-row settings-toggle">
+                <span><strong>Item name readouts</strong><small>Hover tooltips and the name above the hotbar</small></span>
+                <input id="settings-tooltips" type="checkbox" checked>
+              </label>
+              <label class="settings-row">
+                <span><strong>HUD size</strong><small>Scales the in-game interface only — the main menu is untouched</small></span>
+                <select id="settings-ui-scale">
+                  <option value="small">Small</option>
+                  <option value="normal">Normal</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+            </section>
+            <section class="settings-section">
+              <h4>CONTROLS</h4>
+              <label class="settings-row">
+                <span><strong>Control scheme</strong><small>Keyboard &amp; mouse, or the on-screen touch controls</small></span>
+                <select id="settings-controls">
+                  <option value="pc">PC / Laptop</option>
+                  <option value="touch">Mobile (touch)</option>
+                </select>
+              </label>
+              <p class="settings-help settings-help-tight" id="settings-controls-note">
+                Switching to Mobile draws thumb controls over the world and shrinks the HUD to make room for them.
+              </p>
+              <p class="settings-help settings-help-tight">Click a key to rebind it, then press the new key. Escape cancels; each action needs a different key.</p>
+              <div class="keybind-grid" id="settings-keybinds">
+                <div class="keybind-group-title">MOVEMENT</div>
+                <label>Move left <button type="button" class="keybind-button" data-keybind="moveLeft"></button></label>
+                <label>Move right <button type="button" class="keybind-button" data-keybind="moveRight"></button></label>
+                <label>Jump <button type="button" class="keybind-button" data-keybind="jump"></button></label>
+                <label>Crouch / drop through <button type="button" class="keybind-button" data-keybind="crouch"></button></label>
+                <label>Dodge roll <button type="button" class="keybind-button" data-keybind="dodge"></button></label>
+                <label>Sprint <button type="button" class="keybind-button" data-keybind="sprint"></button></label>
+                <div class="keybind-group-title">ACTIONS</div>
+                <label>Crafting <button type="button" class="keybind-button" data-keybind="craft"></button></label>
+                <label>Inventory <button type="button" class="keybind-button" data-keybind="inventory"></button></label>
+                <label>Quick heal <button type="button" class="keybind-button" data-keybind="heal"></button></label>
+                <label>Drink buff potion <button type="button" class="keybind-button" data-keybind="buff"></button></label>
+                <label>Drop held item <button type="button" class="keybind-button" data-keybind="drop"></button></label>
+                <label>Creative menu <button type="button" class="keybind-button" data-keybind="creative"></button></label>
+                <label>Settings <button type="button" class="keybind-button" data-keybind="settings"></button></label>
+                <label>Journal <button type="button" class="keybind-button" data-keybind="journal"></button></label>
+                <label>Cycle minimap <button type="button" class="keybind-button" data-keybind="minimap"></button></label>
+                <label>Talk to villager <button type="button" class="keybind-button" data-keybind="talk"></button></label>
+                <label>Performance readout <button type="button" class="keybind-button" data-keybind="fps"></button></label>
+                <label>Pause <button type="button" class="keybind-button" data-keybind="pause"></button></label>
+                <div class="keybind-group-title">HOTBAR</div>
+                <label>Slot 1 <button type="button" class="keybind-button" data-keybind="slot1"></button></label>
+                <label>Slot 2 <button type="button" class="keybind-button" data-keybind="slot2"></button></label>
+                <label>Slot 3 <button type="button" class="keybind-button" data-keybind="slot3"></button></label>
+                <label>Slot 4 <button type="button" class="keybind-button" data-keybind="slot4"></button></label>
+                <label>Slot 5 <button type="button" class="keybind-button" data-keybind="slot5"></button></label>
+                <label>Slot 6 <button type="button" class="keybind-button" data-keybind="slot6"></button></label>
+                <label>Slot 7 <button type="button" class="keybind-button" data-keybind="slot7"></button></label>
+                <label>Slot 8 <button type="button" class="keybind-button" data-keybind="slot8"></button></label>
+                <label>Slot 9 <button type="button" class="keybind-button" data-keybind="slot9"></button></label>
+              </div>
+            </section>
+            <section class="settings-section">
+              <h4>QUICK ACTIONS</h4>
+              <div class="settings-actions">
+                <button id="btn-sound" class="ui-btn" title="Toggle Sound">🔊 AUDIO ON</button>
+                <button id="btn-help" class="ui-btn" title="Controls / Guide">❓ GUIDE</button>
+                <button id="btn-crafting" class="ui-btn" title="Open crafting recipes">🔨 CRAFTING</button>
+                <button id="btn-inventory" class="ui-btn" title="Open inventory">🎒 BAG</button>
+                <button id="btn-journal" class="ui-btn journal-btn" title="Your discoveries and settlement score">📖 JOURNAL</button>
+                <button id="btn-save" class="ui-btn" title="Save your world">💾 SAVE</button>
+                <button id="btn-load" class="ui-btn" title="Load your saved world">↻ LOAD</button>
+                <button id="btn-saves" class="ui-btn" title="Switch, rename, or delete save files">💾 SAVE FILES</button>
+                <button id="btn-mainmenu" class="ui-btn" title="Save, then return to the main menu to switch worlds">🏠 MAIN MENU</button>
+                <button id="btn-summon" class="ui-btn summon-btn" title="Summon Boss Instantly">👁️ SUMMON BOSS</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <!-- Crafting modal: recipes only -->
+      <div id="crafting-modal" class="modal hidden">
+        <div class="modal-content crafting-modal-content">
+          <div class="modal-header">
+            <h3>🔨 CRAFTING & FORGE</h3>
+            <button id="modal-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body crafting-body">
+            <p class="crafting-help">Select a recipe to craft it from materials in your bag.</p>
+            <div class="crafting-recipes" id="recipe-list">
+              <!-- Dynamically generated recipes -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inventory modal: bag and shared stash only -->
+      <div id="inventory-modal" class="modal hidden">
+        <div class="modal-content inventory-modal-content">
+          <div class="modal-header">
+            <h3>🎒 INVENTORY</h3>
+            <button id="inventory-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body inventory-body">
+            <div class="inventory-display">
+              <h4>BAG CONTENTS</h4>
+              <!-- Slot management: select a slot, then favourite or delete it. -->
+            <div class="slot-manager">
+              <p class="slot-manager-hint">
+                <kbd>Shift</kbd>+click a slot to select it, then use the buttons below.
+              </p>
+              <div class="slot-manager-row">
+                <span id="slot-selected-label" class="slot-selected-label">No slot selected</span>
+                <button id="slot-fav-btn" class="slot-btn slot-btn-fav" disabled>&#9733; FAVOURITE</button>
+                <button id="slot-delete-btn" class="slot-btn slot-btn-delete" disabled>&#128465; DELETE</button>
+                <button id="slot-clear-btn" class="slot-btn slot-btn-clear" disabled>CLEAR SELECTION</button>
+                <button id="slot-sort-btn" class="slot-btn slot-btn-sort" title="Merge stacks and tidy the bag: kind first, then name">&#8645; SORT</button>
+              </div>
+            </div>
+            <div id="inventory-grid" class="inv-grid"></div>
+              <div class="shared-header">
+                <h4>📦 SHARED STASH</h4>
+                <span id="shared-count" class="shared-count">0 / 18 in use</span>
+              </div>
+              <p class="shared-help">
+                Items kept here follow you into <strong>every world</strong>. In your bag, right-click an item
+                (or <kbd>Ctrl</kbd>+click) to store one — hold <kbd>Shift</kbd> to move the whole stack.
+                Click a stash item to take it back.
+              </p>
+              <div id="shared-grid" class="inv-grid shared-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Creative Mode — give yourself any item or block -->
+      <div id="creative-modal" class="modal hidden">
+        <div class="modal-content creative-modal-content">
+          <div class="modal-header">
+            <h3>✨ CREATIVE MENU</h3>
+            <button id="creative-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="creative-help">Search for anything, then click to add a stack straight to your bag. Use the buttons to add 1, a full stack, or everything at once.</p>
+            <div class="creative-controls">
+              <input id="creative-search" class="creative-search" type="text" placeholder="Search items &amp; blocks…" autocomplete="off" spellcheck="false">
+              <div id="creative-categories" class="creative-categories"></div>
+            </div>
+            <div class="creative-quick">
+              <button class="ui-btn creative-quick-btn" data-quick="1">ADD 1</button>
+              <button class="ui-btn creative-quick-btn" data-quick="stack">ADD STACK</button>
+              <button class="ui-btn creative-quick-btn" data-quick="max">ADD 999</button>
+              <span class="creative-slotmode">
+                <label><input id="creative-fill-hotbar" type="checkbox"> fill hotbar</label>
+              </span>
+            </div>
+            <div class="creative-adventure-tools">
+              <label class="creative-godmode-toggle">
+                <input id="creative-godmode" type="checkbox">
+                <span>GOD MODE</span>
+                <small>Infinite health, hunger &amp; stamina</small>
+              </label>
+              <div class="creative-teleport-tools">
+                <label for="creative-dimension">TELEPORT TO</label>
+                <select id="creative-dimension" class="creative-dimension">
+                  <option value="overworld">Overworld</option>
+                  <option value="ocean">Abyssal Planet</option>
+                  <option value="space">The Ossuary (End)</option>
+                </select>
+                <button id="creative-teleport" class="ui-btn creative-teleport-btn">GO</button>
+              </div>
+            </div>
+            <div id="creative-count" class="creative-count">0 items</div>
+            <div id="creative-grid" class="creative-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Three-slot save manager -->
+      <div id="save-manager" class="modal hidden">
+        <div class="modal-content save-manager-content">
+          <div class="modal-header">
+            <h3>💾 SAVE FILES</h3>
+            <button id="save-manager-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="save-manager-help">Switch between three independent worlds. Save the current world before opening another slot.</p>
+            <div id="save-slot-list" class="save-slot-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chest storage: its own panel — the contents live in the world, not the bag -->
+      <div id="chest-modal" class="modal hidden">
+        <div class="modal-content chest-modal-content">
+          <div class="modal-header">
+            <h3>🧰 CHEST</h3>
+            <button id="chest-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body chest-modal-body">
+            <p class="chest-message chest-hint">Click a slot to move the whole stack · Shift+click to move one</p>
+            <div id="chest-grid" class="inv-grid chest-grid"></div>
+            <p id="chest-count" class="chest-message chest-hint">0 / 18 slots in use</p>
+            <div class="chest-actions">
+              <button id="chest-deposit-all" class="primary-btn">QUICK DEPOSIT</button>
+              <button id="chest-take-all" class="primary-btn">TAKE ALL</button>
+            </div>
+            <p class="chest-message chest-bag-label">YOUR BAG</p>
+            <div id="chest-inv-grid" class="inv-grid chest-bag-grid"></div>
+            <button id="chest-done" class="primary-btn">CLOSE</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- NPC talk prompt + quest dialog (see npcs.js) -->
+      <div id="npc-prompt" class="npc-prompt hidden"><span class="hint-keys">Press <kbd data-keybind-label="talk">T</kbd> to talk</span><span class="hint-touch">Tap <strong>💬</strong> to talk</span></div>
+      <div id="npc-modal" class="modal hidden">
+        <div class="modal-content npc-modal-content">
+          <div class="modal-header">
+            <h3 id="npc-title">VILLAGER</h3>
+            <button id="npc-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="npc-row">
+              <div id="npc-portrait" class="npc-portrait">🧭</div>
+              <div id="npc-dialogue" class="npc-dialogue"></div>
+            </div>
+            <div class="npc-actions">
+              <button id="npc-action" class="primary-btn hidden"></button>
+              <button id="npc-bye" class="secondary-btn">GOODBYE</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settlement Journal: discoveries + score (see Game.renderJournal) -->
+      <div id="journal-modal" class="modal hidden">
+        <div class="modal-content journal-modal-content">
+          <div class="modal-header">
+            <h3>📖 SETTLEMENT JOURNAL</h3>
+            <button id="journal-close" class="close-btn">&times;</button>
+          </div>
+          <div id="journal-body" class="modal-body journal-body"></div>
+        </div>
+      </div>
+
+      <!-- Help / Guide Modal -->
+      <div id="guide-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>🌲 SURVIVAL & COMBAT GUIDE</h3>
+            <button id="guide-close" class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body guide-text">
+            <h4>THE OCEAN REEF (the huge western sea)</h4>
+            <ul>
+              <li><strong>The ocean reef is the whole LEFT (west) edge of the world</strong> — a deep blue band east of
+                nothing and west of the Frostpine snow. Pirates sometimes spawn in it (more often at night) and drop
+                Coral Fragments. Fish it for Clownfish, Parrotfish, Lionfish, Turtle, Manta and Anglerfish.</li>
+              <li><strong>Dive first.</strong> Without gear you get <strong>8 seconds of air</strong> underwater. Craft
+                three tiers of diving gear — <strong>Reef Diver Set</strong> (18s), <strong>Tidecaller Set</strong> (38s),
+                <strong>Abyssal Suit</strong> (75s) — and three tiers of swim fins (Reef → Current → Kraken) for
+                speed. The early tiers cost overworld wool/iron/fish; the top tiers want Coral, Manta, Anglerfish and
+                Sacred Pearls. Your air is safe inside the Tide Temple. The OXYGEN bar appears whenever your head is
+                under water outside its sanctuary.</li>
+              <li><strong>Find the drowned Tide Temple.</strong> Its ancient stone arch, carved towers and glowing
+                gate stand deep in the reef. Four Sacred Pearls are scattered across the world; do favors for the
+                Tidekeeper, Frost Scout, Sun Seeker and Marsh Warden to get their exact coordinates. Bring the pearls to the temple
+                and right-click one pearl onto each of the <strong>four podiums</strong> — two on either side of the
+                portal. When all four offerings are placed, the gate lights up and opens the way to the ocean planet.</li>
+              <li><strong>Beware the reef shark.</strong> Sharks patrol the open water and will chase you through the
+                reef. Defeat one for Coral Fragments, with a chance of a Manta.</li>
+              <li><strong>The Tide Gate leads to an ocean planet</strong> — all water, no land — where the
+                <strong>ABYSSAL KRAKEN</strong> (110,000 HP) rises the moment you arrive. Its telegraphed
+                <strong>Ink Blindness</strong> bursts and ink globs blot the screen and soften your blows —
+                dodge the circles, and wipe the ink off before you swing back. Its glowing
+                <strong>eye is the only weakpoint</strong>: hits there land for extra damage while the armoured
+                mantle shrugs off a third of everything else. Slay it for the Kraken Trophy, the trident
+                and the <strong>Tentacle Gun</strong> — its tendrils sometimes lock a monster stiff.</li>
+              <li><strong>Ask the Old Sailor</strong> at the spawn camp — he knows the temple ritual and the Tidekeeper
+                can be found on the reef shore.
+                <strong>The Star Watcher</strong> next to him tells you how to tear the sky open with a Void Rift
+                Beacon and what waits in the Ossuary beyond.</li>
+            </ul>
+            <h4>WAKING THE SOVEREIGN (the Ossuary ritual)</h4>
+            <ul>
+              <li><strong>The final boss does NOT spawn on its own.</strong> The Skeleton Dragon is sealed in the Ossuary
+                until you perform the rite yourself. Arriving in the arena finds a quiet, dark, mineable grave — that
+                first visit is for getting ready, not for fighting.</li>
+              <li><strong>1. Craft a Void Rift Beacon</strong> (4 Demon Souls, 6 Hellstone, 4 Crystal, 8 Gold Ore) and
+                <strong>right-click it under open sky</strong>. The beacon is a door, never a summons — it will not wake
+                anything.</li>
+              <li><strong>2. Scout the Ossuary.</strong> Mine the bone piles (Dragonbone), the 🟠 meteor seams and the
+                magenta nebula clusters. The <strong>Ossuary Deep</strong> below the arena floor is worth digging into:
+                the deeper you go, the richer the veins.</li>
+              <li><strong>3. Come home and craft the Rite of Waking</strong> (10 Dragonbone, 8 Meteor Shards, 4 Nebula
+                Crystals). Press <kbd>E</kbd> at a crafting forge.</li>
+              <li><strong>4. Go back in and right-click the candle in the arena.</strong> Right-click the
+                <strong>🕯️ Rite of Waking</strong> while standing in the Ossuary — the bones burn and the Sovereign
+                rises. This is the only thing that starts the fight.</li>
+              <li><strong>After you have killed one</strong> it stays dead, and the Ossuary becomes a pure quarry. To
+                fight it again you need another Rite of Waking, and it costs far more the second time: 34 Dragonbone,
+                26 Meteor Shards, 18 Nebula Crystals, 20 Crystals, 6 Demon Souls and 2 Life Crystals.</li>
+            </ul>
+            <h4>OBJECTIVES</h4>
+            <ul>
+              <li><strong>Daytime:</strong> Gather Wood, Stone, Iron & Gold ore. Craft stronger weapons (Broadsword,
+                Starlight Bow, Forest Wand), armor and torches.</li>
+              <li><strong>Nighttime:</strong> At 07:00 PM the sky turns dark. Zombies, Demon Eyes, and Forest Wraiths
+                spawn!</li>
+              <li><strong>🍎 Eat when you need it.</strong> Use food from your hotbar to restore hunger and life; you cannot eat when both are full. Potions can be used back-to-back, and each potion occupies its own inventory slot.</li>
+              <li><strong>The Underworld:</strong> Dig far below the blackstone layer. You will reach a lava ocean and the
+                Hellbound Castle. Its gate opens with one click; the demon altar inside wakes a three-phase boss.</li>
+              <li><strong>The Boss:</strong> Surviving to midnight or clicking <strong>[👁️ SUMMON BOSS]</strong>
+                awakens the <strong>Ancient Forest Guardian</strong>! Defeat both phases (Enraged Eye & Bramble
+                Behemoth) to save the forest.</li>
+            </ul>
+            <h4>THINGS TO DO</h4>
+            <ul>
+              <li><strong>🎣 Go fishing.</strong> Craft a <strong>Fishing Rod</strong> (8 wood + 2 wool), select it,
+                and <strong>right-click a pool of water</strong> to cast. Wait for the bobber to flash, then press
+                <kbd data-keybind-label="moveLeft">A</kbd> or <kbd data-keybind-label="moveRight">D</kbd> to reel it in. Fish feed you; Golden Koi and Sunken Boots sell the dream.
+                Every catch raises your Angler level, which attracts rarer fish.</li>
+              <li><strong>📖 Fill your Journal.</strong> Press <kbd>J</kbd> to see your settlement score — days
+                survived, monsters slain, bosses defeated, chests opened, quests finished. The first time you do
+                something, the game announces it and logs it forever.</li>
+              <li><strong>📦 Use the Shared Stash.</strong> Open your bag with <kbd>I</kbd>. Right-click an item (or
+                <kbd>Ctrl</kbd>+click, or hold <kbd>Shift</kbd> for the whole stack) to store it. Those items follow
+                you into <em>every</em> world you make.</li>
+              <li><strong>🧭 Talk to villagers</strong> (<kbd>T</kbd>) for quests, explore the swamp for the drowned
+                chapel, and wake the Cursed Knight inside it for a second boss.</li>
+              <li><strong>💗 Grow stronger:</strong> craft Life &amp; Mana Crystals to permanently raise your caps,
+                then chase Rainbow Ore for the Prismatic Saber and Aurora Blade.</li>
+            </ul>
+            <h4>CONTROLS & MOVEMENT</h4>
+            <ul>
+              <li><kbd data-keybind-label="moveLeft">A</kbd> / <kbd data-keybind-label="moveRight">D</kbd> — Smooth run & slide mechanics.</li>
+              <li><kbd data-keybind-label="jump">SPACE</kbd> — Jump. Press again in air for double jump (Hermes Wind).</li>
+              <li><kbd data-keybind-label="crouch">S</kbd> — Crouch / Fast fall through wood platforms.</li>
+              <li><kbd data-keybind-label="dodge">SHIFT</kbd> — Dodge roll with invincibility frames & particle trail!</li>
+              <li><kbd data-keybind-label="sprint">CTRL</kbd> — Sprint while moving.</li>
+              <li>Wall Slide & Wall Jump — Touch any wall while falling and press <kbd>SPACE</kbd> to wall kick!</li>
+              <li><kbd>Left Click</kbd> — Swing sword, shoot bow, cast spells, or mine tiles with pickaxe.</li>
+              <li><kbd>Right Click</kbd> — Place blocks or consume potions.</li>
+              <li><kbd id="hotbar-key-range-guide">1-9</kbd> or Mouse Scroll — Switch hotbar slot.</li>
+              <li><kbd data-keybind-label="craft">E</kbd> — Open/Close Crafting Forge.</li>
+              <li><kbd data-keybind-label="talk">T</kbd> — Talk to nearby villagers (Guide, Prospector, Scavenger) and accept quests.</li>
+              <li><kbd data-keybind-label="creative">C</kbd> — Open the Creative Menu and give yourself any item or block.</li>
+              <li><kbd data-keybind-label="buff">Q</kbd> — Drink the best buff potion in your bag.</li>
+              <li><kbd data-keybind-label="drop">G</kbd> — Drop the held stack four blocks ahead. <kbd>Shift</kbd>+<kbd data-keybind-label="drop">G</kbd> drops
+                just one item out of a stack.</li>
+              <li><kbd data-keybind-label="heal">H</kbd> — Quick heal with a potion.</li>
+              <li><kbd data-keybind-label="minimap">M</kbd> — Cycle the minimap: hidden → small → medium → large.</li>
+              <li><kbd data-keybind-label="settings">O</kbd> — Open Settings for quality, effects density, audio, saves, and quick actions.</li>
+              <li><kbd>ESC</kbd> or <kbd data-keybind-label="pause">P</kbd> — Pause menu: Resume, Save World, Settings, or
+                <strong>Main Menu</strong>. Main Menu saves your world and drops you back at the
+                title screen so you can switch save files without closing the game.</li>
+              <li><kbd data-keybind-label="fps">F</kbd> — Toggle the performance readout (FPS, resolution, effect count).</li>
+              <li><kbd data-keybind-label="inventory">I</kbd> — Open your inventory.</li>
+              <li><kbd data-keybind-label="journal">J</kbd> — Open the Settlement Journal (discoveries and score).</li>
+              <li><kbd>Right-click</kbd> with the Fishing Rod on water — cast or reel in a line.</li>
+            </ul>
+            <h4>PLAYING ON A PHONE OR TABLET</h4>
+            <ul>
+              <li>On your first visit the title screen asks <strong>how you are playing</strong>. Pick
+                <strong>Mobile</strong> and on-screen thumb controls appear over the world; pick
+                <strong>PC / Laptop</strong> and you get the keyboard and mouse bindings above. The answer is
+                remembered — change it any time in <strong>Settings → Controls</strong>, or with the small
+                🎮 chip in the corner of the title screen.</li>
+              <li><kbd>◀</kbd> <kbd>▶</kbd> — move. <kbd>⤒</kbd> — jump (tap again in the air to double jump).
+                <kbd>⤓</kbd> — drop through a platform. <kbd>💨</kbd> — dodge roll.</li>
+              <li><kbd>⛏️</kbd> — attack, mine or interact, held down to keep swinging. <kbd>✋</kbd> — place the
+                block in your hand, drink a potion, cast the rod.</li>
+              <li><strong>Tap the world to act on it.</strong> Whatever you are holding decides what a tap does:
+                a block appears under your fingertip, a pickaxe mines, a sword swings, a potion gets drunk. The
+                crosshair shows where the next tap lands — <strong style="color:#4ade80">green</strong> means it
+                will work, <strong style="color:#f87171">red</strong> means it is too far away or already
+                occupied. You can place above, below and beside you, not just in one spot.</li>
+              <li>A fingertip is far less precise than a mouse, so when you are holding a <strong>weapon</strong>
+                and tap near a monster the aim snaps onto it — combat gets forgiving. Mining stays exact.</li>
+              <li><kbd>⏸</kbd> opens the pause menu (Resume, Save World, Settings, Main Menu). <kbd>❤</kbd> quick-heals,
+                <kbd>🧪</kbd> drinks the best buff potion, <kbd>💬</kbd> talks to a nearby villager.</li>
+              <li>The HUD is drawn smaller in this mode so the controls have room to sit; the main menu is left at
+                full size. You can also set the HUD size yourself under
+                <strong>Settings → Display → HUD size</strong> (Small / Normal / Large) — that one is yours on
+                any device and never touches the main menu either.</li>
+            </ul>
+            <h4>PERFORMANCE</h4>
+            <ul>
+              <li>Terracraft watches its own frame time. If your machine starts to struggle it quietly drops to
+                half resolution and halves the number of effects — the game stays smooth and simply looks a
+                little chunkier.</li>
+              <li>It returns to full resolution on its own once frames are fast again. Press <kbd>F</kbd> to
+                see what it is doing.</li>
+              <li>The <kbd>F</kbd> readout shows <strong>FPS</strong>, the <strong>average frame time</strong> this
+                machine actually spends, the current resolution, and how many effects are live. FPS is the real
+                display rate; frame time is what tells you whether the work itself is heavy.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Touch controls. Drawn only for players who answered "Mobile", and
+           only while the world is actually playable (see refreshTouchControls)
+           - pausing, dying or opening a modal puts this away and drops any key
+           it was holding.
+           Every button writes into the SAME this.input.keys map the keyboard
+           fills, and the two action buttons drive the SAME handleLeftClick /
+           handleRightClick the mouse does. There is deliberately no separate
+           "mobile player" code path in the simulation. #mobile-controls lives
+           INSIDE #ui-layer so that every modal, the pause box, the death screen
+           and the title screen (all z-index 50+) stack above it for free. -->
+      <div id="mobile-controls" class="mobile-controls hidden">
+        <div class="touch-cluster touch-utility">
+          <button id="touch-pause" class="touch-btn touch-small" data-code="Escape" aria-label="Pause menu">⏸</button>
+          <button id="touch-heal" class="touch-btn touch-small" data-code="KeyH" aria-label="Quick heal">❤</button>
+          <button id="touch-buff" class="touch-btn touch-small" data-code="KeyQ" aria-label="Drink buff potion">🧪</button>
+          <button id="touch-talk" class="touch-btn touch-small" data-code="KeyT" aria-label="Talk to a villager">💬</button>
+        </div>
+        <div class="touch-cluster touch-move">
+          <button id="touch-left" class="touch-btn touch-dir" data-code="KeyA" aria-label="Move left">◀</button>
+          <button id="touch-right" class="touch-btn touch-dir" data-code="KeyD" aria-label="Move right">▶</button>
+        </div>
+        <div class="touch-cluster touch-alt">
+          <button id="touch-drop" class="touch-btn touch-drop" data-code="KeyS" aria-label="Drop through platform">⤓</button>
+        </div>
+        <div class="touch-cluster touch-act">
+          <button id="touch-dodge" class="touch-btn touch-dodge" data-code="ShiftLeft" aria-label="Dodge roll">💨</button>
+          <button id="touch-use" class="touch-btn touch-use" data-action="right" aria-label="Place block / use item">✋</button>
+          <button id="touch-attack" class="touch-btn touch-attack" data-action="left" aria-label="Attack / mine">⛏️</button>
+          <button id="touch-jump" class="touch-btn touch-jump" data-code="Space" aria-label="Jump / double jump">⤒</button>
+        </div>
+      </div>
+
+      <!-- Pause Overlay -->
+      <div id="pause-overlay" class="pause-overlay hidden">
+        <div class="pause-box">
+          <h2>PAUSED</h2>
+          <div class="settings-actions pause-actions">
+            <button id="btn-pause-resume" class="ui-btn" title="Back to the game">▶ RESUME</button>
+            <button id="btn-pause-save" class="ui-btn" title="Save this world">💾 SAVE WORLD</button>
+            <button id="btn-pause-settings" class="ui-btn" title="Settings and controls">⚙️ SETTINGS</button>
+            <button id="btn-pause-menu" class="ui-btn" title="Save, then return to the main menu to switch worlds">🏠 MAIN MENU</button>
+          </div>
+          <p class="pause-hint"><span class="hint-keys">Press <kbd>ESC</kbd> or <kbd data-keybind-label="pause">P</kbd> to resume</span><span class="hint-touch">Tap <strong>▶ RESUME</strong> to head back out</span></p>
+        </div>
+      </div>
+
+      <!-- Death / Respawn Screen -->
+      <div id="death-screen" class="death-screen hidden">
+        <div class="death-content">
+          <h1 class="death-title">YOU WERE SLAIN...</h1>
+          <p id="death-cause">The creatures of the night tore you apart.</p>
+          <p id="death-stats" class="run-stats"></p>
+          <button id="btn-respawn" class="primary-btn">RESPAWN AT CAMPFIRE</button>
+        </div>
+      </div>
+
+      <!-- Victory Screen -->
+      <div id="victory-screen" class="victory-screen hidden">
+        <div class="victory-content">
+          <h1 class="victory-title">👑 THE FOREST IS SAVED!</h1>
+          <p>You have conquered the Ancient Forest Guardian and survived the terrors of the night.</p>
+          <p id="victory-stats" class="run-stats"></p>
+          <div class="trophy-display">🏆 Legendary Forest Champion</div>
+          <button id="btn-continue" class="primary-btn">CONTINUE EXPLORING</button>
+        </div>
+      </div>
+
+    </div>
+
+    <section id="title-screen" class="title-screen" tabindex="-1" aria-label="Terracraft main menu">
+      <canvas id="title-scene" aria-hidden="true"></canvas>
+      <div class="title-vignette" aria-hidden="true"></div>
+
+      <header class="title-brand">
+        <!-- .title-logo wraps ONLY the h1. The splash is absolutely positioned,
+             so it anchors to .title-logo's right edge = the logo's own right
+             edge. Anchoring it to .title-brand instead would measure against
+             the wider tagline and push the splash off past the letters. -->
+        <div class="title-logo">
+          <h1>Terracraft</h1>
+          <span id="title-splash" class="title-splash" aria-live="polite"></span>
+        </div>
+        <span class="title-tagline">Forest Survivor &amp; Boss Slayer</span>
+      </header>
+
+      <main id="title-menu" class="title-menu">
+        <button id="title-singleplayer" class="title-button">Singleplayer</button>
+        <button id="title-multiplayer" class="title-button">Multiplayer</button>
+        <button id="title-credits-button" class="title-button">Credits</button>
+      </main>
+
+      <!-- Which controls the player gets. This is the FIRST thing the title
+           screen shows, ahead of the menu: the answer decides whether the game
+           listens for a keyboard or draws thumb controls over the world. It is
+           remembered, so it is asked once rather than on every visit. It sits
+           OUTSIDE #title-menu on purpose - that block is the fixed three-item
+           Terraria menu and must not grow a fourth row. -->
+      <section id="title-platform" class="title-platform" aria-labelledby="platform-heading" hidden>
+        <h2 id="platform-heading">How are you playing?</h2>
+        <p class="title-platform-hint">This sets your controls — you can change it any time in Settings.</p>
+        <div class="title-platform-options">
+          <button id="title-platform-pc" class="title-button title-platform-btn" data-scheme="pc">
+            <span class="platform-icon" aria-hidden="true">🖥️</span>
+            <span class="platform-copy">
+              <strong>PC / Laptop</strong>
+              <small>Keyboard &amp; mouse</small>
+            </span>
+            <span class="platform-badge" id="title-platform-pc-badge" hidden>Recommended</span>
+          </button>
+          <button id="title-platform-mobile" class="title-button title-platform-btn" data-scheme="touch">
+            <span class="platform-icon" aria-hidden="true">📱</span>
+            <span class="platform-copy">
+              <strong>Mobile</strong>
+              <small>On-screen touch controls</small>
+            </span>
+            <span class="platform-badge" id="title-platform-mobile-badge" hidden>Recommended</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Multiplayer: a blank server address connects tabs in the same
+           browser; playing on different computers requires an active relay. -->
+      <section id="title-multiplayer-panel" class="title-mp" aria-labelledby="mp-heading" hidden>
+        <h2 id="mp-heading">Multiplayer</h2>
+        <p class="title-mp-hint">Play in one shared world with up to 3 friends. The host keeps the world and save; friends join as guests.</p>
+
+        <ol class="title-mp-steps">
+          <li>Pick how you are connecting below. For other houses, you need a multiplayer server address from the person hosting it.</li>
+          <li>Everyone enters the same 4-character room code and their own name.</li>
+          <li>One person clicks <strong>HOST GAME</strong>. Friends click <strong>JOIN GAME</strong> using that same code.</li>
+        </ol>
+
+        <label class="title-mp-field" for="mp-name">Your name
+          <input id="mp-name" type="text" maxlength="14" placeholder="Steve" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="title-mp-field" for="mp-room">Room code (must match on every player's screen)
+          <input id="mp-room" type="text" maxlength="4" placeholder="COOP" autocomplete="off" spellcheck="false">
+        </label>
+
+        <!-- Two clear ways to play, so nobody has to guess what the server
+             field is for. Local = one computer; Online = across the internet. -->
+        <details class="title-mp-help">
+          <summary>Simple connection guide (tap to read)</summary>
+          <div class="title-mp-help-body">
+            <p><strong>Playing on one computer:</strong> leave <em>Server address</em> blank. Open the game in two browser tabs.
+              In the first tab, enter a room code and click <em>HOST GAME</em>. In the second tab, enter the same code and click <em>JOIN GAME</em>.</p>
+            <p><strong>Playing on different computers:</strong> you need a multiplayer server address that is already set up and running.
+              Ask the person who set it up for the full address, then every player enters that exact address, the same room code,
+              and clicks <em>HOST GAME</em> or <em>JOIN GAME</em> as appropriate. The room code alone cannot connect computers.</p>
+            <p><strong>Do not have a server address?</strong> You can still play using two tabs on one computer. The hosted web page does not automatically create an internet server,
+              so players in different homes need the server address first.</p>
+          </div>
+        </details>
+
+        <label class="title-mp-field" for="mp-server">Server address (leave blank for two tabs on this computer)
+          <input id="mp-server" type="text" placeholder="ws://your-host-address:8000/mp" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="title-mp-actions">
+          <button id="mp-host-btn" class="title-button">HOST GAME</button>
+          <button id="mp-join-btn" class="title-button">JOIN GAME</button>
+        </div>
+        <p id="mp-status" class="title-mp-status" role="status" aria-live="polite"></p>
+        <p class="title-mp-note">The host starts in their current world. Friends appear in that world after joining. Press <code>T</code> (or Enter) to chat.</p>
+        <button id="title-multiplayer-back" class="title-button">Back</button>
+      </section>
+
+      <!-- Three save files, Terraria's "select world" list. -->
+      <section id="title-worlds" class="title-worlds" aria-labelledby="worlds-heading" hidden>
+        <h2 id="worlds-heading">Select World</h2>
+        <p class="title-worlds-hint">Three save files — pick one to play.</p>
+        <div id="title-world-list" class="title-world-list"></div>
+        <button id="title-worlds-back" class="title-button">Back</button>
+      </section>
+
+      <section id="title-credits" class="title-credits" aria-labelledby="credits-heading" hidden>
+        <h2 id="credits-heading">Credits</h2>
+        <ul>
+          <li><span class="credit-name">Terraria</span><span class="credit-role">Inspiration</span></li>
+          <li><span class="credit-name">Minecraft</span><span class="credit-role">Inspiration</span></li>
+          <li><span class="credit-name">FISH (Ano)</span><span class="credit-role">Creator</span></li>
+          <li><span class="credit-name">Mikey (Radit)</span><span class="credit-role">Creator</span></li>
+          <li><span class="credit-name">Cline</span><span class="credit-role">Code AI</span></li>
+          <li><span class="credit-name">Codegpt</span><span class="credit-role">Code AI</span></li>
+          <li><span class="credit-name">Ghaniyy</span><span class="credit-role">Tester</span></li>
+          <li><span class="credit-name">Rasheed</span><span class="credit-role">Tester</span></li>
+          <li><span class="credit-name">Danish</span><span class="credit-role">Tester</span></li>
+        </ul>
+        <button id="title-credits-back" class="title-button">Back</button>
+      </section>
+
+      <!-- Escape hatch for the platform question. Small, in the corner and
+           outside #title-menu, so it reopens the chooser without adding a row
+           to the menu itself. -->
+      <button id="title-controls-chip" class="title-controls-chip" title="Change the control scheme">
+        <span id="title-controls-chip-icon" aria-hidden="true">🎮</span>
+        <span id="title-controls-chip-label">Controls: Keyboard</span>
+      </button>
+
+      <span class="title-version">Terracraft · A little world, a big adventure</span>
+    </section>
+  </div>
+
+  <!-- Audio synthesizers and game scripts.
+       Order matters: terraria.js needs every class above it.
+       Each script self-reports on load so "X is not defined" points at the
+       exact failed file (see window.__terraNoteScript in the boot watchdog).
+       onerror fires per-script for network/parse failures. -->
+  <script src="audio.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL audio.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok audio.js: '+(typeof SoundSystem))"></script>
+  <script src="particles.js?v=10" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL particles.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok particles.js: '+(typeof ParticleSystem))"></script>
+  <script src="world.js?v=22" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL world.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok world.js: '+(typeof World))"></script>
+  <script src="weather.js?v=8" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL weather.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok weather.js: '+(typeof WeatherSystem))"></script>
+  <script src="entities.js?v=21" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL entities.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok entities.js: Player='+(typeof Player))"></script>
+  <script src="underworld.js?v=6" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL underworld.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok underworld.js: '+(typeof UnderworldMonster)+' CerberusPet='+(typeof CerberusPet))"></script>
+  <script src="space.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL space.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok space.js: '+(typeof SkeletonDragonBoss))"></script>
+  <script src="ocean.js?v=21" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL ocean.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok ocean.js: '+(typeof Kraken))"></script>
+  <script src="juice.js?v=15" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL juice.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok juice.js: '+(typeof GameFeel))"></script>
+  <script src="npcs.js?v=9" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL npcs.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok npcs.js: '+(typeof NPCManager))"></script>
+  <script src="journey.js?v=3" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL journey.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok journey.js: '+(typeof JourneySystem))"></script>
+  <script src="multiplayer.js?v=2" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL multiplayer.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok multiplayer.js: '+(typeof Multiplayer))"></script>
+  <script src="terraria.js?v=58" onerror="window.__terraNoteScript&&window.__terraNoteScript('FAIL terraria.js')" onload="window.__terraNoteScript&&window.__terraNoteScript('ok terraria.js: Game='+(typeof Game))"></script>
+</body>
+
+</html>

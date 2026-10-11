@@ -1,0 +1,46 @@
+# Only the game + Streamlit entrypoint belong on GitHub. Everything below is
+# local scaffolding from this workspace and would only bloat/break the deploy.
+
+# Local-only builds and servers
+terraria.inlined.html
+qa-deployed-srcdoc.html
+qa-expected.html
+qa-inline-build.js
+run-test.js
+server.js
+
+# Test scratch output
+qa-report.json
+qa-out.json
+qa-pages.json
+qa-shot*.png
+node_modules/
+
+# Debug dumps (CodeGPT/Cline scratch dumps)
+.dbg/
+
+# Ad-hoc probes
+probe.js
+probe2.js
+probe3.js
+probe4.js
+t*.txt
+
+# Backups of old source copies — never deploy these
+backup-*/
+qa-*-backup-*.js
+qa-terraria-backup*.js
+*- Copy.js
+*- Copy.html
+terraria (1).html
+terraria (2).html
+
+# Junk that came from other tools
+*.lnk
+*.log
+screenshot-*.png
+t1.png
+t2.png
+mini_sandbox_adventure*.py
+.codegpt-game.json
+codegpt-game.json

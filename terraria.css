@@ -1,0 +1,3169 @@
+:root {
+  --bg-dark: #0a0e14;
+  --panel-bg: rgba(16, 24, 38, 0.88);
+  --panel-border: #415372;
+  --accent-gold: #f6c344;
+  --accent-green: #38b764;
+  --accent-blue: #3b82f6;
+  --accent-red: #ef4444;
+  --accent-purple: #a855f7;
+  --text-primary: #f1f5f9;
+  --text-muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #000;
+  font-family: 'VT323', monospace;
+  color: var(--text-primary);
+}
+
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+canvas#gameCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+canvas#lightingCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  display: block;
+}
+
+/* Additive bloom layer: makes torches, lava, stars and explosions actually radiate */
+canvas#glowCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.9;
+  display: block;
+}
+
+#ui-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  z-index: 10;
+}
+
+#ui-layer>* {
+  pointer-events: auto;
+}
+
+/* TOP LEFT PANEL */
+.top-left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  max-width: 320px;
+  backdrop-filter: blur(4px);
+}
+
+.clock-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.badge-day {
+  background: #f59e0b;
+  color: #1e1b18;
+  font-size: 13px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-night {
+  background: #7c3aed;
+  color: #fff;
+  font-size: 13px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.8);
+  animation: pulse-night 2s infinite ease-in-out;
+}
+
+.weather-badge {
+  font-size: 10px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid currentColor;
+  color: #93c5fd;
+  white-space: nowrap;
+  transition: color 0.4s, border-color 0.4s;
+}
+
+.weather-badge.hidden { display: none; }
+
+/* Dimension chip: only ever visible inside the Space Dimension. */
+.dimension-badge {
+  font-size: 10px;
+  font-family: 'Press Start 2P', monospace;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(12, 2, 32, 0.9);
+  border: 1px solid #a78bfa;
+  color: #ddd6fe;
+  white-space: nowrap;
+  animation: ossuary-pulse 2.4s infinite ease-in-out;
+}
+
+.dimension-badge.hidden { display: none; }
+
+@keyframes ossuary-pulse {
+  0%,
+  100% { box-shadow: 0 0 0 rgba(167, 139, 250, 0); }
+
+  50% { box-shadow: 0 0 12px rgba(167, 139, 250, 0.85); }
+}
+
+.weather-rain   { color: #7dd3fc; }
+.weather-storm  { color: #c084fc; animation: pulse-night 0.9s infinite ease-in-out; }
+.weather-blizzard { color: #e0f2fe; }
+.weather-sand   { color: #fbbf24; }
+.weather-fog    { color: #cbd5e1; }
+
+@keyframes pulse-night {
+
+  0%,
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px #a855f7);
+  }
+
+  50% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 10px #ec4899);
+  }
+}
+
+.survival-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  color: #cbd5e1;
+}
+
+.bar-outer {
+  width: 100%;
+  height: 14px;
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar-fill {
+  height: 100%;
+  transition: width 0.15s ease-out;
+  border-radius: 2px;
+}
+
+.hp-fill {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.mana-fill {
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.6);
+}
+
+.stamina-fill {
+  background: linear-gradient(90deg, #d97706, #fbbf24);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+}
+
+.hunger-fill {
+  background: linear-gradient(90deg, #b45309, #fb923c);
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.6);
+}
+
+#hunger-bar.hunger-fill {
+  background: linear-gradient(90deg, #b45309, #fb923c);
+}
+
+/* TOP RIGHT PANEL */
+.top-right-status {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ui-btn {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 2px solid #475569;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.ui-btn:hover {
+  background: #334155;
+  border-color: #94a3b8;
+  transform: translateY(-2px);
+}
+
+.summon-btn {
+  background: linear-gradient(135deg, #7c2d12, #991b1b);
+  border-color: #f87171;
+  color: #fef2f2;
+}
+
+.summon-btn:hover {
+  background: linear-gradient(135deg, #991b1b, #dc2626);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+}
+
+/* BOSS PANEL (Epic terraria health bar at top center) */
+.boss-panel {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 520px;
+  max-width: 90vw;
+  background: rgba(15, 23, 42, 0.92);
+  border: 3px solid #dc2626;
+  border-radius: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 0 24px rgba(220, 38, 38, 0.6), inset 0 0 12px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+  animation: boss-appear 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.oxygen-panel {
+  display: grid;
+  grid-template-columns: auto minmax(40px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 5px 7px;
+  border: 1px solid rgba(103, 232, 249, 0.65);
+  border-radius: 6px;
+  background: rgba(8, 47, 73, 0.86);
+  color: #cffafe;
+  font: bold 12px monospace;
+  text-shadow: 0 1px 2px #082f49;
+}
+
+.oxygen-panel.hidden { display: none; }
+.oxygen-bar-outer {
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid #a5f3fc;
+  border-radius: 6px;
+  background: #082f49;
+}
+.oxygen-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #22d3ee, #a5f3fc);
+  transition: width 0.15s linear;
+}
+
+@keyframes boss-appear {
+  from {
+    transform: translateX(-50%) translateY(-30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+.boss-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: #fca5a5;
+  letter-spacing: 1px;
+}
+
+#boss-phase-badge {
+  background: #991b1b;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.boss-bar-outer {
+  width: 100%;
+  height: 20px;
+  background: #450a0a;
+  border: 2px solid #7f1d1d;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.boss-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #b91c1c, #ef4444, #f87171);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.9);
+  transition: width 0.15s ease-out;
+}
+
+.boss-hp-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
+  color: #fff;
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ANNOUNCEMENT BANNER */
+.announcement-banner {
+  position: absolute;
+  top: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid #ef4444;
+  padding: 12px 32px;
+  border-radius: 6px;
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+  pointer-events: none;
+  animation: banner-pop 3.5s forwards ease-in-out;
+}
+
+#announcement-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 16px;
+  color: #f87171;
+  text-align: center;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px #dc2626;
+}
+
+@keyframes banner-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.8);
+  }
+
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.05);
+  }
+
+  25% {
+    transform: translateX(-50%) scale(1);
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+}
+
+/* TOASTS */
+.toast-container {
+  position: absolute;
+  left: 20px;
+  bottom: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+/* Performance readout (F key). Deliberately understated â€” it is a diagnostic,
+   not part of the HUD art. */
+.fps-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  padding: 5px 9px;
+  background: rgba(8, 15, 28, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 5px;
+  color: #cbd5e1;
+  font: 13px 'VT323', monospace;
+  letter-spacing: 0.5px;
+  text-shadow: 1px 1px 0 #000;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .65);
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(15, 23, 42, 0.9);
+  border-left: 4px solid var(--accent-gold);
+  padding: 6px 12px;
+  font-size: 18px;
+  color: #e2e8f0;
+  border-radius: 0 4px 4px 0;
+  animation: toast-slide 2.5s forwards ease-out;
+}
+
+@keyframes toast-slide {
+  0% {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+
+  10% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+}
+
+/* BOTTOM PANEL & HOTBAR */
+.bottom-panel {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hotbar-wrapper {
+  background: var(--panel-bg);
+  border: 3px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.hotbar-slots {
+  display: flex;
+  gap: 6px;
+}
+
+.hotbar-slot {
+  width: 52px;
+  height: 52px;
+  background: #1e293b;
+  border: 2px solid #475569;
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.hotbar-slot:hover {
+  border-color: var(--accent-gold);
+  background: #334155;
+}
+
+.hotbar-slot.active {
+  border-color: #fbbf24;
+  box-shadow: 0 0 12px #f59e0b, inset 0 0 6px rgba(245, 158, 11, 0.4);
+  transform: translateY(-4px);
+  background: #28374d;
+}
+
+.slot-num {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 13px;
+  color: #94a3b8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+}
+
+.slot-count {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #f8fafc;
+  text-shadow: 1px 1px 2px #000;
+}
+
+.slot-icon {
+  font-size: 26px;
+}
+
+.controls-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 16px;
+  color: #cbd5e1;
+}
+
+kbd {
+  background: #334155;
+  color: #f8fafc;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #64748b;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* MODALS */
+.modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: #0f172a;
+  border: 3px solid #3b82f6;
+  border-radius: 12px;
+  width: 620px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: #1e293b;
+  border-bottom: 2px solid #334155;
+}
+
+.modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  color: #60a5fa;
+  letter-spacing: 1px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 28px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #ef4444;
+}
+
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* A flex child defaults to min-height:auto, which means it REFUSES to shrink
+     below its content height. Combined with the parent's overflow:hidden that
+     silently clips the bottom of a tall panel â€” which is why the creative menu
+     showed only half its items with no way to scroll to the rest. min-height:0
+     lets this child actually shrink so its own overflow-y:auto takes over. */
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.chest-modal-content {
+  width: 600px;
+  max-width: 94vw;
+  border-color: #d97706;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(217, 119, 6, 0.35);
+}
+
+.chest-modal-content .modal-header h3 {
+  color: #fbbf24;
+}
+
+.chest-modal-body {
+  align-items: stretch;
+}
+
+.chest-message {
+  color: #cbd5e1;
+  font-size: 20px;
+  text-align: center;
+}
+
+.chest-loot-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chest-loot-item {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  font-size: 19px;
+}
+
+.chest-loot-icon {
+  font-size: 26px;
+  text-align: center;
+}
+
+/* ---- Chest storage panel: the amber sibling of the shared stash ---------- */
+.chest-hint {
+  font-size: 15px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.chest-grid {
+  border: 1px solid rgba(217, 119, 6, 0.55);
+  justify-content: center;
+}
+
+.chest-bag-grid {
+  justify-content: center;
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.chest-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 10px 0 4px;
+}
+
+.chest-bag-label {
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #94a3b8;
+  margin-top: 10px;
+}
+
+/* Both grids move items on click rather than dragging, so the slots point. */
+.chest-slot.filled {
+  cursor: pointer;
+  border-color: #b45309;
+}
+
+.chest-slot.filled:hover {
+  border-color: var(--accent-gold);
+  box-shadow: inset 0 0 10px rgba(246, 195, 68, 0.2);
+}
+
+.guide-text {
+  font-size: 19px;
+  line-height: 1.4;
+  color: #cbd5e1;
+}
+
+.guide-text h4 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: #38b764;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.guide-text ul {
+  padding-left: 20px;
+  margin-bottom: 10px;
+}
+
+.guide-text li {
+  margin-bottom: 6px;
+}
+
+/* CRAFTING ITEMS */
+.crafting-modal-content { width: 760px; }
+.crafting-body { gap: 10px; }
+.crafting-help { color: #94a3b8; font-size: 15px; }
+.inventory-modal-content { width: 650px; }
+.inventory-body { align-items: stretch; }
+.inventory-display { width: 100%; }
+.crafting-recipes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: min(58vh, 560px);
+  overflow-y: auto;
+  padding-right: 5px;
+}
+.recipe-category { display: flex; flex-direction: column; gap: 7px; }
+.recipe-category-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  color: #fde68a;
+  background: #111827;
+  border: 1px solid #475569;
+  border-left: 4px solid #f59e0b;
+  border-radius: 4px;
+  font: 9px 'Press Start 2P', monospace;
+}
+.recipe-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.recipe-card {
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.recipe-card.craftable {
+  border-color: #10b981;
+}
+
+.recipe-card:hover {
+  background: #273549;
+}
+
+.recipe-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recipe-icon {
+  font-size: 28px;
+}
+
+.recipe-details h5 {
+  font-size: 18px;
+  color: #f1f5f9;
+}
+
+.recipe-reqs {
+  font-size: 15px;
+  color: #94a3b8;
+}
+
+.craft-btn {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.craft-btn:disabled {
+  background: #475569;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.inv-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: #1e293b;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.inv-slot {
+  width: 48px;
+  height: 48px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.inv-slot.filled {
+  cursor: grab;
+  border-color: #64748b;
+}
+
+.inv-slot.filled:active,
+.inv-slot.dragging {
+  cursor: grabbing;
+  opacity: 0.45;
+}
+
+.inv-slot.drag-over {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(246, 195, 68, 0.45), inset 0 0 12px rgba(246, 195, 68, 0.18);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   SLOT MANAGEMENT — select, favourite, delete
+   Shift+click a bag slot to select it, then act on it with the buttons.
+   A favourited slot gets a gold ring and a star badge, and is refused by
+   both the delete and the drop paths until it is un-favourited.
+   ══════════════════════════════════════════════════════════════════════ */
+.inv-slot.selected {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.55), inset 0 0 14px rgba(56, 189, 248, 0.2);
+}
+
+.inv-slot.favorited {
+  border-color: #facc15;
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.5), inset 0 0 12px rgba(250, 204, 21, 0.14);
+}
+
+/* Both selected AND favourited: keep the selection ring, tint it gold. */
+.inv-slot.selected.favorited {
+  border-color: #facc15;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.55), inset 0 0 16px rgba(250, 204, 21, 0.22);
+}
+
+.inv-slot .slot-star {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 15px;
+  line-height: 1;
+  color: #facc15;
+  text-shadow: 0 0 6px rgba(250, 204, 21, 0.9), 0 1px 2px #000;
+  pointer-events: none;
+}
+
+.slot-manager {
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.slot-manager-hint {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.slot-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.slot-selected-label {
+  flex: 1 1 150px;
+  min-width: 0;
+  font-size: 12px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-btn {
+  font-size: 11px;
+  padding: 6px 10px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+}
+
+.slot-btn:hover:not(:disabled) { background: #334155; }
+.slot-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.slot-btn-fav:not(:disabled) { border-color: #facc15; color: #fde68a; }
+.slot-btn-fav.is-on { background: #facc15; color: #1a1405; font-weight: bold; }
+.slot-btn-delete:not(:disabled) { border-color: #ef4444; color: #fecaca; }
+.slot-btn-delete:not(:disabled):hover { background: #ef4444; color: #fff; }
+.slot-btn-clear { border-color: #64748b; }
+.slot-btn-sort { border-color: #38bdf8; color: #bae6fd; }
+.slot-btn-sort:not(:disabled):hover { background: #0ea5e9; color: #04121f; }
+
+/* SETTLEMENT JOURNAL */
+.journal-btn {
+  border-color: #a78bfa;
+  color: #ddd6fe;
+}
+
+.journal-modal-content {
+  max-width: 620px;
+  width: 92vw;
+}
+
+.journal-body h4 {
+  margin: 16px 0 6px;
+  color: var(--accent-gold);
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.journal-score {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.55), rgba(30, 41, 59, 0.9));
+  border: 1px solid rgba(167, 139, 250, 0.4);
+}
+
+.journal-total {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 26px;
+  color: #fde047;
+  text-shadow: 0 0 12px rgba(253, 224, 71, 0.45);
+}
+
+.journal-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.journal-rank {
+  color: #ddd6fe;
+  font-size: 16px;
+}
+
+.journal-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.journal-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-size: 15px;
+  color: #cbd5e1;
+}
+
+.journal-row:nth-child(odd) {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.journal-value {
+  color: #94a3b8;
+}
+
+.journal-row strong {
+  color: #fde047;
+  min-width: 72px;
+  text-align: right;
+}
+
+.journal-log {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 15px;
+  color: #e2e8f0;
+}
+
+.journal-log li {
+  padding: 4px 8px;
+  border-left: 3px solid rgba(167, 139, 250, 0.6);
+  background: rgba(30, 41, 59, 0.5);
+}
+
+.journal-day {
+  color: #94a3b8;
+  font-size: 13px;
+  margin-right: 6px;
+}
+
+.journal-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* SHARED STASH â€” items that follow you between worlds */
+.shared-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.shared-count {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.shared-help {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #94a3b8;
+  margin: 4px 0 8px;
+}
+
+.shared-help kbd {
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* A cooler violet edge marks slots that survive across worlds. */
+.shared-grid {
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: #1a1730;
+}
+
+.shared-slot.filled {
+  cursor: pointer;
+  border-color: #7c6bab;
+}
+
+.shared-slot.filled:hover {
+  border-color: var(--accent-gold);
+  box-shadow: inset 0 0 10px rgba(246, 195, 68, 0.2);
+}
+
+/* DEATH / VICTORY OVERLAYS */
+.death-screen,
+.victory-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+}
+
+.death-screen {
+  background: rgba(45, 10, 10, 0.85);
+}
+
+.victory-screen {
+  background: rgba(10, 45, 20, 0.88);
+}
+
+.death-content,
+.victory-content {
+  text-align: center;
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 32px 40px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.death-content {
+  border: 3px solid #ef4444;
+}
+
+.victory-content {
+  border: 3px solid #38b764;
+}
+
+.death-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 26px;
+  color: #ef4444;
+  text-shadow: 0 0 16px #dc2626;
+}
+
+.victory-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 24px;
+  color: #34d399;
+  text-shadow: 0 0 16px #059669;
+}
+
+.trophy-display {
+  font-size: 24px;
+  color: #fbbf24;
+  font-family: 'Press Start 2P', monospace;
+  margin: 10px 0;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border: 2px solid #60a5fa;
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  padding: 12px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.primary-btn:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  transform: translateY(-2px);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.7);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================
+   TERRARIA-STYLE HUD EXTRAS
+   Hearts, mana stars, buff chips, minimap, vignettes, pause
+   ============================================================ */
+
+:root {
+  --panel-bg2: rgba(23, 25, 50, 0.86);
+  --panel-border2: #6b70c9;
+}
+
+/* Right-hand HUD column: buffs + potion badge + minimap.
+   Sits below the top-right button row (.top-right-status). */
+.right-hud-column {
+  position: absolute;
+  top: 58px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* ---- Buff chips (Terraria buff icons: square, icon + timer) ---- */
+.buff-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 300px;
+}
+
+.buff-chip {
+  width: 44px;
+  height: 44px;
+  background: var(--panel-bg2);
+  border: 2px solid var(--panel-border2);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), inset 0 0 8px rgba(0, 0, 0, 0.45);
+}
+
+.buff-chip.debuff {
+  animation: debuff-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes debuff-pulse {
+
+  0%,
+  100% {
+    box-shadow: inset 0 0 8px rgba(168, 85, 247, 0.4);
+  }
+
+  50% {
+    box-shadow: inset 0 0 14px rgba(168, 85, 247, 0.9);
+  }
+}
+
+.buff-icon {
+  font-size: 20px;
+  line-height: 1;
+  filter: drop-shadow(1px 1px 0 #000);
+}
+
+.buff-time {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #e2e8f0;
+  text-shadow: 1px 1px 0 #000;
+  margin-top: 2px;
+}
+
+/* ---- Potion sickness badge ---- */
+.potion-badge {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: #e9d5ff;
+  background: rgba(88, 28, 135, 0.9);
+  border: 2px solid #a855f7;
+  border-radius: 4px;
+  padding: 4px 8px;
+  text-shadow: 1px 1px 0 #000;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+
+/* ---- Minimap panel ---- */
+.minimap-panel {
+  background: var(--panel-bg2);
+  border: 2px solid var(--panel-border2);
+  border-radius: 6px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+}
+
+#minimap {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 2px solid #3d4080;
+  border-radius: 3px;
+  background: #05060d;
+}
+
+.minimap-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #a5b4fc;
+  text-shadow: 1px 1px 0 #000;
+  letter-spacing: 1px;
+}
+
+/* ---- Life hearts (1 heart = 20 life, like Terraria) ---- */
+.heart-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.heart {
+  font-size: 17px;
+  line-height: 1;
+  text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+  transition: transform 0.12s ease;
+}
+
+.heart.full {
+  color: #ff4d5e;
+  filter: drop-shadow(0 0 4px rgba(255, 77, 94, 0.7));
+}
+
+.heart.empty {
+  color: #4a2b31;
+  filter: saturate(0.4);
+}
+
+/* ---- Equipped-armour readout, sits under the life hearts ---- */
+.armor-chip {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+  color: #bfdbfe;
+  background: rgba(30, 58, 138, 0.55);
+  border: 1px solid rgba(147, 197, 253, 0.5);
+  border-radius: 4px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.armor-chip.hidden {
+  display: none;
+}
+
+/* ---- Mana stars (1 star = 20 mana) ---- */
+.star-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.star {
+  font-size: 15px;
+  line-height: 1;
+  text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+}
+
+.star.full {
+  color: #60a5fa;
+  filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.8));
+}
+
+.star.empty {
+  color: #2b3a55;
+}
+
+/* ---- Hurt / heal screen vignettes ---- */
+.screen-vignette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 30;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(220, 38, 38, 0.75) 100%);
+  transition: opacity 0.18s ease-out;
+}
+
+.heal-vignette {
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(34, 197, 94, 0.65) 100%);
+}
+
+/* ---- Pause overlay ---- */
+.pause-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 14, 0.7);
+  backdrop-filter: blur(3px);
+}
+
+.pause-box {
+  background: var(--panel-bg2);
+  border: 3px solid var(--panel-border2);
+  border-radius: 10px;
+  padding: 28px 44px;
+  text-align: center;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.85), 0 0 22px rgba(107, 112, 201, 0.35);
+}
+
+.pause-box h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 26px;
+  color: #f1f5f9;
+  letter-spacing: 4px;
+  text-shadow: 3px 3px 0 #000;
+  margin-bottom: 12px;
+}
+
+/* The pause box is narrow, so the four buttons sit two-up rather than in the
+     four-wide grid the settings panel uses. */
+.pause-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 18px 0 14px;
+}
+.pause-actions .ui-btn { padding: 11px 6px; font-size: 8px; }
+
+.pause-box p {
+  font-size: 20px;
+  color: #cbd5e1;
+}
+
+/* ---- Death / victory run summary ---- */
+.run-stats {
+  font-size: 18px;
+  color: #94a3b8;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   ITEM ICON FONTS â€” icons must never fall back to tofu boxes
+   ============================================================ */
+.slot-icon,
+.inv-slot,
+.recipe-icon,
+.chest-loot-icon,
+.buff-icon,
+.tt-icon,
+.npc-portrait {
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', 'VT323', sans-serif;
+}
+
+/* ---- Minimap label: fixed, centered, never reflows the panel ---- */
+.minimap-label {
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ============================================================
+   NPC QUESTS â€” talk prompt, dialogue modal, quest tracker
+   ============================================================ */
+.npc-prompt {
+  position: absolute;
+  bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #fde047;
+  color: #fef9c3;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  z-index: 40;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 #000;
+  animation: prompt-bob 1.4s infinite ease-in-out;
+}
+
+@keyframes prompt-bob {
+
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  50% {
+    transform: translateX(-50%) translateY(-4px);
+  }
+}
+
+.npc-modal-content {
+  width: 480px;
+  border-color: #d4a017;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 160, 23, 0.35);
+}
+
+.npc-modal-content .modal-header h3 {
+  color: #fde047;
+}
+
+.npc-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.npc-portrait {
+  font-size: 54px;
+  line-height: 1;
+  filter: drop-shadow(2px 2px 0 #000);
+}
+
+.npc-dialogue {
+  flex: 1;
+  font-size: 19px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+
+.npc-dialogue .q-name {
+  display: block;
+  color: #fde047;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+.npc-dialogue .q-reward {
+  display: block;
+  color: #86efac;
+  margin-top: 8px;
+}
+
+.npc-dialogue .q-progress {
+  display: block;
+  color: #93c5fd;
+  margin-top: 8px;
+}
+
+.npc-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.secondary-btn {
+  background: #1e293b;
+  border: 2px solid #475569;
+  color: #cbd5e1;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.secondary-btn:hover {
+  background: #334155;
+  border-color: #94a3b8;
+}
+
+/* ---- Quest tracker (lives in the right-hand HUD column) ---- */
+.quest-tracker {
+  background: var(--panel-bg2);
+  border: 2px solid #d4a017;
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-width: 300px;
+  font-size: 15px;
+  color: #e2e8f0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+}
+
+.quest-tracker .qt-title {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #fde047;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.quest-tracker .qt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.quest-tracker .qt-row strong {
+  color: #86efac;
+  white-space: nowrap;
+}
+
+.quest-tracker .qt-ready {
+  color: #fde047;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* ---- Boss badge screams when enraged / awakened ---- */
+.boss-phase-badge.enraged {
+  animation: debuff-pulse 0.7s infinite ease-in-out;
+  color: #fecaca;
+}
+
+/* THREE-SAVE MANAGER */
+.save-manager-content { width: 560px; border-color: #60a5fa; }
+.save-manager-help { color: #94a3b8; font-size: 15px; line-height: 1.5; }
+.save-slot-list { display: grid; gap: 10px; margin-top: 12px; }
+.save-slot-card { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 12px; background: #0f172a; border: 2px solid #334155; border-radius: 6px; }
+.save-slot-card strong { color: #f8fafc; }
+.save-slot-card > span { grid-column: 1; color: #94a3b8; font-size: 14px; }
+.save-slot-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; align-items: center; }
+.save-slot-actions .ui-btn { padding: 7px 9px; font-size: 10px; }
+.save-slot-actions .ui-btn:disabled { opacity: .45; cursor: default; }
+.save-slot-actions .ui-btn.danger { color: #fecaca; border-color: #7f1d1d; }
+/* ============================================================
+   CREATIVE MENU â€” give yourself any item or block
+   ============================================================ */
+.creative-btn { color: #fde68a; border-color: #78350f; }
+.creative-btn:hover { color: #fffbeb; border-color: var(--accent-gold); }
+
+.creative-modal-content { width: min(720px, 94vw); max-height: 90vh; border-color: #fbbf24; }
+.creative-help { color: #94a3b8; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+
+.creative-controls { display: flex; gap: 10px; align-items: center; }
+
+.creative-search {
+  flex: 1;
+  background: #020617;
+  color: #f8fafc;
+  border: 2px solid #334155;
+  border-radius: 5px;
+  padding: 10px 12px;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  outline: none;
+}
+.creative-search:focus { border-color: #fbbf24; }
+.creative-search::placeholder { color: #64748b; }
+
+.creative-categories { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.creative-cat-btn {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 2px solid #334155;
+  border-radius: 4px;
+  padding: 7px 9px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  cursor: pointer;
+}
+.creative-cat-btn:hover { background: #334155; color: #f8fafc; }
+.creative-cat-btn.active { background: #78350f; border-color: #fbbf24; color: #fde68a; }
+
+.creative-quick { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.creative-quick-btn { padding: 8px 10px; font-size: 10px; }
+.creative-slotmode { color: #94a3b8; font-size: 14px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.creative-slotmode input { cursor: pointer; }
+
+.creative-adventure-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: linear-gradient(110deg, rgba(120, 53, 15, .32), rgba(8, 47, 73, .5));
+  border: 1px solid #475569;
+  border-radius: 6px;
+}
+.creative-godmode-toggle {
+  display: grid;
+  grid-template-columns: 20px auto;
+  align-items: center;
+  gap: 2px 7px;
+  color: #fde68a;
+  font: 10px 'Press Start 2P', monospace;
+  cursor: pointer;
+}
+.creative-godmode-toggle input { grid-row: span 2; accent-color: #fbbf24; }
+.creative-godmode-toggle small {
+  grid-column: 2;
+  color: #cbd5e1;
+  font: 13px 'VT323', monospace;
+}
+.creative-teleport-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.creative-teleport-tools label {
+  color: #bae6fd;
+  font: 9px 'Press Start 2P', monospace;
+}
+.creative-dimension {
+  max-width: 190px;
+  padding: 8px;
+  color: #f8fafc;
+  background: #020617;
+  border: 1px solid #0e7490;
+  border-radius: 4px;
+  font: 14px 'VT323', monospace;
+}
+.creative-teleport-btn { padding: 8px 12px; color: #cffafe; border-color: #0e7490; }
+
+.creative-count { color: #64748b; font-size: 14px; margin: 10px 2px 6px; }
+
+.creative-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  grid-auto-rows: 64px;
+  gap: 6px;
+  /* Keep a real scroll viewport even when the modal's flex layout is short;
+     otherwise the grid can collapse to one row and hide nearly every item. */
+  height: min(330px, 40vh);
+  max-height: min(330px, 40vh);
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  padding: 4px;
+  background: #020617;
+  border: 2px solid #1e293b;
+  border-radius: 6px;
+  /* The scrollbar has to be visible or "scrollable" still reads as "cut off". */
+  scrollbar-color: #3b82f6 #020617;
+}
+
+.creative-cell {
+  position: relative;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  border: 2px solid #1e293b;
+  border-radius: 5px;
+  font-size: 22px;
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+}
+.creative-cell:hover { border-color: #fbbf24; background: #1e293b; }
+.creative-cell:active { transform: scale(0.94); }
+.creative-cell.flash { border-color: #4ade80; background: #14532d; }
+
+/* Stack size tucked into the bottom-right like the real inventory. */
+.creative-cell-count {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #f8fafc;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* Item icon uses the same monochrome-emoji treatment as the hotbar. */
+.creative-cell-icon {
+  font-size: 22px;
+  line-height: 1;
+  filter: grayscale(100%) contrast(120%);
+}
+
+.creative-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #64748b;
+  font-size: 15px;
+  padding: 24px 8px;
+}
+
+/* ============================================================
+   JOURNEY PROGRESSION â€” always-on objective, biome and rank HUD
+   ============================================================ */
+.journey-panel {
+  width: 292px;
+  position: relative;
+  overflow: hidden;
+  color: #e2e8f0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(30, 27, 75, 0.9));
+  border: 2px solid #6b70c9;
+  border-radius: 6px;
+  padding: 8px 9px 7px;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.7), inset 0 0 18px rgba(99, 102, 241, 0.12);
+  pointer-events: none;
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.journey-panel::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.journey-panel.rank-up {
+  border-color: #fde047;
+  box-shadow: 0 0 24px rgba(253, 224, 71, .55), inset 0 0 20px rgba(253, 224, 71, .15);
+  animation: journey-rank-pop .55s ease-out;
+}
+.journey-panel.journey-complete { border-color: #facc15; }
+.journey-panel .hidden { display: none !important; }
+.journey-rank-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 7px; position: relative; }
+.journey-rank-icon { font-size: 23px; filter: drop-shadow(2px 2px 0 #000); }
+.journey-rank-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.journey-rank-copy > span, .journey-step {
+  color: #a5b4fc;
+  font: 7px 'Press Start 2P', monospace;
+  letter-spacing: .7px;
+}
+.journey-rank-copy strong { overflow: hidden; color: #f8fafc; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; text-shadow: 1px 1px 0 #000; }
+.journey-score { color: #fde68a; font: 8px 'Press Start 2P', monospace; white-space: nowrap; }
+.journey-location {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 7px 0 6px;
+  padding: 4px 5px;
+  color: #bbf7d0;
+  background: rgba(15, 23, 42, .78);
+  border-left: 3px solid #4ade80;
+  font: 7px 'Press Start 2P', monospace;
+  letter-spacing: .3px;
+}
+.journey-location > span:last-child { color: #94a3b8; white-space: nowrap; }
+.journey-objective { position: relative; min-height: 48px; }
+.journey-objective strong { display: block; margin-top: 5px; color: #fef3c7; font-size: 16px; line-height: 1.05; text-shadow: 1px 1px 0 #000; }
+.journey-objective p { margin-top: 3px; color: #a5b4fc; font-size: 12px; line-height: 1.05; }
+.journey-meter { height: 9px; margin-top: 6px; overflow: hidden; background: #020617; border: 2px solid #334155; border-radius: 2px; }
+.journey-meter i { display: block; width: 0; height: 100%; background: repeating-linear-gradient(90deg, #facc15 0 7px, #ca8a04 7px 9px); box-shadow: 0 0 9px rgba(250, 204, 21, .6); transition: width .22s ease-out; }
+.journey-footer { display: flex; justify-content: space-between; align-items: center; min-height: 18px; margin-top: 3px; color: #e2e8f0; font: 8px 'Press Start 2P', monospace; }
+.journey-streak { color: #86efac; text-align: right; }
+.journey-threat { margin-top: 4px; padding: 3px 5px; color: #c7d2fe; background: rgba(49, 46, 129, .72); border-left: 3px solid #818cf8; font: 7px 'Press Start 2P', monospace; }
+.journey-threat.danger { color: #fecaca; background: rgba(127, 29, 29, .82); border-color: #ef4444; animation: journey-danger .8s infinite alternate; }
+.journey-panel.journey-complete .journey-meter i { background: repeating-linear-gradient(90deg, #fde047 0 7px, #f59e0b 7px 9px); }
+@keyframes journey-rank-pop { 0% { transform: scale(.96); } 55% { transform: scale(1.035); } 100% { transform: scale(1); } }
+@keyframes journey-danger { from { filter: brightness(.9); } to { filter: brightness(1.35); } }
+
+.journal-journey-summary { display: flex; justify-content: space-between; gap: 8px; padding: 9px; background: rgba(30, 27, 75, .75); border: 2px solid #4f46e5; border-radius: 5px; color: #ddd6fe; }
+.journal-journey-summary strong { color: #fde68a; font-size: 12px; }
+.journal-journey-list { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 7px 0 14px; }
+.journey-journal-row { display: flex; justify-content: space-between; gap: 5px; padding: 6px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #64748b; font-size: 12px; }
+.journey-journal-row.current { color: #fef3c7; border-color: #f59e0b; box-shadow: inset 0 0 10px rgba(245, 158, 11, .12); }
+.journey-journal-row.done { color: #86efac; border-color: #166534; }
+.journey-journal-row strong { font-size: 7px; white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .journey-panel { width: 250px; }
+  .journey-objective p { display: none; }
+  .journey-objective { min-height: 31px; }
+}
+@media (max-width: 760px) {
+  .journey-panel { width: 218px; padding: 6px 7px; }
+  .journey-rank-copy > span, .journey-score, .journey-location > span:last-child, .journey-step { display: none; }
+  .journey-rank-row { grid-template-columns: 25px 1fr; }
+  .journey-location { margin: 4px 0; }
+  .quest-tracker { max-width: 218px; font-size: 12px; }
+  .minimap-panel { display: none; }
+}
+
+/* ============================================================
+   COMPACT UI PASS + SETTINGS
+   Keeps the same information hierarchy, with less visual weight.
+   ============================================================ */
+:root {
+  --hud-surface: rgba(11, 18, 32, 0.91);
+  --hud-edge: rgba(100, 116, 139, 0.68);
+  --hud-highlight: rgba(226, 232, 240, 0.1);
+}
+#ui-layer { padding: 12px; }
+.top-left-panel {
+  max-width: 294px;
+  padding: 8px 11px;
+  gap: 6px;
+  border-color: #52617d;
+  background: linear-gradient(145deg, rgba(18, 28, 46, .94), rgba(10, 16, 28, .9));
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(148, 163, 184, .12);
+}
+.clock-display { gap: 7px; font-size: 17px; }
+.badge-day, .badge-night { font-size: 10px; padding: 2px 5px; }
+.weather-badge { font-size: 8px; padding: 2px 5px; }
+.dimension-badge { font-size: 8px; padding: 2px 5px; }
+.top-right-status { top: 12px; right: 12px; gap: 5px; }
+.ui-btn { padding: 5px 9px; font-size: 8px; border-width: 2px; }
+.right-hud-column { top: 48px; right: 12px; gap: 6px; }
+.journey-panel { width: 260px; padding: 6px 7px; }
+.journey-objective { min-height: 41px; }
+.journey-objective strong { font-size: 14px; }
+.journey-objective p { font-size: 11px; }
+.journey-meter { height: 8px; margin-top: 5px; }
+.journey-footer { min-height: 15px; font-size: 7px; }
+.journey-threat { font-size: 6px; }
+.bottom-panel { gap: 5px; }
+.hotbar-wrapper { border-width: 2px; padding: 4px 6px; }
+.hotbar-slots { gap: 4px; }
+.hotbar-slot { width: 46px; height: 46px; }
+.slot-icon { font-size: 22px; }
+.slot-count { font-size: 14px; }
+.controls-hint { gap: 8px; padding: 3px 8px; font-size: 13px; }
+.controls-hint kbd, kbd { font-size: 11px; }
+.boss-panel { top: 18px; }
+.boss-title { font-size: 10px; }
+.boss-bar-outer { height: 17px; }
+.boss-hp-text { font-size: 12px; }
+.announcement-banner { top: 116px; padding: 9px 22px; }
+#announcement-text { font-size: 12px; }
+.settings-btn { border-color: #64748b; color: #cbd5e1; }
+.settings-btn:hover { border-color: #facc15; color: #fef3c7; }
+.settings-modal-content { width: 540px; border-color: #64748b; }
+.settings-body { padding: 12px 16px 16px; max-height: min(70vh, 620px); overflow-y: auto; }
+/* The settings list grew by three sections. A scroll container on the body is
+   what keeps the QUICK ACTIONS buttons reachable on a short window instead of
+   pushing the Save/Load row off the bottom of the modal. */
+.settings-body::-webkit-scrollbar { width: 10px; }
+.settings-body::-webkit-scrollbar-track { background: #0b1220; }
+.settings-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
+.settings-body::-webkit-scrollbar-thumb:hover { background: #475569; }
+.settings-help { margin: 0 0 12px; color: #94a3b8; font-size: 14px; line-height: 1.35; }
+.settings-section { margin-top: 12px; }
+.settings-section h4 { margin: 0 0 7px; color: var(--accent-gold); font: 9px 'Press Start 2P', monospace; letter-spacing: .5px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 10px; margin-top: 5px; background: #111827; border: 1px solid #334155; border-radius: 5px; }
+.settings-row > span { display: flex; flex-direction: column; gap: 2px; }
+.settings-row strong { color: #e2e8f0; font-size: 16px; }
+.settings-row small { color: #64748b; font-size: 11px; }
+.settings-row select { min-width: 132px; padding: 6px 8px; color: #e2e8f0; background: #1e293b; border: 2px solid #475569; border-radius: 4px; font: 14px 'VT323', monospace; }
+.settings-row select:focus { outline: none; border-color: #facc15; }
+.settings-toggle input { width: 18px; height: 18px; accent-color: #facc15; }
+.keybind-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 8px; margin-top: 8px; }
+.keybind-grid label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; padding: 5px 7px; color: #cbd5e1; background: #111827; border: 1px solid #334155; border-radius: 4px; font-size: 13px; }
+.keybind-button { flex: 0 0 auto; min-width: 54px; padding: 4px 6px; color: #fef3c7; background: #1e293b; border: 1px solid #64748b; border-radius: 4px; font: 12px 'VT323', monospace; cursor: pointer; }
+.keybind-button:hover, .keybind-button:focus-visible { border-color: #facc15; outline: 2px solid #facc15; outline-offset: 1px; }
+.keybind-button[aria-pressed="true"] { color: #111827; background: #facc15; }
+.keybind-group-title { grid-column: 1 / -1; margin-top: 5px; color: var(--accent-gold); font: 8px 'Press Start 2P', monospace; }
+/* Volume slider. Kept inline with its % readout so dragging it shows the
+   number without needing a separate click to commit. */
+.settings-slider { display: flex; align-items: center; gap: 8px; min-width: 132px; }
+.settings-slider input[type=range] { flex: 1; min-width: 84px; height: 18px; accent-color: #facc15; cursor: pointer; }
+.settings-slider input[type=range]:focus { outline: 2px solid #facc15; outline-offset: 2px; }
+.settings-slider output { min-width: 40px; text-align: right; color: #facc15; font: 14px 'VT323', monospace; }
+.settings-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.settings-actions .ui-btn { min-width: 0; padding: 7px 5px; font-size: 7px; }
+@media (max-width: 760px) {
+  .top-left-panel { max-width: 250px; }
+  .controls-hint { max-width: 360px; justify-content: center; font-size: 12px; }
+  .settings-actions { grid-template-columns: repeat(2, 1fr); }
+  .settings-row { align-items: flex-start; }
+  .settings-row select { min-width: 110px; }
+  .keybind-grid { grid-template-columns: minmax(0, 1fr); }
+  .keybind-group-title { grid-column: 1; }
+}
+
+/* ===== STREAMLIT FULL-SCREEN FIX ===== */
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden !important;
+}
+
+#game-container {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+#gameCanvas,
+#lightingCanvas,
+#glowCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Keep HUD and hotbar inside the visible game */
+#ui-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Keep the bottom hotbar away from the edge */
+.bottom-panel {
+    position: absolute;
+    bottom: 8px !important;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 100%;
+}
+html,
+body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+
+#game-container {
+    height: 100vh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+/* Boot-error overlay: never fail as a silent black screen again. */
+.boot-error {
+    position: fixed;
+    inset: auto 12px 12px 12px;
+    z-index: 9999;
+    max-height: 45vh;
+    overflow: auto;
+    padding: 12px 14px;
+    background: rgba(127, 29, 29, 0.94);
+    border: 2px solid #fca5a5;
+    border-radius: 8px;
+    color: #fef2f2;
+    font-family: monospace;
+    font-size: 14px;
+    pointer-events: auto;
+}
+.boot-error-title { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
+.boot-error-body { white-space: pre-wrap; word-break: break-word; opacity: 0.95; }
+.boot-error-hint { margin-top: 8px; font-size: 12px; opacity: 0.8; }
+
+/* ============================================================
+   MAIN TITLE SCREEN — Terraria-styled menu over an animated scene
+   ============================================================ */
+.title-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  isolation: isolate;
+  color: #f7fff0;
+  text-align: center;
+  opacity: 1;
+  transition: opacity 450ms ease;
+}
+.title-screen:focus { outline: none; }
+.title-screen-leaving { opacity: 0; pointer-events: none; }
+#title-scene,
+.title-vignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#title-scene { image-rendering: pixelated; image-rendering: crisp-edges; }
+.title-vignette {
+  background:
+    radial-gradient(130% 70% at 50% 0%, rgba(255, 255, 255, .10), transparent 62%),
+    linear-gradient(180deg, rgba(9, 28, 49, .16), transparent 30%, rgba(7, 38, 34, .14) 57%, rgba(6, 22, 30, .68));
+}
+
+/* ---- Logo --------------------------------------------------------- */
+.title-brand {
+  position: absolute;
+  z-index: 1;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  animation: title-arrive 700ms cubic-bezier(.2, .8, .2, 1) both;
+}
+/* Shrink-wraps to the h1 alone, so the splash has a correct corner to sit on. */
+.title-logo { position: relative; display: inline-block; }
+.title-brand h1 {
+  margin: 0;
+  color: #69ef66;
+  font: 104px/.85 'VT323', monospace;
+  -webkit-text-stroke: 3px #14512f;
+  text-shadow: 0 6px 0 #17482e, 0 10px 0 #102b21, 4px 4px 0 #123c2a, -4px 4px 0 #123c2a, 0 16px 28px rgba(4, 18, 20, .62);
+}
+.title-tagline {
+  display: block;
+  margin-top: 4px;
+  color: rgba(240, 255, 238, .9);
+  font: 24px/1 'VT323', monospace;
+  letter-spacing: 3px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, .8);
+}
+
+/* The Minecraft/Terraria blurb that hangs off the top-right of the logo.
+   100% here is .title-logo — the h1's own box — so this lands exactly on the
+   Terracraft lettering's right edge rather than somewhere past it.
+   white-space MUST be reset to normal: .title-brand sets nowrap, and without
+   this the line never wraps, so it runs off the right of the screen and the
+   rotation clips it against the top. */
+.title-splash {
+  position: absolute;
+  /* 9px down, not flush to the top: the box is 2-3 lines tall and the tilt
+     lifts its far end by roughly a third of its width, so top:0 would push
+     the right-hand end off the top of the screen once it wraps. */
+  top: 9px;
+  left: calc(100% + 12px);
+  width: 214px;
+  white-space: normal;
+  color: #fff16c;
+  font: 26px/1.05 'VT323', monospace;
+  text-align: left;
+  text-shadow: 2px 2px 0 #553d17, 0 0 12px rgba(255, 241, 108, .5);
+  transform: rotate(-7deg);
+  transform-origin: left center;
+  animation: splash-wiggle 3.8s ease-in-out infinite;
+}
+/* The 1-in-10 pull gets its own louder look so it reads as special. */
+.title-splash-rare {
+  color: #ffe08a;
+  text-shadow: 2px 2px 0 #7a2410, 0 0 16px rgba(255, 138, 62, .85);
+}
+.title-splash.splash-pop {
+  animation: splash-pop 420ms cubic-bezier(.2, .9, .3, 1.5), splash-wiggle 3.8s 420ms ease-in-out infinite;
+}
+/* ---- Menu panels -------------------------------------------------- */
+.title-menu,
+.title-worlds,
+.title-credits {
+  position: absolute;
+  z-index: 2;
+  top: 44%;
+  left: 50%;
+  display: flex;
+  width: min(340px, 94vw);
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  animation: menu-arrive 650ms 120ms ease-out both;
+}
+.title-menu[hidden],
+.title-worlds[hidden],
+.title-credits[hidden] { display: none; }
+
+/* ---- Terraria menu buttons --------------------------------------- */
+.title-button {
+  position: relative;
+  width: min(300px, 90vw);
+  min-height: 50px;
+  padding: 2px 14px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #f5fff4;
+  cursor: pointer;
+  font: 38px/1 'VT323', monospace;
+  letter-spacing: 1px;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, .88), -1px -1px 0 rgba(0, 0, 0, .55);
+  transition: color 130ms ease, transform 130ms ease;
+}
+/* The plate that lights up behind the words on hover, Terraria-style. */
+.title-button::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px;
+  z-index: -1;
+  border: 2px solid rgba(255, 255, 255, .45);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, .06) 55%, rgba(0, 0, 0, .20));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35), 0 5px 14px rgba(0, 0, 0, .38);
+  opacity: 0;
+  transform: scaleX(.9);
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+.title-button:hover:not(:disabled)::before,
+.title-button:focus-visible::before { opacity: 1; transform: scaleX(1); }
+.title-button:hover:not(:disabled),
+.title-button:focus-visible { color: #ffe66d; outline: none; }
+.title-button:focus-visible { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.title-button:active:not(:disabled) { transform: translateY(2px); }
+
+/* (The greyed-out Multiplayer button and its "( Coming soon! )" note are
+   gone: multiplayer is live and opens the join/host panel further down this
+   file. Their styles were removed with them rather than left as dead CSS.) */
+
+/* ---- World (save file) selector ---------------------------------- */
+.title-worlds {
+  top: 30%;
+  width: min(470px, 94vw);
+  gap: 4px;
+}
+.title-worlds h2,
+.title-credits h2 {
+  margin: 0 0 2px;
+  color: #fff1a0;
+  font: 50px/.95 'VT323', monospace;
+  text-shadow: 0 3px 0 #53492a, 0 5px 12px rgba(0, 0, 0, .72);
+}
+.title-worlds-hint {
+  margin: 0 0 6px;
+  color: rgba(240, 255, 238, .84);
+  font: 22px/1 'VT323', monospace;
+  text-shadow: 1px 2px 0 rgba(0, 0, 0, .75);
+}
+.title-world-list { display: grid; gap: 8px; width: 100%; }
+.title-world-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid rgba(255, 255, 255, .30);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(10, 26, 20, .80), rgba(5, 15, 12, .88));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55), 0 5px 16px rgba(0, 0, 0, .45);
+  color: #f2fff0;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 130ms ease, background 130ms ease, transform 130ms ease;
+}
+.title-world-card:hover,
+.title-world-card:focus-visible {
+  border-color: #f9df63;
+  background: linear-gradient(180deg, rgba(30, 52, 32, .90), rgba(12, 27, 21, .94));
+  outline: none;
+  transform: translateX(4px);
+}
+.title-world-card:active { transform: translateX(4px) translateY(2px); }
+/* An empty slot reads as a slot you are about to create, not one you own. */
+.title-world-card.is-empty { border-style: dashed; }
+.world-badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(255, 255, 255, .35);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .5);
+  color: #ffe66d;
+  font: 27px/1 'VT323', monospace;
+}
+.world-main { display: grid; gap: 1px; min-width: 0; }
+.world-name { font: 30px/1.05 'VT323', monospace; text-shadow: 2px 2px 0 rgba(0, 0, 0, .85); }
+.world-meta { color: rgba(210, 235, 214, .8); font: 19px/1.15 'VT323', monospace; }
+.world-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid #7bd17a;
+  border-radius: 3px;
+  background: rgba(20, 70, 40, .85);
+  color: #b9ffb0;
+  font: 10px/1.4 'Press Start 2P', monospace;
+  font-style: normal;
+  vertical-align: middle;
+  text-shadow: none;
+}
+.world-action {
+  color: #ffe66d;
+  font: 25px/1 'VT323', monospace;
+  letter-spacing: 2px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, .85);
+}
+.title-world-card.is-empty .world-action { color: #9ee6a2; }
+
+/* ---- Credits ------------------------------------------------------ */
+.title-credits { top: 24%; width: min(430px, 94vw); gap: 4px; }
+.title-credits ul { display: grid; gap: 3px; margin: 4px 0 10px; padding: 0; width: 100%; list-style: none; }
+.title-credits li {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  transition: background 130ms ease;
+}
+.title-credits li:hover { background: rgba(255, 255, 255, .09); }
+.credit-name {
+  color: #f6fff2;
+  font: 32px/1.05 'VT323', monospace;
+  text-shadow: 2px 2px 0 #1d4436, 0 2px 8px #17322b;
+}
+.credit-role {
+  color: #ffd76e;
+  font: 19px/1 'VT323', monospace;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  opacity: .88;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, .8);
+}
+
+.title-version {
+  position: absolute;
+  z-index: 1;
+  bottom: 13px;
+  left: 16px;
+  color: rgba(246, 255, 241, .86);
+  font: 19px/1 'VT323', monospace;
+  text-shadow: 1px 2px 0 #163d32;
+}
+
+/* ---- Animation ---------------------------------------------------- */
+@keyframes title-arrive {
+  from { opacity: 0; transform: translate(-50%, -14px) scale(.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes menu-arrive {
+  from { opacity: 0; translate: 0 10px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes splash-wiggle {
+  0%, 100% { rotate: -2deg; }
+  50% { rotate: 3deg; }
+}
+@keyframes splash-pop {
+  from { opacity: 0; scale: .55; }
+  to { opacity: 1; scale: 1; }
+}
+
+/* ---- Responsive --------------------------------------------------- */
+@media (max-width: 940px) {
+  /* Not enough room beside the logo any more: tuck the splash over the logo's
+     own top-right corner (still anchored to .title-logo) instead of above it,
+     where it would clip off the top of the screen. */
+  .title-splash { top: -6px; left: auto; right: -10px; width: 190px; text-align: right; transform-origin: right center; font-size: 23px; }
+}
+@media (max-width: 680px) {
+  .title-brand { top: 8%; }
+  .title-brand h1 { font-size: 74px; -webkit-text-stroke-width: 2px; }
+  .title-tagline { font-size: 19px; letter-spacing: 3px; }
+  .title-menu { top: 42%; gap: 4px; }
+  .title-button { min-height: 44px; font-size: 31px; }
+  .title-worlds { top: 20%; gap: 2px; }
+  .title-worlds h2, .title-credits h2 { font-size: 40px; }
+  .title-worlds-hint { font-size: 18px; }
+  .title-world-card { gap: 9px; padding: 8px 10px; }
+  .world-badge { width: 32px; height: 32px; font-size: 22px; }
+  .world-name { font-size: 25px; }
+  .world-meta { font-size: 16px; }
+  .world-action { font-size: 20px; }
+  .title-credits { top: 16%; }
+  .title-credits ul { gap: 0; }
+  .credit-name { font-size: 26px; }
+  .credit-role { font-size: 16px; letter-spacing: 2px; }
+  .title-version { bottom: 9px; left: 10px; font-size: 16px; }
+}
+@media (max-height: 560px) {
+  .title-brand { top: 1%; }
+  .title-brand h1 { font-size: 68px; }
+  .title-tagline { display: none; }
+  .title-splash { top: -26px; font-size: 21px; }
+  .title-menu { top: 40%; gap: 0; }
+  .title-button { min-height: 38px; font-size: 30px; }
+  .title-worlds { top: 12%; gap: 0; }
+  .title-worlds-hint { display: none; }
+  .title-world-card { padding: 5px 10px; }
+  .world-badge { width: 30px; height: 30px; font-size: 20px; }
+  .title-credits { top: 8%; gap: 0; }
+  .title-credits h2 { font-size: 34px; }
+  .title-credits li { padding: 1px 8px; }
+  .credit-name { font-size: 24px; }
+  .credit-role { font-size: 15px; }
+}
+
+/* ============================================================
+   ITEM NAME READOUTS
+   Two readouts that look similar but behave very differently, on
+   purpose:
+     .item-tooltip    - follows the cursor while hovering an item.
+                        Wired up for the bag, the shared stash, chests
+                        and the creative menu. Deliberately NOT the hotbar.
+     .item-name-popup - the Minecraft-style flash above the hotbar that
+                        names the slot you just switched to.
+   ============================================================ */
+
+/* .hotbar-wrapper is a plain block today, so giving it `position: relative`
+   costs no layout change and makes it the popup's positioning context. */
+.hotbar-wrapper { position: relative; }
+
+.item-tooltip {
+  position: fixed;
+  z-index: 200;
+  left: 0;
+  top: 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  background: rgba(2, 6, 23, .95);
+  border: 2px solid #60a5fa;
+  border-radius: 5px;
+  color: #f8fafc;
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  line-height: 1.15;
+  white-space: pre-line;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .75);
+}
+.item-tooltip[hidden] { display: none; }
+
+.item-name-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  z-index: 3;
+  margin-bottom: 10px;
+  padding: 3px 14px;
+  background: rgba(2, 6, 23, .82);
+  border: 2px solid rgba(96, 165, 250, .5);
+  border-radius: 5px;
+  color: #f8fafc;
+  font-family: 'VT323', monospace;
+  font-size: 24px;
+  line-height: 1.1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+.item-name-popup.show { animation: item-name-flash 1.9s ease-out forwards; }
+@keyframes item-name-flash {
+  0% { opacity: 0; transform: translate(-50%, 10px); }
+  14% { opacity: 1; transform: translate(-50%, 0); }
+  72% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -8px); }
+}
+@media (max-width: 900px) {
+  .item-name-popup { font-size: 19px; padding: 2px 10px; }
+  .item-tooltip { font-size: 17px; max-width: 220px; }
+}
+/* ============================================================
+   PLATFORM CHOOSER  ("How are you playing?")
+   The question that has to be answered before the main menu, because the
+   answer decides which control scheme the game arms. These are TITLE SCREEN
+   rules: deliberately NOT shrunk in touch mode, same as the rest of the menu.
+   ============================================================ */
+.title-platform {
+  position: absolute;
+  z-index: 2;
+  top: 40%;
+  left: 50%;
+  display: flex;
+  width: min(620px, 94vw);
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  animation: menu-arrive 650ms 120ms ease-out both;
+}
+.title-platform[hidden] { display: none; }
+.title-platform h2 {
+  margin: 0;
+  color: #fff1a0;
+  font: 50px/.95 'VT323', monospace;
+  text-align: center;
+  text-shadow: 0 3px 0 #53492a, 0 5px 12px rgba(0, 0, 0, .72);
+}
+.title-platform-hint {
+  margin: 0 0 4px;
+  max-width: min(520px, 92vw);
+  color: rgba(240, 255, 238, .84);
+  font: 21px/1.1 'VT323', monospace;
+  text-align: center;
+  text-shadow: 1px 2px 0 rgba(0, 0, 0, .75);
+}
+.title-platform-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+/* Two cards rather than two menu rows: the choice is a mode, so it needs room
+   for a picture, the name AND what it means. Still .title-button underneath,
+   so the hover plate and focus ring are the ones the menu already uses. */
+.title-platform-btn {
+  position: relative;
+  width: auto;
+  min-height: 104px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.platform-icon { font-size: 40px; line-height: 1; }
+.platform-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+}
+.platform-copy strong { font: 30px/1 'VT323', monospace; }
+.platform-copy small {
+  color: rgba(236, 253, 245, .8);
+  font: 18px/1 'VT323', monospace;
+  letter-spacing: .5px;
+}
+.platform-badge {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  padding: 1px 7px;
+  border: 1px solid #facc15;
+  border-radius: 999px;
+  background: #221a05;
+  color: #fde68a;
+  font: 13px/1.5 'VT323', monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.platform-badge[hidden] { display: none; }
+
+/* The corner chip that reopens the chooser. Small on purpose: it must not read
+   as a fourth menu item. */
+.title-controls-chip {
+  position: absolute;
+  z-index: 3;
+  right: 16px;
+  bottom: 11px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 2px solid rgba(255, 255, 255, .28);
+  border-radius: 999px;
+  background: rgba(4, 14, 11, .6);
+  color: rgba(246, 255, 241, .88);
+  cursor: pointer;
+  font: 18px/1 'VT323', monospace;
+  text-shadow: 1px 2px 0 #163d32;
+  transition: border-color 130ms ease, color 130ms ease;
+}
+.title-controls-chip:hover,
+.title-controls-chip:focus-visible {
+  border-color: #facc15;
+  color: #ffe66d;
+  outline: none;
+}
+
+@media (max-width: 680px) {
+  .title-platform { top: 34%; gap: 6px; }
+  .title-platform h2 { font-size: 40px; }
+  .title-platform-hint { font-size: 18px; }
+  .title-platform-options { grid-template-columns: 1fr; gap: 6px; }
+  .title-platform-btn { min-height: 74px; padding: 6px 12px; }
+  .platform-icon { font-size: 30px; }
+  .platform-copy strong { font-size: 26px; }
+  .platform-copy small { font-size: 16px; }
+  .title-controls-chip { right: 10px; bottom: 8px; font-size: 16px; }
+}
+@media (max-height: 560px) {
+  .title-platform { top: 26%; gap: 4px; }
+  .title-platform h2 { font-size: 34px; }
+}
+
+/* ============================================================
+   TOUCH CONTROLS
+   The on-screen pad for players who answered "Mobile". Sizes are laid out in
+   CSS variables so the narrow-phone query below only has to restate the
+   numbers once, and every cluster is anchored to a corner so it cannot drift
+   as the HUD changes size around it.
+
+   Ergonomics: the left thumb owns movement (with drop-through just above it),
+   the right thumb owns jump and the action buttons. Attack sits nearest the
+   screen centre because it is the one that gets held down the most; the rarer
+   buttons (use, dodge) live out towards the edges.
+   ============================================================ */
+.mobile-controls {
+  --touch-edge: 14px;
+  --touch-gap: 10px;
+  position: absolute;
+  inset: 0;
+  /* Above the HUD (10) so the pad is never buried under it, below every modal
+     (50) and the pause / death / title screens (90+) so those cover it. */
+  z-index: 20;
+  /* Taps on empty space must reach the canvas underneath, or the world could
+     never be aimed at. Only the buttons below re-enable pointer events.
+
+     This has to be written as #ui-layer > .mobile-controls rather than a bare
+     .mobile-controls: #mobile-controls is a DIRECT child of #ui-layer, and the
+     #ui-layer>* rule above (specificity 1,0,0) sets pointer-events: auto on
+     every one of its children. A class selector here would lose to it and the
+     full-screen pad would silently eat every tap aimed at the world. */
+  pointer-events: none;
+  touch-action: none;
+  display: none;
+}
+#ui-layer > .mobile-controls { pointer-events: none; }
+/* The buttons are the exception, and need the same treatment for the same
+   reason - .touch-cluster is a grandchild, but its buttons must still win. */
+#ui-layer .touch-cluster > * { pointer-events: auto; }
+.mobile-controls.hidden { display: none; }
+body.controls-touch .mobile-controls:not(.hidden) { display: block; }
+
+.touch-cluster {
+  position: absolute;
+  display: flex;
+  gap: var(--touch-gap);
+  pointer-events: none;
+}
+.touch-cluster > * { pointer-events: auto; }
+
+.touch-btn {
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(226, 232, 240, .55);
+  border-radius: 50%;
+  background: rgba(8, 15, 28, .55);
+  color: #e8eef7;
+  font: 26px/1 'VT323', monospace;
+  /* Stop the browser treating a held thumb as a scroll/zoom gesture, and stop
+     the grey flash rectangle painting over the button. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .14);
+  transition: transform 90ms ease, background 90ms ease, border-color 90ms ease,
+              color 90ms ease;
+}
+.touch-btn:active,
+.touch-btn.is-down {
+  transform: scale(.9);
+  border-color: #facc15;
+  background: rgba(250, 204, 21, .32);
+  color: #fffbeb;
+}
+
+/* Left thumb: the two move buttons, with drop-through stacked above them. */
+.touch-move {
+  left: var(--touch-edge);
+  bottom: var(--touch-edge);
+}
+.touch-move .touch-dir { width: 62px; height: 62px; font-size: 30px; }
+.touch-alt {
+  left: var(--touch-edge);
+  bottom: calc(var(--touch-edge-b) + 62px + var(--touch-gap));
+}
+.touch-drop { width: 48px; height: 48px; font-size: 22px; opacity: .85; }
+
+/* Small utility column above the movement pad: pause, heal, buff, talk. */
+.touch-utility {
+  left: var(--touch-edge);
+  bottom: calc(var(--touch-edge-b) + 62px + 48px + var(--touch-gap) * 3 + 12px);
+  display: grid;
+  grid-template-columns: repeat(2, 50px);
+  gap: 8px;
+}
+.touch-small { width: 50px; height: 50px; font-size: 22px; opacity: .9; }
+/* The button is #touch-pause in the markup and carries no .touch-pause class,
+   so this has to key off the id to apply at all. */
+#touch-pause { border-color: rgba(250, 204, 21, .7); }
+
+/* Right thumb. A 2x2 grid, placed so the biggest button lands nearest the
+   middle of the screen where the thumb naturally rests. */
+.touch-act {
+  right: var(--touch-edge);
+  bottom: var(--touch-edge);
+  display: grid;
+  gap: var(--touch-gap);
+  grid-template-areas:
+    "dodge use"
+    "attack jump";
+  align-items: end;
+  justify-items: end;
+}
+.touch-attack { grid-area: attack; width: 70px; height: 70px; font-size: 30px; border-color: rgba(250, 204, 21, .75); }
+.touch-jump { grid-area: jump; width: 62px; height: 62px; font-size: 30px; }
+.touch-use { grid-area: use; width: 62px; height: 62px; font-size: 27px; }
+.touch-dodge { grid-area: dodge; width: 62px; height: 62px; font-size: 27px; }
+
+/* Narrow phones: the pad has to give way before the world does. The safe-area
+   floors are kept (just lowered) so a notched phone still clears the home bar. */
+@media (max-width: 420px) {
+  .mobile-controls {
+    --touch-edge: max(8px, env(safe-area-inset-left, 0px));
+    --touch-edge-b: max(8px, env(safe-area-inset-bottom, 0px));
+    --touch-edge-r: max(8px, env(safe-area-inset-right, 0px));
+    --touch-gap: 7px;
+  }
+  .touch-move .touch-dir { width: 58px; height: 58px; font-size: 28px; }
+  .touch-alt { bottom: calc(var(--touch-edge-b) + 58px + var(--touch-gap)); }
+}
+
+/* ============================================================
+   TOUCH MODE: A SMALLER HUD
+   The pad needs the bottom corners, so the in-game HUD is drawn smaller in
+   this mode ONLY. Every rule below is scoped to body.controls-touch and
+   targets HUD selectors - never .title-*. The main menu is a sibling of
+   #ui-layer and is not touched by any of it, which is checked by qa-mobile.js.
+   ============================================================ */
+body.controls-touch #ui-layer { padding: 8px; }
+body.controls-touch .controls-hint { display: none; }
+body.controls-touch .controls-hint-touch { display: flex; }
+/* The bottom panel sits between the two thumb clusters, not under them. */
+body.controls-touch .bottom-panel { bottom: 78px !important; }
+
+body.controls-touch .top-left-panel {
+  max-width: 186px;
+  padding: 5px 7px;
+  gap: 4px;
+  border-width: 2px;
+}
+body.controls-touch .clock-display { gap: 5px; font-size: 13px; }
+body.controls-touch .badge-day,
+body.controls-touch .badge-night { font-size: 8px; padding: 1px 4px; }
+body.controls-touch .weather-badge,
+body.controls-touch .dimension-badge { font-size: 7px; padding: 1px 4px; }
+body.controls-touch .bar-header { font-size: 9px; }
+body.controls-touch .bar-outer { height: 9px; }
+body.controls-touch .armor-chip { font-size: 8px; padding: 1px 4px; }
+
+body.controls-touch .hotbar-wrapper { padding: 3px 4px; border-width: 2px; }
+body.controls-touch .hotbar-slots { gap: 2px; }
+body.controls-touch .hotbar-slot { width: 32px; height: 32px; border-width: 2px; }
+body.controls-touch .slot-icon { font-size: 16px; }
+body.controls-touch .slot-count { font-size: 11px; bottom: 0; right: 2px; }
+body.controls-touch .slot-num { display: none; }
+
+body.controls-touch .top-right-status { top: 6px; right: 6px; gap: 4px; }
+body.controls-touch .ui-btn { padding: 4px 6px; font-size: 7px; }
+body.controls-touch .right-hud-column { top: 34px; right: 6px; gap: 4px; }
+body.controls-touch .journey-panel { width: 168px; padding: 4px 5px; }
+body.controls-touch .journey-objective { min-height: 26px; }
+body.controls-touch .journey-objective strong { font-size: 11px; }
+body.controls-touch .journey-objective p { font-size: 9px; }
+body.controls-touch .journey-rank-icon { font-size: 14px; }
+body.controls-touch .journey-rank-copy > span { display: none; }
+body.controls-touch .journey-rank-copy strong { font-size: 11px; }
+body.controls-touch .journey-meter { height: 6px; margin-top: 3px; }
+body.controls-touch .minimap-panel { display: none; }
+body.controls-touch #quest-tracker { font-size: 10px; max-width: 168px; }
+
+body.controls-touch .boss-panel { top: 6px; width: min(340px, 62vw); }
+body.controls-touch .boss-title { font-size: 8px; }
+body.controls-touch .boss-bar-outer { height: 13px; }
+body.controls-touch .boss-hp-text { font-size: 10px; }
+body.controls-touch .announcement-banner { top: 74px; padding: 6px 12px; }
+body.controls-touch #announcement-text { font-size: 10px; }
+body.controls-touch .toast-container { font-size: 12px; }
+body.controls-touch .item-name-popup { font-size: 15px; padding: 2px 8px; margin-bottom: 6px; }
+
+/* Panels have to fit a phone. The pause box, settings, crafting and the chest
+   all get a little shorter so their own buttons stay on screen. */
+body.controls-touch .pause-overlay .pause-box { padding: 12px 16px; }
+body.controls-touch .pause-overlay h2 { font-size: 22px; }
+body.controls-touch .pause-hint { font-size: 12px; }
+body.controls-touch .modal-content { width: min(96vw, 560px); }
+body.controls-touch .settings-modal-content { width: min(96vw, 460px); }
+body.controls-touch .modal-header h3 { font-size: 11px; }
+body.controls-touch .settings-body { max-height: min(72vh, 520px); padding: 9px 11px 12px; }
+body.controls-touch .settings-row { padding: 6px 8px; }
+body.controls-touch .settings-row strong { font-size: 13px; }
+body.controls-touch .settings-row small { font-size: 9px; }
+body.controls-touch .settings-row select { min-width: 104px; padding: 5px 6px; font-size: 12px; }
+body.controls-touch .settings-help { font-size: 11px; }
+body.controls-touch .settings-section h4 { font-size: 8px; }
+body.controls-touch .settings-actions { grid-template-columns: repeat(3, 1fr); gap: 5px; }
+body.controls-touch .settings-actions .ui-btn { padding: 6px 4px; font-size: 6px; }
+body.controls-touch .death-content h1,
+body.controls-touch .victory-content h1 { font-size: 16px; }
+body.controls-touch .death-content p,
+body.controls-touch .victory-content p { font-size: 12px; }
+
+/* Which half of a two-part label is shown: keys or thumbs. */
+.hint-touch { display: none; }
+.controls-hint-touch { display: none; }
+body.controls-touch .hint-keys { display: none; }
+body.controls-touch .hint-touch { display: inline; }
+body.controls-touch .item-tooltip { display: none; }
+/* Hover-only affordances do nothing with a thumb, so they stay off. */
+body.controls-touch .hotbar-slot:hover { border-color: #475569; background: #1e293b; }
+
+/* Narrow phones, continued: the pad itself has to give way too. */
+@media (max-width: 420px) {
+  .touch-drop { width: 42px; height: 42px; font-size: 19px; }
+  .touch-utility {
+    grid-template-columns: repeat(2, 40px);
+    gap: 6px;
+    bottom: calc(var(--touch-edge-b) + 54px + 42px + var(--touch-gap) * 3 + 10px);
+  }
+  .touch-small { width: 40px; height: 40px; font-size: 17px; }
+  .touch-attack { width: 60px; height: 60px; font-size: 26px; }
+  .touch-jump { width: 54px; height: 54px; font-size: 26px; }
+  .touch-use, .touch-dodge { width: 46px; height: 46px; font-size: 21px; }
+}
+
+/* Short windows (a phone in landscape): keep the pad low and stop the utility
+   column from marching up into the top-left HUD panel. */
+@media (max-height: 460px) {
+  .touch-utility { grid-template-columns: repeat(4, 40px); grid-auto-flow: column; }
+  .touch-small { width: 40px; height: 40px; font-size: 17px; }
+}
+
+/* Belt and braces: a stale class can never leave the pad armed on top of a
+   screen that owns input. refreshTouchControls drives the real show/hide. */
+body:not(.controls-touch) .mobile-controls { display: none; }
+
+/* The platform question itself, on a narrow phone. This is title-screen CSS and
+   is keyed off the VIEWPORT, not off body.controls-touch - the main menu keeps
+   its full size on a desktop no matter which scheme was picked. */
+@media (max-width: 680px) {
+  .title-platform-hint { display: none; }
+  .title-platform-btn { min-height: 60px; }
+  .platform-icon { font-size: 26px; }
+  .platform-copy strong { font-size: 24px; }
+}
+
+/* ============================================================
+   HUD SIZE (Settings -> Display -> HUD size)
+   One variable scales the whole in-game interface. A transform plus a
+   compensating width/height keeps the layer anchored to the viewport, while
+   browser hit-testing follows the scaled positions of touch buttons.
+
+   The width/height division compensates for the scale so #ui-layer still
+   covers exactly the viewport instead of overflowing by the zoom factor.
+
+   Scoped to #ui-layer only. #title-screen is a SIBLING of it, which is what
+   keeps the main menu at full size no matter what the player picks here.
+   ============================================================ */
+body.ui-small { --ui-scale: 0.85; }
+body.ui-large { --ui-scale: 1.18; }
+#ui-layer {
+  transform: scale(var(--ui-scale, 1));
+  transform-origin: top left;
+  width: calc(100% / var(--ui-scale, 1));
+  height: calc(100% / var(--ui-scale, 1));
+}
+/* A large HUD must not fight the thumb pad for the bottom of the screen. */
+body.ui-large.controls-touch .bottom-panel { bottom: 84px !important; }
+
+/* ============================================================
+   THE TOUCH PAD, REDRAWN
+   Same eleven buttons and the same markup - this is purely a coat of paint.
+   Three things it fixes:
+     1. Safe-area insets, so buttons clear a notch or a home indicator.
+     2. Readable contrast: the old rgba(8,15,28,.55) disc vanished against a
+        night sky or a white snowfield.
+     3. A pressed state that is obvious at a glance without changing size, so
+        the thumb can stay where it is.
+   ============================================================ */
+.mobile-controls {
+  --touch-edge: max(14px, env(safe-area-inset-left, 0px));
+  --touch-edge-b: max(14px, env(safe-area-inset-bottom, 0px));
+  --touch-edge-r: max(14px, env(safe-area-inset-right, 0px));
+  --touch-ring: rgba(226, 232, 240, .34);
+  --touch-fill: rgba(9, 14, 26, .62);
+}
+.touch-move { left: var(--touch-edge); bottom: var(--touch-edge-b); }
+.touch-act { right: var(--touch-edge-r); bottom: var(--touch-edge-b); }
+
+.touch-btn {
+  /* Two layers: an opaque-ish core for contrast, plus a soft outer glow so
+     the button reads as a physical control floating over the world. */
+  background:
+    radial-gradient(circle at 50% 30%, rgba(148, 163, 184, .22), transparent 62%),
+    var(--touch-fill);
+  border: 2px solid var(--touch-ring);
+  /* The backdrop blur is what makes it read as "glass" rather than "flat
+     circle", and it degrades to a plain fill where unsupported. */
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #f1f5f9;
+  font: 28px/1 'VT323', system-ui, sans-serif;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, .85);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, .55),
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    inset 0 -2px 6px rgba(0, 0, 0, .35);
+  transition: transform 90ms ease, background 90ms ease,
+              border-color 90ms ease, box-shadow 90ms ease;
+}
+/* Pressed: shrink slightly AND light up. A size change alone is easy to miss
+   under a thumb, so the colour does the real work here. */
+.touch-btn:active,
+.touch-btn.is-down {
+  transform: scale(.9);
+  border-color: #facc15;
+  color: #fffbeb;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(253, 224, 71, .5), transparent 65%),
+    rgba(250, 204, 21, .3);
+  box-shadow:
+    0 0 0 3px rgba(250, 204, 21, .35),
+    0 4px 14px rgba(0, 0, 0, .5);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .9);
+}
+/* The primary action (attack/mine) is the one that gets held down most, so it
+   is the only one that stays permanently tinted. */
+.touch-attack {
+  border-color: rgba(250, 204, 21, .6);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, .55),
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    0 0 18px rgba(250, 204, 21, .18);
+}
+#touch-pause { border-color: rgba(148, 163, 184, .6); }
+
+/* The utility column clears the home indicator on notched phones. */
+.touch-utility {
+  left: var(--touch-edge);
+  bottom: calc(var(--touch-edge-b) + 62px + 48px + var(--touch-gap) * 3 + 12px);
+}
+
+
+/* ============================================================
+   MULTIPLAYER
+   The title-screen join/host panel, plus the in-game session
+   furniture the module builds into #ui-layer: a status chip
+   (room code, player count, ping), the roster line under it,
+   the chat log and the chat input.
+   ============================================================ */
+.title-mp {
+  position: absolute;
+  z-index: 2;
+  /* The panel gained instructions, so it can be taller than the old three
+     fields. It must still clear the logo (which sits at 5% and is ~104px tall),
+     so it starts below it and scrolls inside the viewport rather than running
+     its Back button off the bottom on a laptop or a phone. */
+  top: 25vh;
+  bottom: 3vh;
+  padding-right: 4px;
+  left: 50%;
+  display: flex;
+  width: min(470px, 94vw);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transform: translateX(-50%);
+  animation: menu-arrive 650ms 120ms ease-out both;
+}
+.title-mp[hidden] { display: none; }
+.title-mp h2 {
+  margin: 0;
+  color: #fff1a0;
+  font: 46px/.95 'VT323', monospace;
+  text-align: center;
+  text-shadow: 0 3px 0 #53492a, 0 5px 12px rgba(0, 0, 0, .72);
+}
+.title-mp-hint {
+  margin: 0 0 2px;
+  color: rgba(240, 255, 238, .84);
+  font: 18px/1.3 'VT323', monospace;
+  text-align: center;
+}
+/* Numbered connection steps. The panel gained real instructions so a group of
+   players can follow them in order; the list is plain and quiet on purpose so
+   it reads as help, not as three more buttons. */
+.title-mp-steps {
+  margin: 0;
+  padding: 8px 10px 8px 28px;
+  border: 1px solid rgba(255, 209, 102, .3);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, .35);
+  color: rgba(240, 255, 238, .9);
+  font: 16px/1.35 'VT323', monospace;
+}
+.title-mp-steps li { margin: 2px 0; }
+.title-mp-steps code { color: #ffd76e; }
+/* The "how do I connect" drawer. Open by default so it is seen rather than
+   hunted for, but collapsible to keep the panel short on a small screen. */
+.title-mp-help {
+  border: 1px solid rgba(255, 209, 102, .3);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, .35);
+  color: rgba(240, 255, 238, .86);
+  font: 15px/1.35 'VT323', monospace;
+}
+.title-mp-help > summary {
+  padding: 6px 10px;
+  color: #ffd76e;
+  cursor: pointer;
+  list-style: none;
+}
+.title-mp-help > summary::-webkit-details-marker { display: none; }
+.title-mp-help > summary::before { content: '❔ '; }
+.title-mp-help[open] > summary { border-bottom: 1px solid rgba(255, 209, 102, .25); }
+.title-mp-help-body { padding: 8px 10px; }
+.title-mp-help-body p { margin: 0 0 7px; }
+.title-mp-help-body p:last-child { margin-bottom: 0; }
+.title-mp-help-body code { color: #ffd76e; }
+.title-mp-help-body em { color: #fff1a0; font-style: normal; }
+.title-mp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: rgba(240, 255, 238, .9);
+  font: 17px/1.2 'VT323', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.title-mp-field input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 2px solid rgba(255, 209, 102, .55);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .45);
+  color: #f6fff2;
+  font: 22px 'VT323', monospace;
+  text-transform: none;
+  letter-spacing: 2px;
+  outline: none;
+}
+.title-mp-field input:focus { border-color: #ffd166; box-shadow: 0 0 0 2px rgba(255, 209, 102, .25); }
+.title-mp-note {
+  margin: 0;
+  color: rgba(240, 255, 238, .6);
+  font: 14px/1.35 'VT323', monospace;
+  text-align: center;
+}
+.title-mp-note code { color: #ffd76e; }
+.title-mp-actions { display: flex; gap: 10px; justify-content: center; }
+.title-mp-actions .title-button { flex: 1; }
+.title-mp-status {
+  margin: 0;
+  min-height: 22px;
+  color: #ffd76e;
+  font: 17px/1.2 'VT323', monospace;
+  text-align: center;
+}
+
+/* ---- in-game session furniture (built by multiplayer.js) ---- */
+.mp-chip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 9px;
+  border: 2px solid rgba(255, 209, 102, .5);
+  border-radius: 999px;
+  background: rgba(8, 10, 14, .72);
+  color: #f6fff2;
+  font: 16px/1 'VT323', monospace;
+  letter-spacing: 1px;
+  pointer-events: auto;
+  z-index: 6;
+}
+.mp-chip.hidden { display: none; }
+.mp-chip-leave {
+  border: 0;
+  background: transparent;
+  color: #ffb4a2;
+  cursor: pointer;
+  font: 16px/1 'VT323', monospace;
+  padding: 0 3px;
+}
+.mp-chip-leave:hover { color: #ef4444; }
+.mp-roster {
+  position: absolute;
+  top: 34px;
+  right: 8px;
+  max-width: 46vw;
+  color: rgba(246, 255, 242, .75);
+  font: 14px/1.2 'VT323', monospace;
+  text-align: right;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+  pointer-events: none;
+  z-index: 6;
+}
+.mp-roster:empty { display: none; }
+.mp-chat-log {
+  position: absolute;
+  left: 10px;
+  bottom: 108px;
+  display: flex;
+  max-width: min(420px, 62vw);
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+  z-index: 6;
+}
+.mp-chat-log.hidden { display: none; }
+.mp-chat-line {
+  color: #e2e8f0;
+  font: 15px/1.25 'VT323', monospace;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+  overflow-wrap: anywhere;
+}
+.mp-chat-line b { color: #ffd76e; font-weight: normal; }
+.mp-chat-input {
+  position: absolute;
+  left: 10px;
+  bottom: 76px;
+  width: min(420px, 74vw);
+  padding: 5px 8px;
+  border: 2px solid rgba(255, 209, 102, .55);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .78);
+  color: #f6fff2;
+  font: 17px 'VT323', monospace;
+  outline: none;
+  z-index: 7;
+}
+.mp-chat-input.hidden { display: none; }
+@media (max-width: 620px) {
+  .title-mp { top: 27vh; bottom: 3vh; gap: 5px; }
+  .title-mp h2 { font-size: 36px; }
+  .title-mp-actions { flex-direction: column; gap: 6px; }
+  .mp-chat-log, .mp-chat-input { bottom: 132px; max-width: 88vw; width: 88vw; }
+}
