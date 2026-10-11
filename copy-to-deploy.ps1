@@ -52,7 +52,12 @@ $files = @(
   'qa-mobile.js', 'qa-mobile-runtime.js', 'qa-house.js',
   # Buried vaults + depth-scaled chest loot: a fresh clone has to be able to
   # prove the underground pays out, not just that it generates.
-  'qa-vaults.js'
+  'qa-vaults.js',
+  # Kraken boss regression kit: proves the render cannot leak canvas
+  # transforms (the bug that made every tile invisible mid-fight), that every
+  # skill x phase combination leaves sane state, and that the eyes are drawn
+  # symmetrically.
+  'qa-kraken-bug.js', 'qa-kraken-new.js'
 )
 
 if (-not (Test-Path (Join-Path $Repo 'app.py'))) {

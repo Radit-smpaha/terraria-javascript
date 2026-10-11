@@ -17,10 +17,10 @@ function apply(label, oldText, newText) {
 // all, so whenever the world changed under them (mining, regen, a dimension
 // swap, or simply being placed a row too high) they floated forever.
 apply('ground snap in update',
-`  update(dt) {
+  `  update(dt) {
     // Nearest-villager prompt.
     const pcx = this.game.player.x + this.game.player.width / 2;`,
-`  update(dt) {
+  `  update(dt) {
     // ---- GROUND SNAPPING: the flying-NPC fix ----------------------------
     // Villagers were placed once and then never touched by physics again, so
     // any change to the world under them (a mined block, a regenerated

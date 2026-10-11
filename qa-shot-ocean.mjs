@@ -16,8 +16,10 @@ export default async function run(page, ui) {
   let snap = await ui.snapshot();
   const sm = snap.match(/@(e\d+) select "TELEPORT TO"/i);
   const gm = snap.match(/@(e\d+) button "GO"/i);
-  if (sm) { const sel = ui.ref('@' + sm[1]); const o = await sel.locator('option').allTextContents();
-    const oc = o.find(x => /abyssal/i.test(x)); if (oc) await sel.selectOption({ label: oc }); }
+  if (sm) {
+    const sel = ui.ref('@' + sm[1]); const o = await sel.locator('option').allTextContents();
+    const oc = o.find(x => /abyssal/i.test(x)); if (oc) await sel.selectOption({ label: oc });
+  }
   await page.waitForTimeout(400);
   if (gm) await ui.click('@' + gm[1]);
   await page.waitForTimeout(2000);

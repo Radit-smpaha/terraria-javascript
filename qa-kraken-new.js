@@ -21,6 +21,9 @@ function makeCtx() {
         return () => ({ addColorStop() {} });
       if (p === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
       if (p === 'measureText') return () => ({ width: 10 });
+      if (p === 'transform') return (...args) => {
+        if (args.length !== 6) throw new TypeError('transform requires six arguments');
+      };
       if (p === 'fill' || p === 'stroke' || p === 'ellipse' || p === 'arc')
         return () => { calls[p]++; };
       if (typeof p === 'string') return () => undefined;
@@ -124,8 +127,10 @@ check('the boss moved across the arena', Math.hypot(boss.x - before.x, boss.y - 
 step('4. Render emits the Terraria-styled art');
 const ctx = makeCtx();
 boss.dead = false; boss.hideAlpha = 1; boss.lashPhase = 0.5;
-try { boss.render(ctx, { x: 0, y: 0 }); } catch (e) { check('render threw', false, String(e)); }
-check('render completes', true);
+let renderError = null;
+try { boss.render(ctx, { x: 0, y: 0 }); } catch (e) { renderError = e; }
+check('render completes with valid Canvas transforms', !renderError,
+  renderError ? String(renderError) : '');
 
 console.log('\nKRAKEN QA: ' + (failures ? failures + ' FAILURE(S)' : 'OK'));
 process.exit(failures ? 1 : 0);

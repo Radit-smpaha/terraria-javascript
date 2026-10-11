@@ -25,11 +25,11 @@ function apply(label, oldText, newText, which = 'src') {
 //    sink below the seabed. The arena's seaY is the authority.
 // --------------------------------------------------------------------------
 apply('kraken stays in water',
-`      if (world) {
+  `      if (world) {
         this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
         this.y = Math.max(0, Math.min(world.pixelHeight - this.height, this.y));
       }`,
-`      if (world) {
+  `      if (world) {
         this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
         // A kraken is a sea creature, not a balloon. Clamp the body so it
         // never breaches the surface by more than its crown and never
@@ -48,10 +48,10 @@ apply('kraken stays in water',
 //    centre, so they can never disagree.
 // --------------------------------------------------------------------------
 apply('symmetric eyes',
-`    // Two eyes set symmetrically across the head, near the front.
+  `    // Two eyes set symmetrically across the head, near the front.
     drawEye(ex, ey, 1, true);
     drawEye(cx - (ex - cx), ey + 2, 0.72, false);`,
-`    // Two eyes, perfectly mirrored about the head's centre line and identical
+  `    // Two eyes, perfectly mirrored about the head's centre line and identical
     // in every respect: same radius, same row, same pupil, same glint. Only
     // the primary carries the pulsing target ring (the weakpoint marker), and
     // that ring is drawn OUTSIDE the eye itself so it can never make one eye
@@ -64,7 +64,7 @@ apply('symmetric eyes',
 // what made the two eyes look different sizes. Move the halo out of the eye
 // so both eyes are drawn by the same code path at the same scale.
 apply('eye halo outside the orb',
-`    const drawEye = (px, py, s, primary) => {
+  `    const drawEye = (px, py, s, primary) => {
       if (primary) {
         const halo = ctx.createRadialGradient(px, py, 4, px, py, 62 * s * glow);
         halo.addColorStop(0, 'rgba(' + haloColor + ', 0.5)');
@@ -74,7 +74,7 @@ apply('eye halo outside the orb',
       }
       // Black socket + hard rim.
       ctx.fillStyle = '#0b0712';`,
-`    const drawEye = (px, py, s, primary) => {
+  `    const drawEye = (px, py, s, primary) => {
       // A soft bioluminescent halo behind the weakpoint eye. It is drawn here
       // rather than scaling the orb itself, so both eyes stay the same size.
       if (primary) {
@@ -92,9 +92,9 @@ apply('eye halo outside the orb',
 //    under them they floated forever. Give them real ground-snapping.
 // --------------------------------------------------------------------------
 apply('npc gravity + ground snap',
-`    this.npcs.forEach((npc) => {
+  `    this.npcs.forEach((npc) => {
       // Idle bob and slow wander.`,
-`    this.npcs.forEach((npc) => {
+  `    this.npcs.forEach((npc) => {
       // ---- Ground snapping (the flying-NPC fix) --------------------------
       // Villagers were placed once and never had physics, so any change to
       // the terrain under them (mining, world regen, a dimension swap) left
@@ -121,8 +121,8 @@ apply('npc gravity + ground snap',
 //    moment the player dies.
 // --------------------------------------------------------------------------
 apply('stop the kraken on player death',
-`        this.boss.update(dt, bossTarget, this.projectiles, this.sound, this.particles, this.world);`,
-`        // When the player is dead the fight is over: freeze the boss so it
+  `        this.boss.update(dt, bossTarget, this.projectiles, this.sound, this.particles, this.world);`,
+  `        // When the player is dead the fight is over: freeze the boss so it
         // stops firing and stop its projectiles, otherwise ink globs keep
         // drifting around behind the death screen (the "black ovals" bug).
         if (this.isDead) {
@@ -134,8 +134,8 @@ apply('stop the kraken on player death',
 
 // Purge the boss's projectiles on death so nothing keeps flying.
 apply('purge boss projectiles on death',
-`      // Arcane motes drift off every boss \u2014 cheap, constant, very cool.`,
-`      // Dead player: the fight is over. Purge any hostile projectiles the
+  `      // Arcane motes drift off every boss \u2014 cheap, constant, very cool.`,
+  `      // Dead player: the fight is over. Purge any hostile projectiles the
       // boss still had in flight so nothing floats around the death screen.
       if (this.isDead && this.boss && !this.boss.dead) {
         for (const proj of this.projectiles) {

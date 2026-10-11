@@ -16,10 +16,10 @@ function apply(label, marker, oldText, newText) {
 
 // --- seabed dunes + higher floor ---
 apply('dunes', 'duneFloor',
-`  const seaY = Math.max(24, Math.floor(this.height * 0.24));
+  `  const seaY = Math.max(24, Math.floor(this.height * 0.24));
   const floorY = this.height - 18;
   this.surfaceHeights.fill(floorY);`,
-`  const seaY = Math.max(24, Math.floor(this.height * 0.30));
+  `  const seaY = Math.max(24, Math.floor(this.height * 0.30));
   const floorY = this.height - 34;
   const duneFloor = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
@@ -30,7 +30,7 @@ apply('dunes', 'duneFloor',
 
 // --- plateau profile ---
 apply('plateau profile', 'fraction of width that is flat',
-`  const groundHeight = new Int16Array(this.width);
+  `  const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
     let ground = floorY;
     for (const island of allIslands) {
@@ -43,7 +43,7 @@ apply('plateau profile', 'fraction of width that is flat',
     }
     groundHeight[x] = ground;
   }`,
-`  const groundHeight = new Int16Array(this.width);
+  `  const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
     let ground = duneFloor[x];
     for (const island of allIslands) {
@@ -67,7 +67,7 @@ apply('plateau profile', 'fraction of width that is flat',
 
 // --- water tile: remove the banding bar ---
 apply('water tile', 'No bright bar across the top',
-`    tile.fillStyle = '#062b43';
+  `    tile.fillStyle = '#062b43';
     tile.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     tile.fillStyle = '#0c4a6e';
     tile.fillRect(0, 0, TILE_SIZE, 4);
@@ -76,7 +76,7 @@ apply('water tile', 'No bright bar across the top',
     tile.fillRect(13, 15 - ripple, 8, 2);
     tile.fillStyle = 'rgba(103,232,249,0.55)';
     tile.fillRect(5, 1, 3, 2);`,
-`    tile.fillStyle = '#062b43';
+  `    tile.fillStyle = '#062b43';
     tile.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     tile.fillStyle = 'rgba(56, 189, 248, 0.10)';
     tile.fillRect(1, 7 + ripple, 9, 2);
@@ -90,9 +90,9 @@ apply('water tile', 'No bright bar across the top',
 
 // --- ocean seabed tile overrides ---
 apply('seabed overrides', 'Abyssal seabed overrides',
-`  const pulse = 0.65 + Math.sin(Date.now() * 0.003 + tx * 0.7 + ty) * 0.2;
+  `  const pulse = 0.65 + Math.sin(Date.now() * 0.003 + tx * 0.7 + ty) * 0.2;
   if (tile === OCEAN_TILES.PEARL) {`,
-`  const pulse = 0.65 + Math.sin(Date.now() * 0.003 + tx * 0.7 + ty) * 0.2;
+  `  const pulse = 0.65 + Math.sin(Date.now() * 0.003 + tx * 0.7 + ty) * 0.2;
   const inOceanDim = this.isInOcean();
   if (inOceanDim && tile === TILES.SAND) {
     ctx.fillStyle = '#3b2f1e';
@@ -150,11 +150,11 @@ apply('seabed overrides', 'Abyssal seabed overrides',
 
 // --- kraken water clamp ---
 apply('kraken water clamp', 'never breach the surface',
-`      if (world) {
+  `      if (world) {
         this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
         this.y = Math.max(0, Math.min(world.pixelHeight - this.height, this.y));
       }`,
-`      if (world) {
+  `      if (world) {
         this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
         // A kraken is a sea creature, not a balloon: keep the body in the
         // water. The mantle top must stay at-or-below the waterline (a small
@@ -167,10 +167,10 @@ apply('kraken water clamp', 'never breach the surface',
 
 // --- symmetric identical eyes ---
 apply('symmetric eyes', 'eyeSpread',
-`    // Two eyes set symmetrically across the head, near the front.
+  `    // Two eyes set symmetrically across the head, near the front.
     drawEye(ex, ey, 1, true);
     drawEye(cx - (ex - cx), ey + 2, 0.72, false);`,
-`    // Two eyes, perfectly mirrored about the head's centre line and identical
+  `    // Two eyes, perfectly mirrored about the head's centre line and identical
     // in every respect: same radius, same row, same pupil, same glint. Only
     // the primary carries the pulsing target ring, and that ring is drawn
     // OUTSIDE the orb so it can never make one eye look bigger than the other.

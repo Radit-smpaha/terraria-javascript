@@ -8,7 +8,8 @@ $tests = @(
   'qa-mob-ai.js', 'qa-settings.js', 'qa-drop-and-seeds.js', 'qa-mainmenu.js',
   'qa-mobile.js', 'qa-mobile-runtime.js', 'qa-house.js', 'qa-vaults.js', 'qa-multiplayer.js',
   'qa-fps-speed.js', 'qa-boss-walls.js', 'qa-worldgen-shape.js',
-  'qa-bg-smoke.js', 'qa-weather-batch.js', 'qa-reef.js'
+  'qa-bg-smoke.js', 'qa-weather-batch.js', 'qa-reef.js', 'qa-kraken-new.js',
+  'qa-kraken-bug.js'
 )
 $bad = 0
 foreach ($t in $tests) {

@@ -21,10 +21,10 @@ function apply(label, oldText, newText) {
 // 1. Seabed: higher + rolling dunes instead of one flat line 18 tiles up.
 // --------------------------------------------------------------------------
 apply('seabed height + dunes',
-`  const seaY = Math.max(24, Math.floor(this.height * 0.24));
+  `  const seaY = Math.max(24, Math.floor(this.height * 0.24));
   const floorY = this.height - 18;
   this.surfaceHeights.fill(floorY);`,
-`  // The seabed sits much closer to the surface than it used to (a flat line
+  `  // The seabed sits much closer to the surface than it used to (a flat line
   // 18 tiles above the map floor was a dizzying void), and it is no longer
   // dead flat: a deterministic dune profile rolls it up and down, which is
   // what makes a sea floor read as a real sea floor instead of a tank bottom.
@@ -44,7 +44,7 @@ apply('seabed height + dunes',
 // 2. Islands: keep them (they are the land), but islets become plateaus.
 // --------------------------------------------------------------------------
 apply('islet plateau profile',
-`  const islets = [];
+  `  const islets = [];
   for (let i = 0; i + 1 < islands.length; i++) {
     const a = islands[i], b = islands[i + 1];
     const gap = b.cx - a.cx;
@@ -60,7 +60,7 @@ apply('islet plateau profile',
         height: 3 + Math.floor(Math.random() * 3), islet: true });
     }
   }`,
-`  // Islets are ELEVATED FLAT SHOALS, not thin poles: a wide plateau whose top
+  `  // Islets are ELEVATED FLAT SHOALS, not thin poles: a wide plateau whose top
   // sits just under the waterline, floating on the water rather than spearing
   // up from the seabed. ` + '`' + `height` + '`' + ` here means how far the crown rises
   // ABOVE the waterline, so a shallow shelf of water still laps around it.
@@ -88,7 +88,7 @@ apply('islet plateau profile',
 //    everything sits on the dune floor rather than spearing to the seabed.
 // --------------------------------------------------------------------------
 apply('plateau height profile',
-`  const groundHeight = new Int16Array(this.width);
+  `  const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
     let ground = floorY;
     for (const island of allIslands) {
@@ -101,7 +101,7 @@ apply('plateau height profile',
     }
     groundHeight[x] = ground;
   }`,
-`  const groundHeight = new Int16Array(this.width);
+  `  const groundHeight = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
     let ground = duneFloor[x];                 // dunes, not a flat line
     for (const island of allIslands) {
@@ -131,13 +131,13 @@ apply('plateau height profile',
 // 4. Coral: kill the tall poles. A 1-2 tile flat crust only.
 // --------------------------------------------------------------------------
 apply('coral crust',
-`    // Coral gardens still dress the deep reef, but never inside an island.
+  `    // Coral gardens still dress the deep reef, but never inside an island.
     if (!islandColumn && x % 13 === 0) {
       for (let k = 1; k <= 1 + (x % 3); k++) {
         if (this.getTile(x, ground - k) === TILES.WATER) this.setTile(x, ground - k, TILES.CORAL);
       }
     }`,
-`    // A flat crust of coral on the dune floor — 1 tile, never a column. The
+  `    // A flat crust of coral on the dune floor — 1 tile, never a column. The
     // tall coral poles that used to spear to the surface are gone entirely:
     // they read as coloured lines across the whole ocean, not as a reef.
     if (!islandColumn && ground >= seaY + 2) {

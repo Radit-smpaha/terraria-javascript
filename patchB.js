@@ -17,7 +17,7 @@ function apply(label, oldText, newText) {
 // Wide flat islets instead of thin spikes. halfWidth now 5-8 tiles (a walkable
 // table), and the crown rises 3-5 tiles above the waterline.
 apply('islet plateau shape',
-`      islets.push({ cx, halfWidth: 2 + Math.floor(Math.random() * 4),
+  `      islets.push({ cx, halfWidth: 2 + Math.floor(Math.random() * 4),
         height: 2 + Math.floor(Math.random() * 4), islet: true });
     }
   }
@@ -31,7 +31,7 @@ apply('islet plateau shape',
       height: 2 + Math.floor(Math.random() * 3), islet: true });
     if (islets.length >= 90) break;
   }`,
-`      // A wide, flat, elevated shoal: 5-8 tiles of walkable table that rises
+  `      // A wide, flat, elevated shoal: 5-8 tiles of walkable table that rises
       // 3-5 tiles above the waterline, floating on the sea like a sand bar
       // rather than a thin spike spearing up from the deep.
       islets.push({ cx, halfWidth: 5 + Math.floor(Math.random() * 4),

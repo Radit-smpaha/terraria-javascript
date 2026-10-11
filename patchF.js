@@ -14,13 +14,13 @@ function apply(label, oldText, newText) {
 }
 
 apply('coral poles to crust + seagrass',
-`    // Coral gardens still dress the deep reef, but never inside an island.
+  `    // Coral gardens still dress the deep reef, but never inside an island.
     if (!islandColumn && x % 13 === 0) {
       for (let k = 1; k <= 1 + (x % 3); k++) {
         if (this.getTile(x, ground - k) === TILES.WATER) this.setTile(x, ground - k, TILES.CORAL);
       }
     }`,
-`    // ---- Living seabed dressing -----------------------------------------
+  `    // ---- Living seabed dressing -----------------------------------------
     // The old coral grew as tall vertical columns, which read as thin coloured
     // poles covering the whole ocean. It is now a flat 1-tile crust scattered
     // across the dune floor, plus swaying sea grass: a living sea floor, not
