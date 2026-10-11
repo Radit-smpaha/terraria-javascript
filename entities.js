@@ -90,6 +90,7 @@ class Projectile {
     this.height = 8;
     this.dead = false;
     this.lightRadius = lightRadius;
+    this.bornAt = Date.now(); // lets ink globs swell their danger halo with age
     // Phantom blades carry their own colour into the room's bloom pass.
     if (type === 'knight_blade') this.lightColor = [150, 140, 255];
     // Kraken ink: the gun's tentacle shot and the boss's hostile globs both
@@ -321,8 +322,28 @@ class Projectile {
       }
       ctx.shadowBlur = 0;
     } else if (this.type === 'ink_glob') {
-      // Hostile ink glob: a wobbling droplet, dark rim with a violet core.
+      // Hostile ink glob: a wobbling comet droplet — dark rim, violet core,
+      // dripping trail behind it and a pulsing danger halo, so a screen full
+      // of globs reads as a volley of incoming comets, not floating dots.
       const wob = 1 + Math.sin(Date.now() * 0.02 + this.x * 0.1) * 0.15;
+      const spd = Math.hypot(this.vx || 0, this.vy || 0) || 1;
+      const tx = -(this.vx || 0) / spd, ty = -(this.vy || 0) / spd;
+      // Danger halo: pulses faster the longer the glob has flown.
+      const age = Math.min(1, (Date.now() - (this.bornAt || Date.now())) / 2500);
+      const haloR = 13 + Math.sin(Date.now() * 0.012) * 2 + age * 3;
+      const halo = ctx.createRadialGradient(0, 0, 3, 0, 0, haloR);
+      halo.addColorStop(0, 'rgba(168, 85, 247, 0.35)');
+      halo.addColorStop(1, 'rgba(168, 85, 247, 0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(0, 0, haloR, 0, Math.PI * 2); ctx.fill();
+      // Dripping comet trail: 4 shrinking droplets behind the direction of travel.
+      for (let d = 1; d <= 4; d++) {
+        const dripWob = 1 + Math.sin(Date.now() * 0.02 - d * 0.9 + this.x * 0.1) * 0.2;
+        ctx.fillStyle = d % 2 ? 'rgba(124, 58, 237, 0.75)' : 'rgba(59, 7, 100, 0.8)';
+        ctx.beginPath();
+        ctx.arc(tx * d * 6, ty * d * 6, (5 - d) * dripWob, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.shadowColor = '#7c3aed';
       ctx.shadowBlur = 12;
       ctx.fillStyle = '#3b0764';

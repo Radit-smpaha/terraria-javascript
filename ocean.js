@@ -1152,7 +1152,11 @@ World.prototype.generateOceanPlanet = function() {
   this.tiles.fill(TILES.AIR);
   this.walls.fill(0);
   const seaY = Math.max(24, Math.floor(this.height * 0.30));
-  const floorY = this.height - 34;
+  // ---- Higher seabed: the abyssal ocean is SHALLOWER than before ----
+  // The floor used to sit 34 tiles above the map bottom; it now sits 52 up,
+  // so the dive from the surface to the seabed is much shorter and the
+  // kraken fight stays in a readable, torch-lit arena instead of a black pit.
+  const floorY = this.height - 52;
   const duneFloor = new Int16Array(this.width);
   for (let x = 0; x < this.width; x++) {
     duneFloor[x] = floorY - 4 + Math.round(
@@ -1228,16 +1232,23 @@ World.prototype.generateOceanPlanet = function() {
 
   const allIslands = islands.concat(islets);
 
-  // A smooth, deterministic height profile for the whole world. The base
-  // ground is the deep seabed (floorY); each island is a broad cosine mound
-  // that rises all the way above the waterline, so its flanks pass through
-  // seaY as a beach and its crown is dry land.
-  const groundHeight = new Int16Array(this.width);
-  for (let x = 0; x < this.width; x++) {
-    let ground = duneFloor[x];
-    for (const island of allIslands) {
+  // ---- FLOATING islands: nothing touches the seabed ----
+  // Each island is a lens of rock hanging in the water: a dry crown ABOVE the
+  // waterline (seaY), a rocky body below it, then OPEN WATER between the
+  // island's underside and the deep seabed (duneFloor). Islands never connect
+  // to the floor — you can swim clean under every one of them.
+  //   topY(x)    — dry crown surface (above seaY near the middle)
+  //   bottomY(x) — island underside; water again below it down to duneFloor
+  // The lens tapers at the flanks: near the rim the crown dips below the
+  // waterline and the underside rises, so the island pinches out into open
+  // water instead of ending in a cliff wall.
+  const islandTop = new Int16Array(this.width).fill(-1);
+  const islandBottom = new Int16Array(this.width).fill(-1);
+  for (const island of allIslands) {
+    const thick = island.flat ? 7 : 9;   // rock thickness under the crown core
+    for (let x = island.cx - island.halfWidth; x <= island.cx + island.halfWidth; x++) {
+      if (x < 0 || x >= this.width) continue;
       const d = Math.abs(x - island.cx);
-      if (d > island.halfWidth) continue;
       const t = d / island.halfWidth;
       const flat = island.flat ? 0.58 : 0.42;
       const crown = seaY - island.height;
@@ -1247,54 +1258,107 @@ World.prototype.generateOceanPlanet = function() {
       } else {
         const k = (t - flat) / (1 - flat);
         const eased = 1 - k * k * (3 - 2 * k);
-        surf = Math.round(crown + (duneFloor[x] - crown) * (1 - eased));
+        // Flanks sink back into the sea instead of into the seabed.
+        surf = Math.round(crown + ((seaY + 3) - crown) * (1 - eased));
       }
-      if (surf < ground) ground = surf;
+      // Underside: full thickness at the core, pinching up toward the rim.
+      const pinch = t < flat ? 1 : Math.max(0, 1 - (t - flat) / (1 - flat));
+      const bottom = Math.round(surf + 2 + thick * (0.25 + 0.75 * pinch));
+      // Never let the lens reach the seabed: keep at least 4 tiles of swim
+      // water between island rock and the dune floor.
+      const cappedBottom = Math.min(bottom, duneFloor[x] - 4);
+      if (cappedBottom <= surf + 1) continue; // pinched out entirely
+      if (islandTop[x] < 0 || surf < islandTop[x]) {
+        islandTop[x] = surf;
+        islandBottom[x] = cappedBottom;
+      }
     }
-    groundHeight[x] = ground;
+    // Flat islets get a soft 1-tile dip table on top (a sand bar you stand on).
+    if (island.flat) {
+      for (let x = island.cx - 2; x <= island.cx + 2; x++) {
+        if (x < 0 || x >= this.width || islandTop[x] < 0) continue;
+        islandTop[x] = Math.min(islandTop[x] + 1, seaY - 1);
+      }
+    }
+  }
+
+  // A smooth, deterministic height profile for the whole world. The base
+  // ground is the deep seabed (duneFloor); island columns are tracked
+  // separately in islandTop/islandBottom above.
+  const groundHeight = new Int16Array(this.width);
+  for (let x = 0; x < this.width; x++) {
+    groundHeight[x] = islandTop[x] >= 0 ? islandTop[x] : duneFloor[x];
   }
 
   for (let x = 0; x < this.width; x++) {
     const ground = groundHeight[x];
     this.surfaceHeights[x] = ground;
-    const islandColumn = ground < seaY;
+    const islandColumn = islandTop[x] >= 0 && ground < seaY + 3;
     // Flood every air tile between the waterline and the ground. Over open
-    // ocean that is the whole water column; over an island it is only the
-    // shallow shelf around the beach.
-    for (let y = seaY; y < ground; y++) this.setTile(x, y, TILES.WATER);
-    // Beach/soil for the exposed island cap, then the seabed proper.
+    // ocean that is the whole water column; under a floating island it is the
+    // open swim gap between the island's underside and the deep seabed.
+    for (let y = seaY; y < duneFloor[x]; y++) this.setTile(x, y, TILES.WATER);
+    // Beach/soil for the exposed island lens, then the seabed proper.
     if (islandColumn) {
+      const bottom = islandBottom[x];
       this.setTile(x, ground, TILES.SAND);
-      for (let y = ground + 1; y < ground + 4 && y < this.height; y++) {
-        this.setTile(x, y, TILES.DIRT);
+      for (let y = ground + 1; y <= bottom && y < this.height; y++) {
+        // Taper the lens: dirt shell near the crown, stone heart, sandy rim.
+        // rimEdge = tiles from the nearest island edge (0 = at the rim).
+        const depthInto = y - ground;
+        let rimEdge = 99;
+        for (const isl of allIslands) {
+          const dd = Math.abs(x - isl.cx);
+          if (dd <= isl.halfWidth) rimEdge = Math.min(rimEdge, isl.halfWidth - dd);
+        }
+        this.setTile(x, y, depthInto <= 2 ? TILES.DIRT
+          : (rimEdge <= 1.5 && depthInto > bottom - ground - 2) ? TILES.SAND : TILES.STONE);
       }
-      for (let y = ground + 4; y < this.height; y++) this.setTile(x, y, TILES.STONE);
+      // The column below the lens stays open water down to the seabed...
+      for (let y = bottom + 1; y < duneFloor[x]; y++) this.setTile(x, y, TILES.WATER);
+      // ...then the seabed proper, solid stone to the map floor.
+      this.setTile(x, duneFloor[x], x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
+      for (let y = duneFloor[x] + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
     } else {
-      this.setTile(x, ground, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
-      for (let y = ground + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
+      // Re-point island-less columns at the raised dune floor (no stale profile).
+      groundHeight[x] = duneFloor[x];
+      this.surfaceHeights[x] = duneFloor[x];
+      this.setTile(x, duneFloor[x], x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
+      for (let y = duneFloor[x] + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
     }
     // ---- Living seabed dressing -----------------------------------------
     // The old coral grew as tall vertical columns, which read as thin coloured
     // poles covering the whole ocean. It is now a flat 1-tile crust scattered
     // across the dune floor, plus swaying sea grass: a living sea floor, not
-    // a picket fence of coral spikes.
-    if (!islandColumn && ground >= seaY + 2) {
+    // a picket fence of coral spikes. Dresses the TRUE seabed (duneFloor) —
+    // never the floating lens — so coral/grass can never sprout mid-water.
+    const seabed = duneFloor[x];
+    if (this.getTile(x, seabed - 1) === TILES.WATER) {
       const crustRoll = (x * 2654435761 % 97) / 97;
-      if (crustRoll < 0.30 && this.getTile(x, ground - 1) === TILES.WATER) {
-        this.setTile(x, ground - 1, TILES.CORAL);
+      if (crustRoll < 0.30) {
+        this.setTile(x, seabed - 1, TILES.CORAL);
       }
       // Sea grass: the biggest "this is a living ocean" tell. Blades grow up
       // to 4 tiles in the deep water and stay short near the shallows.
       const grassRoll = (x * 40503) % 101 / 101;
       if (grassRoll < 0.34) {
-        const depth = ground - seaY;
+        const depth = seabed - seaY;
         const maxLen = depth > 20 ? 4 : 2;
         const len = 1 + ((x * 31) % maxLen);
         for (let k = 1; k <= len; k++) {
-          if (this.getTile(x, ground - k) === TILES.WATER) {
-            this.setTile(x, ground - k, TILES.TALL_GRASS);
+          if (this.getTile(x, seabed - k) === TILES.WATER) {
+            this.setTile(x, seabed - k, TILES.TALL_GRASS);
           }
         }
+      }
+    }
+    // Sea grass tufts on the UNDERSIDE of floating islands: hanging moss that
+    // sells the "rock hanging in water" read. Only where there is open water
+    // below the lens.
+    if (islandColumn && islandBottom[x] + 1 < duneFloor[x] - 1 &&
+        this.getTile(x, islandBottom[x] + 1) === TILES.WATER) {
+      if (((x * 7919) % 101) / 101 < 0.22) {
+        this.setTile(x, islandBottom[x] + 1, TILES.TALL_GRASS);
       }
     }
   }
@@ -1304,14 +1368,15 @@ World.prototype.generateOceanPlanet = function() {
   // floor — nothing to dig, no reason to go deep. Now a handful of air
   // caverns, ore seams and glowing crystals is tunnelled through the rock below
   // the seabed, so the abyss has a real underworld to mine and explore. Caverns
-  // never break the seabed surface (they start a few tiles under `ground`) and
-  // never touch the island crowns, so the water above always stays sealed.
+  // key off the TRUE seabed (duneFloor), never the floating lens above it:
+  // they start a few tiles under the dune floor and never break it, so the
+  // water above always stays sealed and no cave can swallow an island's gap.
   const cavernCount = 40 + Math.floor(Math.random() * 20);
   for (let c = 0; c < cavernCount; c++) {
     // Random walk: a blob of cavern grows from a seed, never above the local
     // seabed plus a 4-tile roof, so the ocean can never drain into a cave.
     let cx0 = 4 + Math.floor(Math.random() * (this.width - 8));
-    const localGround = groundHeight[Math.min(this.width - 1, Math.max(0, cx0))];
+    const localGround = duneFloor[Math.min(this.width - 1, Math.max(0, cx0))];
     let cy0 = Math.min(this.height - 4,
       localGround + 5 + Math.floor(Math.random() * Math.max(3, (this.height - localGround) - 8)));
     const steps = 10 + Math.floor(Math.random() * 22);
@@ -1320,7 +1385,7 @@ World.prototype.generateOceanPlanet = function() {
       ang += (Math.random() - 0.5) * 1.4;
       cx0 += Math.round(Math.cos(ang));
       cy0 += Math.round(Math.sin(ang) * 0.7);
-      const roof = groundHeight[Math.min(this.width - 1, Math.max(0, cx0))] + 4;
+      const roof = duneFloor[Math.min(this.width - 1, Math.max(0, cx0))] + 4;
       if (cx0 < 3 || cx0 > this.width - 4) break;
       if (cy0 < roof || cy0 > this.height - 3) { cy0 = Math.max(roof, Math.min(this.height - 3, cy0)); }
       // Carve a small round pocket of air.
@@ -1330,7 +1395,7 @@ World.prototype.generateOceanPlanet = function() {
           if (dx * dx + dy * dy > r * r + 1) continue;
           const px = cx0 + dx, py = cy0 + dy;
           if (px < 1 || px >= this.width - 1 || py < 1 || py >= this.height) continue;
-          if (py < groundHeight[px] + 3) continue; // keep the seabed roof solid
+          if (py < duneFloor[px] + 3) continue; // keep the seabed roof solid
           if (this.getTile(px, py) === TILES.STONE) this.setTile(px, py, TILES.AIR);
         }
       }
@@ -1339,7 +1404,7 @@ World.prototype.generateOceanPlanet = function() {
   // Ore + crystals dress the cavern floors: iron and gold in the stone, and a
   // vein of glowing crystal so the deep abyss is lit and worth diving for.
   for (let x = 2; x < this.width - 2; x++) {
-    for (let y = groundHeight[x] + 5; y < this.height - 2; y++) {
+    for (let y = duneFloor[x] + 5; y < this.height - 2; y++) {
       const tile = this.getTile(x, y);
       if (tile !== TILES.STONE) continue;
       const roll = Math.random();
@@ -1936,6 +2001,9 @@ class Kraken {
       const ax = (dx / dist) * maxSpeed * arrive;
       const ay = (dy / dist) * maxSpeed * arrive;
       // Velocity integrates thrust, then drag bleeds it off (frame-rate safe).
+      // pvx/pvy (captured before the push) let the body language below detect
+      // turn beats — sharp direction changes the render spends as pulses.
+      const pvx = this.vx || 0, pvy = this.vy || 0;
       this.vx = (this.vx || 0) + ax * dt;
       this.vy = (this.vy || 0) + ay * dt;
       const drag = Math.pow(0.12, dt); // strong water drag
@@ -1946,6 +2014,22 @@ class Kraken {
 
       // Lean into the direction of travel — a heavy body banks as it turns.
       this.lean = (this.lean || 0) + ((this.vx / (maxSpeed * 2)) - (this.lean || 0)) * Math.min(1, dt * 4);
+      // Dive/climb pitch: climbing noses the mantle up, diving noses it down.
+      const pitchTarget = Math.max(-0.5, Math.min(0.5, (this.vy || 0) / (maxSpeed * 1.6)));
+      this.pitch = (this.pitch || 0) + (pitchTarget - (this.pitch || 0)) * Math.min(1, dt * 3.2);
+      // Yaw skew: horizontal bursts shear the silhouette sideways for a beat.
+      this.skew = (this.skew || 0) * Math.pow(0.02, dt) +
+        Math.max(-1, Math.min(1, ((this.vx || 0) - pvx) / Math.max(1, maxSpeed * dt * 8))) * 0.12;
+      this.skew = Math.max(-0.35, Math.min(0.35, this.skew || 0));
+      // Turn beat: a sharp direction change fires a squash pulse. Cools down
+      // so it stays punchy instead of rattling every frame.
+      this.pulse = Math.max(0, (this.pulse || 0) - dt * 2.2);
+      this.pulseCd = Math.max(0, (this.pulseCd || 0) - dt);
+      if (Math.hypot((this.vx || 0) - pvx, (this.vy || 0) - pvy) > maxSpeed * 0.55 &&
+          (this.pulseCd || 0) <= 0) {
+        this.pulse = 1;
+        this.pulseCd = 0.9;
+      }
 
       // A slow vertical swim cycle so it undulates even while holding station.
       this.y += Math.sin(this.animT * 1.1) * 10 * dt;
@@ -1965,14 +2049,29 @@ class Kraken {
     }
 
     // ---- Whole-body motion --------------------------------------------
-    // Every part of the body hangs off these offsets, so the kraken is never
-    // a static PNG: the mantle breathes, sways on the current and leans into
-    // its own swim, and the limbs (drawn from the same fields) trail behind.
+    // Every part of the body hangs off these fields, so the kraken is never
+    // a static PNG: the mantle breathes, sways, pitches with its dives,
+    // skews with its turns, and SQUASHES through every surge — and the limbs
+    // (drawn from the same fields) trail behind. The chain:
+    //   pulse → squash spring: a turn beat briefly compresses the mantle
+    //     vertically and widens it, then releases with an overshoot bounce.
+    //   breath: slow inhale/exhale scaling the whole body ±4%.
+    //   swimPhase: a travelling wave down the body's length — the spine
+    //     ripples and the arms follow late, never all at once.
     const breathRate = 1.15 + this.phase * 0.12;
     this.bob = Math.sin(this.animT * breathRate) * (10 + this.phase * 2)
       + Math.sin(this.animT * 2.7 + 1.3) * 3;
     this.sway = Math.cos(this.animT * breathRate * 0.7) * (12 + this.phase * 3)
       + Math.sin(this.animT * 0.9) * 5;
+    this.squashV = this.squashV || 0;
+    this.squash = this.squash || 0;
+    const squashTarget = (this.pulse || 0) * 0.55 + (this.lashTimer > 0 ? 0.3 : 0);
+    this.squashV += ((squashTarget - this.squash) * 26 - this.squashV * 7) * dt;
+    this.squash += this.squashV * dt;
+    this.breath = 1 + Math.sin(this.animT * breathRate * 0.5) * 0.035
+      + (this.lashTimer > 0 ? 0.03 : 0);
+    this.swimPhase = (this.swimPhase || 0) + dt * (2.2 + this.phase * 0.4 +
+      Math.min(2, Math.hypot(this.vx || 0, this.vy || 0) / 90));
     // A jet pulse fires hardest while it is actually swimming somewhere.
     const speedNow = Math.hypot(this.vx || 0, this.vy || 0);
     const surgeTarget = Math.min(1, speedNow / 140) * 0.8 + (this.lashTimer > 0 ? 0.6 : 0.1);
@@ -2124,7 +2223,8 @@ class Kraken {
       for (const stab of p.stabs) {
         if (!stab.done && elapsed >= stab.at) {
           stab.done = true;
-          if (particles) particles.bloodBurst(stab.x, stab.y, '#7f1d3a', 18);
+          this.skillFX(particles, stab.x, stab.y, 'stab', {});
+          this.pulse = Math.max(this.pulse || 0, 0.5);
           if (this.game && this.game.player) {
             const pl = this.game.player;
             if (Math.hypot(pl.x + pl.width / 2 - stab.x, pl.y + pl.height / 2 - stab.y) <= 60) {
@@ -2155,6 +2255,164 @@ class Kraken {
   }
 
   /** Resolve a spent telegraph: damage, the blindness debuff, and the show. */
+  /**
+   * The skill show: layered particle chords every resolve spends. Each skill
+   * gets its own signature — a bright core flash, a coloured ring racing
+   * outward, arcing debris, and lingering motes — plus hit-stop + slow-mo on
+   * the heaviest hits so impacts LAND instead of just happening.
+   * Uses existing helpers only: addParticle / magicSparkle / bloodBurst.
+   */
+  skillFX(particles, x, y, chord, opts = {}) {
+    if (!particles) return;
+    const R = opts.radius || 90;
+    const flash = (color, size, life = 0.22) => {
+      if (typeof particles.addParticle === 'function') {
+        particles.addParticle(x, y, 0, 0, color, size, life, 0, true);
+      }
+    };
+    // n sparks on an expanding circle.
+    const ring = (color, maxR, n, life = 0.7) => {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + (opts.spin || 0);
+        const spd = maxR * (1.6 + Math.random() * 1.2);
+        if (typeof particles.addParticle === 'function') {
+          particles.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd * 0.7,
+            color, 3.2, life * (0.7 + Math.random() * 0.6), 0, true);
+        }
+      }
+    };
+    // Arcing shards with a gravity pull.
+    const debris = (colors, n, spd, up = -3) => {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = spd * (0.4 + Math.random() * 0.9);
+        const c = colors[(Math.random() * colors.length) | 0];
+        if (typeof particles.magicSparkle === 'function') {
+          particles.magicSparkle(x + Math.cos(a) * 8, y + Math.sin(a) * 6, c,
+            1 + ((Math.random() * 2) | 0));
+        }
+        if (typeof particles.addParticle === 'function') {
+          particles.addParticle(x, y, Math.cos(a) * s, Math.sin(a) * s * 0.6 + up,
+            c, 2.6, 0.8 + Math.random() * 0.7, 0.35, false);
+        }
+      }
+    };
+    // Slow drifting embers that hang in the water.
+    const motes = (color, n, r, life = 2.2) => {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = Math.sqrt(Math.random()) * r;
+        if (typeof particles.addParticle === 'function') {
+          particles.addParticle(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.7,
+            (Math.random() - 0.5) * 0.5, -0.3 - Math.random() * 0.5,
+            color, 2.2, life * (0.6 + Math.random() * 0.8), 0, true);
+        }
+      }
+    };
+    if (chord === 'inkburst') {
+      flash('#ffffff', 9);
+      if (typeof particles.magicSparkle === 'function') {
+        particles.magicSparkle(x, y, '#f43f5e', 30);
+        particles.magicSparkle(x, y, '#1a0308', 22);
+        particles.magicSparkle(x, y, '#e9d5ff', 12);
+      }
+      ring('#fb7185', R, 22);
+      ring('#4c0519', R * 0.7, 14, 1.0);
+      debris(['#7f1d3a', '#be123c', '#0b0212'], 16, 4.5);
+      motes('rgba(168, 85, 247, 0.8)', 14, R * 0.8);
+    } else if (chord === 'slam') {
+      flash('#ffffff', 11);
+      if (typeof particles.bloodBurst === 'function') {
+        particles.bloodBurst(x, y, '#7f1d3a', 20);
+        particles.bloodBurst(x, y, '#fecdd3', 10);
+      }
+      ring('#fef3c7', R * 0.9, 18, 0.5);
+      ring('#be123c', R * 1.15, 20);
+      debris(['#7f1d3a', '#451a1a', '#fecaca'], 20, 5.5, -4);
+      motes('rgba(251, 113, 133, 0.7)', 10, R * 0.7);
+    } else if (chord === 'stab') {
+      flash('#fef3c7', 10);
+      if (typeof particles.bloodBurst === 'function') {
+        particles.bloodBurst(x, y, '#7f1d3a', 16);
+        particles.bloodBurst(x, y, '#ffffff', 6);
+      }
+      ring('#fb7185', 70, 12, 0.5);
+      if (typeof particles.addParticle === 'function') {
+        for (let i = 0; i < 12; i++) {
+          particles.addParticle(x + (Math.random() - 0.5) * 18, y,
+            (Math.random() - 0.5) * 2, -5 - Math.random() * 5,
+            i % 2 ? '#fecdd3' : '#be123c', 2.8, 0.6, 0, true);
+        }
+      }
+      motes('rgba(127, 29, 58, 0.8)', 6, 50);
+    } else if (chord === 'geyser') {
+      flash('#fda4af', 8);
+      if (typeof particles.magicSparkle === 'function') {
+        particles.magicSparkle(x, y, '#f43f5e', 24);
+        particles.magicSparkle(x, y - 60, '#fb7185', 14);
+        particles.magicSparkle(x, y - 120, '#fecdd3', 8);
+      }
+      // A vertical jet column: fast risers stacked up the vent.
+      if (typeof particles.addParticle === 'function') {
+        for (let i = 0; i < 22; i++) {
+          particles.addParticle(x + (Math.random() - 0.5) * 34,
+            y - Math.random() * 40, (Math.random() - 0.5) * 1.2,
+            -6 - Math.random() * 5, i % 3 ? '#be123c' : '#ffe4e6',
+            3, 0.7 + Math.random() * 0.5, 0, true);
+        }
+      }
+      ring('#fb7185', R * 0.8, 14, 0.6);
+      motes('rgba(76, 5, 25, 0.9)', 12, R * 0.6);
+    } else if (chord === 'whirlpool') {
+      flash('#e9d5ff', 9);
+      // Spiral arms of debris spinning OUT of the collapsed core.
+      for (let arm = 0; arm < 4; arm++) {
+        for (let s = 0; s < 7; s++) {
+          const a = arm * (Math.PI / 2) + s * 0.4 + (opts.spin || 0);
+          const rr = R * (0.12 + s * 0.15);
+          if (typeof particles.magicSparkle === 'function') {
+            particles.magicSparkle(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.6,
+              s % 2 ? '#fb7185' : '#4c0519', 3);
+          }
+        }
+      }
+      ring('#fda4af', R, 20, 0.9);
+      debris(['#be123c', '#0b0212', '#e9d5ff'], 14, 5);
+      motes('rgba(168, 85, 247, 0.7)', 16, R);
+    } else if (chord === 'sweep') {
+      flash('#ffffff', 8);
+      // Trail of spray along the whole swept arc, not just a single burst.
+      for (let s = 0; s <= 10; s++) {
+        const a = (opts.angle || 0) - 0.9 + 1.8 * (s / 10);
+        const ax = x + Math.cos(a) * R, ay = y + Math.sin(a) * R;
+        if (typeof particles.bloodBurst === 'function') {
+          particles.bloodBurst(ax, ay, '#be123c', 3);
+        }
+        if (typeof particles.magicSparkle === 'function') {
+          particles.magicSparkle(ax, ay, '#fecdd3', 2);
+        }
+      }
+      if (typeof particles.bloodBurst === 'function') {
+        particles.bloodBurst(x, y, '#7f1d3a', 14);
+      }
+      ring('#fecdd3', R * 0.7, 12, 0.5);
+      motes('rgba(251, 113, 133, 0.6)', 8, R * 0.5);
+    }
+  }
+
+  /** Cinematic weight for the heaviest resolves: hit-stop + slow-mo + shake. */
+  skillImpact(chord, baseShake) {
+    const feel = this.game && this.game.feel;
+    if (!feel) return;
+    if (chord === 'slam' || chord === 'whirlpool') {
+      if (typeof feel.stop === 'function') feel.stop(0.09, 0.05);
+      if (typeof feel.slow === 'function') feel.slow(0.35, 0.35);
+    } else if (chord === 'inkburst' || chord === 'geyser') {
+      if (typeof feel.stop === 'function') feel.stop(0.06, 0.06);
+    }
+    if (typeof feel.shake === 'function') feel.shake(baseShake);
+  }
+
   resolvePending(sound, particles) {
     const p = this.pending;
     this.pending = null;
@@ -2163,7 +2421,8 @@ class Kraken {
     const ppx = player ? player.x + player.width / 2 : 0;
     const ppy = player ? player.y + player.height / 2 : 0;
     if (p.type === 'ink_burst') {
-      if (particles) particles.magicSparkle(p.x, p.y, '#f43f5e', 34);
+      this.skillFX(particles, p.x, p.y, 'inkburst', { radius: p.radius });
+      this.skillImpact('inkburst', 0.35);
       if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
         this.game.damagePlayer(30 + this.phase * 10, p.x,
           'The Kraken’s ink cloud blinded you!', true, p.y);
@@ -2171,18 +2430,18 @@ class Kraken {
         if (this.game.feel) this.game.feel.shake(0.35);
       }
     } else if (p.type === 'slam') {
-      if (particles) particles.bloodBurst(p.x, p.y, '#7f1d3a', 22);
+      this.skillFX(particles, p.x, p.y, 'slam', { radius: p.radius });
+      this.skillImpact('slam', 0.55);
       if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
         this.game.damagePlayer(44 + this.phase * 14, p.x,
           'A Kraken tentacle slam crushed you!', true, p.y);
       }
     } else if (p.type === 'geyser') {
       // Three columns erupt; each vent is its own damage + ink check.
-      if (particles) {
-        for (const v of (p.vents || [-1, 0, 1])) {
-          particles.magicSparkle(p.x + v * 70, p.y, '#f43f5e', 26);
-        }
+      for (const v of (p.vents || [-1, 0, 1])) {
+        this.skillFX(particles, p.x + v * 70, p.y, 'geyser', { radius: 70 });
       }
+      this.skillImpact('geyser', 0.5);
       for (const v of (p.vents || [-1, 0, 1])) {
         const vx = p.x + v * 70;
         if (player && Math.abs(ppx - vx) <= 46) {
@@ -2195,16 +2454,9 @@ class Kraken {
     } else if (p.type === 'whirlpool') {
       // The vortex collapses: a spiral burst of debris spinning out of the
       // core, a final inward crush + blindness.
-      if (particles) {
-        for (let arm = 0; arm < 4; arm++) {
-          for (let s = 0; s < 6; s++) {
-            const a = arm * (Math.PI / 2) + s * 0.35;
-            const r = p.radius * (0.15 + s * 0.14);
-            particles.magicSparkle(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.6,
-              s % 2 ? '#fb7185' : '#be123c', 6);
-          }
-        }
-      }
+      this.skillFX(particles, p.x, p.y, 'whirlpool',
+        { radius: p.radius, spin: this.animT * 6 });
+      this.skillImpact('whirlpool', 0.6);
       if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
         this.game.damagePlayer(38 + this.phase * 12, p.x,
           'The whirlpool dragged you into its crushing core!', true, p.y);
@@ -2214,15 +2466,8 @@ class Kraken {
     } else if (p.type === 'sweep') {
       // A scything arc: hit if the player is within the radius AND within the
       // swept angular band in front of the Kraken.
-      if (particles) {
-        // Trail of spray along the whole swept arc, not just a single burst.
-        for (let s = 0; s <= 8; s++) {
-          const a = p.angle - 0.9 + 1.8 * (s / 8);
-          particles.bloodBurst(p.x + Math.cos(a) * p.radius,
-            p.y + Math.sin(a) * p.radius, '#be123c', 4);
-        }
-        particles.bloodBurst(p.x, p.y, '#7f1d3a', 16);
-      }
+      this.skillFX(particles, p.x, p.y, 'sweep', { radius: p.radius, angle: p.angle });
+      this.skillImpact('sweep', 0.45);
       if (player) {
         const dx = ppx - p.x, dy = ppy - p.y;
         const dist = Math.hypot(dx, dy);
@@ -2238,12 +2483,10 @@ class Kraken {
     } else if (p.type === 'barrage') {
       // All the stabs already fired on their beats; the resolve moment is just
       // the arena exhaling — a last ring of ichor at each spent spike.
-      if (particles) {
-        for (const stab of p.stabs) {
-          if (stab.done) particles.magicSparkle(stab.x, stab.y, '#be123c', 8);
-        }
+      for (const stab of p.stabs) {
+        if (stab.done) this.skillFX(particles, stab.x, stab.y, 'stab', {});
       }
-      if (this.game && this.game.feel) this.game.feel.shake(0.4);
+      this.skillImpact('barrage', 0.4);
     }
     // The seabed remembers every slammed attack: a dark ink pool stains the
     // ground where it landed, fading slowly so the arena tells the fight's
@@ -2285,7 +2528,8 @@ class Kraken {
     const k = 1 - Math.max(0, p.timer) / p.total; // 0 → 1 as it winds up
     const pulse = 0.5 + Math.sin(this.animT * 22) * 0.25;
     if (p.type === 'ink_burst') {
-      // The full blast radius, plus a dark fill that closes in as time runs.
+      // INK BURST telegraph: a closing iris + a boiling core + orbiting
+      // sparks. Reads as "the sea is about to detonate HERE".
       ctx.setLineDash([12, 8]);
       ctx.lineWidth = 4;
       ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
@@ -2293,12 +2537,31 @@ class Kraken {
       ctx.arc(sx, sy, p.radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+      // Boiling core: stacked flickering discs that swell as it winds up.
+      for (let blob = 0; blob < 5; blob++) {
+        const ba = this.animT * 3 + blob * 1.256;
+        const br = p.radius * (0.12 + 0.10 * k) * (0.8 + 0.3 * Math.sin(ba * 2.3));
+        const bx = sx + Math.cos(ba) * p.radius * 0.22 * k;
+        const by = sy + Math.sin(ba * 1.3) * p.radius * 0.22 * k;
+        ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.35 + 0.3 * k).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+      }
+      // Orbiting warning sparks: 8 embers circling the rim, speeding up.
+      ctx.fillStyle = 'rgba(253, 164, 175, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
+      for (let s = 0; s < 8; s++) {
+        const a = this.animT * (2 + k * 6) + s * (Math.PI / 4);
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(a) * p.radius, sy + Math.sin(a) * p.radius,
+          3 + k * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.fillStyle = 'rgba(76, 5, 25, ' + (0.15 + 0.35 * k).toFixed(3) + ')';
       ctx.beginPath();
       ctx.arc(sx, sy, p.radius * (0.7 + 0.3 * k), 0, Math.PI * 2);
       ctx.fill();
     } else if (p.type === 'geyser') {
-      // Three warning columns that brighten and fill upward as they erupt.
+      // GEYSER telegraph: three warning columns that brighten and fill upward,
+      // each crowned with a bubbling vent cap + rising bubble previews.
       for (const v of (p.vents || [-1, 0, 1])) {
         const vx = sx + v * 70;
         ctx.setLineDash([8, 6]);
@@ -2313,10 +2576,29 @@ class Kraken {
         grad.addColorStop(1, 'rgba(251, 113, 133, 0.05)');
         ctx.fillStyle = grad;
         ctx.fillRect(vx - 24, sy - colH, 48, colH);
+        // Bubbling vent cap: a churning mound at the column base.
+        for (let b = 0; b < 4; b++) {
+          const ba = this.animT * 7 + b * 1.7 + v;
+          const br = 4 + 3 * Math.abs(Math.sin(ba)) * (0.5 + k);
+          ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.4 + 0.35 * k).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.arc(vx + Math.sin(ba * 1.4) * 14, sy - 4 - (b * 5), br, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Rising bubble previews climbing the column.
+        ctx.fillStyle = 'rgba(254, 205, 211, ' + (0.3 + 0.4 * k).toFixed(3) + ')';
+        for (let b = 0; b < 3; b++) {
+          const rise = ((this.animT * 90 + b * 50 + v * 17) % 150);
+          ctx.beginPath();
+          ctx.arc(vx + Math.sin(this.animT * 5 + b * 2 + v) * 10,
+            sy - rise, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     } else if (p.type === 'whirlpool') {
-      // A spiralling vortex: concentric rings that rotate and close in, plus
-      // spiral arms, so the pull reads before it grabs you.
+      // WHIRLPOOL telegraph: concentric rings that rotate and close in, spiral
+      // arms, a tightening dark core — plus orbiting debris chunks and inward
+      // streaklines so the PULL reads before it grabs you.
       const spin = this.animT * 6;
       for (let ring = 3; ring >= 1; ring--) {
         const rr = p.radius * (ring / 3) * (1 - k * 0.35);
@@ -2345,8 +2627,32 @@ class Kraken {
       ctx.beginPath();
       ctx.arc(sx, sy, p.radius * 0.28 * (1 - k * 0.4), 0, Math.PI * 2);
       ctx.fill();
+      // Orbiting debris chunks caught in the current.
+      ctx.fillStyle = 'rgba(69, 10, 10, ' + (0.4 + 0.4 * k).toFixed(3) + ')';
+      for (let d = 0; d < 7; d++) {
+        const da = spin * 1.4 + d * 0.9;
+        const dr = p.radius * (0.75 - k * 0.3) * (0.7 + (d % 3) * 0.15);
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(da) * dr, sy + Math.sin(da) * dr * 0.6,
+          2.5 + (d % 2) * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Inward streaklines: short dashes racing toward the core.
+      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.25 + 0.35 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let s = 0; s < 10; s++) {
+        const sa = spin * 0.7 + s * 0.63;
+        const r0 = p.radius * (1.25 - k * 0.5);
+        const r1 = r0 * 0.82;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(sa) * r0, sy + Math.sin(sa) * r0 * 0.6);
+        ctx.lineTo(sx + Math.cos(sa) * r1, sy + Math.sin(sa) * r1 * 0.6);
+        ctx.stroke();
+      }
     } else if (p.type === 'sweep') {
-      // A sweeping wedge that rotates across the arc as it winds up.
+      // SWEEP telegraph: a rotating wedge + a ghost of the arm itself sweeping
+      // across the arc + spray streaks, so you see the limb coming, not just
+      // a shape on the floor.
       const sweepNow = p.angle - 0.9 + 1.8 * k;
       ctx.setLineDash([10, 6]);
       ctx.lineWidth = 5;
@@ -2370,10 +2676,44 @@ class Kraken {
       ctx.moveTo(sx, sy);
       ctx.lineTo(sx + Math.cos(sweepNow + 0.45) * p.radius, sy + Math.sin(sweepNow + 0.45) * p.radius);
       ctx.stroke();
+      // Ghost arm: a thick translucent limb from the kraken toward the sweep
+      // front, so the telegraph reads as a limb mid-swing.
+      ctx.strokeStyle = 'rgba(190, 18, 60, ' + (0.25 + 0.35 * k).toFixed(3) + ')';
+      ctx.lineWidth = 16;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(
+        sx + Math.cos(sweepNow) * p.radius * 0.55,
+        sy + Math.sin(sweepNow) * p.radius * 0.55 - 30 * (1 - k),
+        sx + Math.cos(sweepNow) * p.radius * 0.92,
+        sy + Math.sin(sweepNow) * p.radius * 0.92);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(254, 205, 211, ' + (0.3 + 0.3 * k).toFixed(3) + ')';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(
+        sx + Math.cos(sweepNow) * p.radius * 0.55,
+        sy + Math.sin(sweepNow) * p.radius * 0.55 - 30 * (1 - k),
+        sx + Math.cos(sweepNow) * p.radius * 0.92,
+        sy + Math.sin(sweepNow) * p.radius * 0.92);
+      ctx.stroke();
+      // Spray streaks flung ahead of the swing.
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.2 + 0.3 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let s = 0; s < 5; s++) {
+        const sa = sweepNow + 0.45 + 0.06 * s;
+        const r0 = p.radius * (0.55 + 0.08 * s);
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(sa) * r0, sy + Math.sin(sa) * r0);
+        ctx.lineTo(sx + Math.cos(sa) * (r0 + 22), sy + Math.sin(sa) * (r0 + 22));
+        ctx.stroke();
+      }
     } else if (p.type === 'barrage') {
-      // TENTACLE BARRAGE — a ring of warning spikes around the player, each
-      // flashing faster as its own stab beat approaches, then going dark once
-      // it has fired. The whole arena becomes a rhythm of dodges.
+      // TENTACLE BARRAGE telegraph: each stab beat gets a churning mound, a
+      // rising tentacle ghost, and a timing ring that closes in — the whole
+      // arena becomes a rhythm of dodges.
       const elapsed = p.total - p.timer;
       for (const stab of p.stabs) {
         const tx = stab.x - camera.x;
@@ -2388,6 +2728,43 @@ class Kraken {
         // Warning spike: a triangle rising from the seabed that pulses, then
         // snaps bright white in the last moment before it stabs.
         const armed = Math.max(0, Math.min(1, 1 - untilStab / 0.35)); // 0→1 over last .35s
+        const warmup = Math.max(0, Math.min(1, 1 - untilStab / 1.2)); // 0→1 over last 1.2s
+        // Churning mound: the seabed bulges before the spike.
+        if (warmup > 0 && !stab.done) {
+          ctx.fillStyle = 'rgba(69, 10, 10, ' + (0.25 + 0.4 * warmup).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.ellipse(tx, ty + 14, 20 + 14 * warmup, 7 + 5 * warmup, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Rising tentacle ghost: a thick translucent spear climbing out of the
+        // mound as the beat approaches.
+        if (warmup > 0.25 && !stab.done) {
+          const spearH = 70 * warmup;
+          ctx.strokeStyle = 'rgba(190, 18, 60, ' + (0.3 + 0.45 * warmup).toFixed(3) + ')';
+          ctx.lineWidth = 13;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(tx, ty + 14);
+          ctx.quadraticCurveTo(tx + Math.sin(this.animT * 9 + stab.at * 10) * 8,
+            ty + 14 - spearH * 0.6, tx, ty + 14 - spearH);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(254, 205, 211, ' + (0.3 + 0.4 * warmup).toFixed(3) + ')';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(tx, ty + 14);
+          ctx.quadraticCurveTo(tx + Math.sin(this.animT * 9 + stab.at * 10) * 8,
+            ty + 14 - spearH * 0.6, tx, ty + 14 - spearH);
+          ctx.stroke();
+        }
+        // Timing ring: closes in on the stab point as its beat arrives.
+        if (!stab.done && untilStab > 0) {
+          const ringR = 20 + untilStab * 90;
+          ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.25 + 0.3 * warmup).toFixed(3) + ')';
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath(); ctx.arc(tx, ty + 14, ringR, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
         const warn = 0.4 + 0.4 * Math.sin(this.animT * 18 + stab.at * 10);
         ctx.strokeStyle = armed > 0.5
           ? 'rgba(255, 255, 255, ' + (0.6 + 0.4 * armed).toFixed(3) + ')'
@@ -2414,6 +2791,43 @@ class Kraken {
         }
       }
     } else {
+      // SLAM telegraph: the generic circle becomes a cracking impact site —
+      // a dark crater disc, radiating cracks, a closing timing ring, a
+      // descending shadow of the incoming limb, and rising dust.
+      ctx.fillStyle = 'rgba(43, 6, 8, ' + (0.25 + 0.3 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, p.radius * (0.5 + 0.5 * k), 0, Math.PI * 2); ctx.fill();
+      // Radiating cracks that lengthen as the hit approaches.
+      ctx.strokeStyle = 'rgba(26, 3, 8, ' + (0.5 + 0.4 * k).toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      for (let c = 0; c < 8; c++) {
+        const ca = c * (Math.PI / 4) + 0.4;
+        const r0 = p.radius * 0.15;
+        const r1 = p.radius * (0.3 + 0.6 * k);
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(ca) * r0, sy + Math.sin(ca) * r0 * 0.6);
+        ctx.lineTo(sx + Math.cos(ca) * r1, sy + Math.sin(ca) * r1 * 0.6);
+        ctx.stroke();
+      }
+      // Closing timing ring: starts wide, lands exactly on the radius.
+      const ringR = p.radius * (1.6 - 0.6 * k);
+      ctx.setLineDash([10, 7]);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.35 + 0.4 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, ringR, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      // Descending limb shadow: a dark bar dropping onto the site.
+      const dropK = k * k;
+      ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.25 + 0.45 * dropK).toFixed(3) + ')';
+      ctx.fillRect(sx - 14, sy - 160 * (1 - dropK) - 30, 28, 60);
+      // Rising dust motes shaken loose before the hit.
+      ctx.fillStyle = 'rgba(254, 205, 211, ' + (0.2 + 0.35 * k).toFixed(3) + ')';
+      for (let d = 0; d < 5; d++) {
+        const da = this.animT * 4 + d * 1.256;
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(da) * p.radius * 0.6,
+          sy + Math.sin(da) * p.radius * 0.3 - 6 * k, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.setLineDash([6, 6]);
       ctx.lineWidth = 5;
       ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
@@ -2455,16 +2869,33 @@ class Kraken {
     const rimColor = flash ? '#ffffff' : this.phase === 3 ? '#fb7185' : '#fda4af';
 
     ctx.save();
-    // Bank the whole beast into its swim, then carry the live bob/sway so the
-    // entire silhouette moves as one organism instead of a floating decal.
-    if (this.lean) {
-      ctx.translate(cx, y + this.height * 0.5);
-      ctx.rotate(this.lean * 0.18);
-      ctx.translate(-cx, -(y + this.height * 0.5));
-    }
+    // ---- The WHOLE body moves: bank, pitch, skew, squash, breathe ----
+    // Lean banks the beast into its swim; pitch noses the mantle with dives
+    // and climbs; skew shears the silhouette on horizontal bursts; the squash
+    // spring compresses/widens the cone on every turn beat and releases with
+    // a bounce; breath swells everything ±4% on the inhale. All of it stacks,
+    // so the silhouette is never the same shape twice in a row.
+    const squash = this.squash || 0;
+    const breath = this.breath || 1;
+    const pitch = this.pitch || 0;
+    const skew = this.skew || 0;
+    const bodyCX = cx + (this.sway || 0);
+    const bodyCY = y + this.height * 0.5 + (this.bob || 0);
+    ctx.translate(bodyCX, bodyCY);
+    ctx.rotate((this.lean || 0) * 0.18 + pitch * 0.35);
+    ctx.transform(1 + skew * 0.6 + squash * 0.35, skew * 0.25,
+      skew * 0.25, (1 - squash * 0.45) * breath);
+    ctx.scale(breath, breath);
+    ctx.translate(-bodyCX, -bodyCY);
     ctx.translate(this.sway || 0, this.bob || 0);
     ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
     ctx.lineJoin = 'round';
+    // Travelling ripple: a wave running apex→arms the limbs spend as lag.
+    // spineOff(k) offsets any point at body-fraction k (0 = apex, 1 = arms).
+    const swimPh = this.swimPhase || 0;
+    const speedNow = Math.hypot(this.vx || 0, this.vy || 0);
+    const rippleAmp = 4 + Math.min(10, speedNow / 22) + (this.lashTimer > 0 ? 5 : 0);
+    const spineOff = (k) => Math.sin(swimPh * 2.1 - k * 3.4) * rippleAmp * (0.25 + k * 0.75);
 
     // ====================================================================
     // Geometry. A kraken is: a TALL tapering mantle (apex up), a narrow
@@ -2483,6 +2914,10 @@ class Kraken {
     const collarW = this.width * 0.13;     // mantle half-width at the head
 
     // ---- Helper: a tapering limb from a base to a curling tip -----------
+    // lagRx/lagRy bend the control point opposite the swim direction so fast
+    // limbs trail behind the mantle instead of sticking out rigidly.
+    const lagRx = -(this.vx || 0) * 0.16;
+    const lagRy = -(this.vy || 0) * 0.10;
     const qPoint = (x0, y0, x1, y1, x2, y2, tt) => {
       const it = 1 - tt;
       return { x: it * it * x0 + 2 * it * tt * x1 + tt * tt * x2,
@@ -2519,9 +2954,11 @@ class Kraken {
       ctx.globalAlpha = prevA;
       // 4. Suckers: discs down the underside, each ringed with a pale rim and
       //    a soft bioluminescent glow — the arms light up as they move, like a
-      //    deep-sea hunter. The glow brightens with the swim/skill pulse so the
-      //    whole beast flickers with living light.
-      const suckerPulse = 0.35 + this.skillGlow * 0.5;
+      //    deep-sea hunter. The glow brightens with swim speed, the skill
+      //    pulse and the turn-beat squash so the whole beast flickers with
+      //    living light, brightest mid-lash.
+      const suckerPulse = Math.min(1, 0.30 + Math.min(0.35, speedNow / 400) +
+        this.skillGlow * 0.5 + squash * 0.5);
       for (const tt of [0.28, 0.40, 0.52, 0.64, 0.76, 0.88]) {
         const pt = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, tt);
         const r = 3.4 * (1 - tt) + 1.1;
@@ -2543,20 +2980,25 @@ class Kraken {
     //    out and UP like striking serpents -- the kraken's signature shape.
     // ====================================================================
     for (const side of [-1, 1]) {
-      const bx = cx + side * this.width * 0.10;
+      const bx = cx + side * this.width * 0.10 + spineOff(0.85);
       const sway = Math.sin(t * 0.6 + (side > 0 ? 0 : Math.PI)) * (26 + this.phase * 8);
       const punch = lash * (side === faceDir ? 1 : 0.4);
       // The two long feeding tentacles reach OUT to the side and slightly down,
       // then hook -- like serpents striking at prey, not arms in the air.
-      const tipX = bx + side * (185 + Math.abs(sway)) + faceDir * punch * 130;
-      const tipY = limbRootY + 92 + Math.cos(t * 0.5 + side) * 22 + punch * 40;
+      // The tips spend the travelling ripple LATE (they lag the spine), and
+      // the whole limb drags behind the swim direction at speed.
+      const tipLag = Math.sin(swimPh * 2.1 - 3.1) * rippleAmp * 1.1;
+      const tipX = bx + side * (185 + Math.abs(sway)) + faceDir * punch * 130 +
+        lagRx * 0.9 + tipLag * 0.7;
+      const tipY = limbRootY + 92 + Math.cos(t * 0.5 + side) * 22 + punch * 40 +
+        lagRy * 0.9 + Math.cos(swimPh * 2.1 - 2.6) * rippleAmp * 0.6;
       // The control point bows the mid-limb UP and out so the tip hooks back
       // down: that S-curve is what makes them read as striking, not limp. A
       // travelling wave runs down each feeding tentacle so it lashes with a
       // real serpent motion instead of swinging like a rope.
       const wave = Math.sin(t * 2.9 + side * 3.1) * (10 + this.surge * 14);
-      const ctrlX = bx + side * (150 + sway) + faceDir * punch * 70;
-      const ctrlY = limbRootY - 46 - punch * 60 + wave;
+      const ctrlX = bx + side * (150 + sway) + faceDir * punch * 70 + lagRx * 0.5;
+      const ctrlY = limbRootY - 46 - punch * 60 + wave + lagRy * 0.5;
       limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 24);
       // A hooked tip on each long tentacle.
       ctx.fillStyle = skinMid;
@@ -2581,16 +3023,23 @@ class Kraken {
       const reach = this.height * (0.40 + 0.30 * Math.abs(Math.cos(ang * 1.5)));
       const sway = Math.sin(t * 0.9 + i * 1.2) * (14 + this.phase * 5);
       const punch = lash * (0.4 + 0.6 * Math.abs(dirX));
-      const bx = cx + dirX * (collarW * 0.8);
-      const tipX = cx + dirX * (reach * 0.95 + punch * 70) + sway;
-      const tipY = limbRootY + dirY * (reach * 0.9) + punch * 30;
+      // Each arm roots along the travelling ripple and its tip lags a full
+      // beat behind — the crown ripples apex→tips in sequence, never in sync.
+      const rootLag = spineOff(0.9);
+      const bx = cx + dirX * (collarW * 0.8) + rootLag;
+      const tipLag2 = Math.sin(swimPh * 2.1 - 3.6 - i * 0.35) * rippleAmp * 0.9;
+      const tipX = cx + dirX * (reach * 0.95 + punch * 70) + sway +
+        lagRx * (0.5 + 0.08 * i) + tipLag2 * 0.6;
+      const tipY = limbRootY + dirY * (reach * 0.9) + punch * 30 +
+        lagRy * (0.5 + 0.08 * i) +
+        Math.cos(swimPh * 2.1 - 3.0 - i * 0.35) * rippleAmp * 0.5;
       // Curl DOWN: the control point is pushed low and wide so each arm bows
       // outward then hooks toward the seabed, like a limb feeling for prey. A
       // per-arm wave phase makes the crown ripple — ten limbs reading as ten
       // independent, writhing arms, not one stiff star.
       const wave = Math.sin(t * 3.1 + i * 0.9) * (6 + this.surge * 8);
-      const ctrlX = bx + dirX * (reach * 0.55) + sway * 0.5;
-      const ctrlY = limbRootY + dirY * (reach * 0.25) + reach * 0.30 + wave;
+      const ctrlX = bx + dirX * (reach * 0.55) + sway * 0.5 + lagRx * 0.3;
+      const ctrlY = limbRootY + dirY * (reach * 0.25) + reach * 0.30 + wave + lagRy * 0.3;
       limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 13);
     }
 
@@ -2639,11 +3088,13 @@ class Kraken {
     // Dorsal spine ridge: the fin-ray crown along the mantle spine. A row of
     // tipped spines that rise with the swim cycle, so the beast reads as a
     // living apex instead of a smooth teardrop — a squid's mantle teeth.
+    // The ridge rides the travelling ripple, so the whole spine ripples.
     const spineAmp = this.surge * 0.4 + (1 - hiddenNow) * 0.25;
     for (let i = 0; i < 7; i++) {
       const k = i / 6;
       const midY = apexY + (shoulderY - apexY) * (0.22 + k * 0.52);
-      const ridgeX = cx + Math.cos(this.animT * 3.3 + i) * shoulderW * 0.11 * spineAmp;
+      const ridgeX = cx + Math.cos(this.animT * 3.3 + i) * shoulderW * 0.11 * spineAmp +
+        spineOff(k * 0.55);
       const spH = 9 + (i % 3) * 2 + spineAmp * 3;
       const spW = 6 + spineAmp * 2;
       ctx.fillStyle = flash ? '#ffffff' : '#2b0608';
@@ -2667,6 +3118,40 @@ class Kraken {
       ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
       ctx.beginPath(); ctx.arc(jx, jy - spoutLen * 0.6, 3 + this.surge * 4, 0, Math.PI * 2); ctx.fill();
     }
+    // ---- Abyssal aura: the water around the beast glows ----
+    // A deep violet meniscus behind the whole silhouette + a hot rim under
+    // the mantle in the phase colour. This is what makes it read as a BOSS
+    // and not a big fish: the sea itself reacts to it. Intensity follows
+    // skillGlow + turn-beat squash + injury.
+    const auraBase = hiddenNow ? 0.10 : 0.22;
+    const auraHot = auraBase + this.skillGlow * 0.25 + squash * 0.3 + injury * 0.15;
+    const aura = ctx.createRadialGradient(bodyCX, bodyCY, this.height * 0.2,
+      bodyCX, bodyCY, this.width * 0.85);
+    const auraCore = this.phase === 3 ? '220, 38, 38' : this.phase === 2 ? '244, 63, 94' : '168, 85, 247';
+    aura.addColorStop(0, 'rgba(' + auraCore + ', ' + Math.min(0.55, auraHot).toFixed(3) + ')');
+    aura.addColorStop(0.6, 'rgba(76, 5, 25, ' + (auraHot * 0.45).toFixed(3) + ')');
+    aura.addColorStop(1, 'rgba(76, 5, 25, 0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(bodyCX, bodyCY, this.width * 0.85, 0, Math.PI * 2); ctx.fill();
+    // ---- Bioluminescent rune-rings circling the mantle ----
+    // Two dashed rings orbiting opposite ways, brighter with skillGlow: the
+    // kraken wears its charge-up like a spell circle. Terraria-style flat
+    // strokes, no gradients — they read as carved light.
+    ctx.save();
+    ctx.globalAlpha = (hiddenNow ? 0.15 : 0.35) + this.skillGlow * 0.45;
+    for (const ring of [0, 1]) {
+      const rr = this.width * (0.30 + ring * 0.09);
+      const rot = this.animT * (ring ? -1.1 : 0.8) + ring * 1.7;
+      ctx.strokeStyle = ring ? '#fda4af' : '#e9d5ff';
+      ctx.lineWidth = ring ? 2.5 : 3.5;
+      ctx.setLineDash(ring ? [4, 10] : [16, 9]);
+      ctx.lineDashOffset = rot * 22;
+      ctx.beginPath();
+      ctx.ellipse(bodyCX, bodyCY - this.height * 0.08, rr, rr * 0.42, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
     // Lit shoulder (a flat block of light, not a soft gradient).
     ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.5 : 0.26);
     ctx.fillStyle = '#ffe4e6';
@@ -2693,12 +3178,25 @@ class Kraken {
     ctx.closePath(); ctx.fill();
     ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
     // Bumpy hide: a golden-angle scatter of small darker spots.
+    // Battle damage: at high injury some spots crack into glowing embers —
+    // the beast visibly falls apart as you win. Spots ride the ripple too.
     ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
     for (let i = 0; i < 22; i++) {
       const a = i * 2.399;
       const rad = Math.sqrt(i / 22);
-      const bx2 = cx + Math.cos(a) * shoulderW * 0.72 * rad;
-      const by2 = apexY + (shoulderY - apexY) * (0.18 + rad * 0.8);
+      const kSpot = 0.18 + rad * 0.8;
+      const bx2 = cx + Math.cos(a) * shoulderW * 0.72 * rad + spineOff(kSpot * 0.6);
+      const by2 = apexY + (shoulderY - apexY) * kSpot;
+      const cracked = injury > 0.45 && (i % 4 === 0);
+      if (cracked) {
+        const ember = ctx.createRadialGradient(bx2, by2, 0, bx2, by2, 7);
+        ember.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
+        ember.addColorStop(0.5, 'rgba(249, 115, 22, 0.6)');
+        ember.addColorStop(1, 'rgba(249, 115, 22, 0)');
+        ctx.fillStyle = ember;
+        ctx.beginPath(); ctx.arc(bx2, by2, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
+      }
       ctx.beginPath(); ctx.arc(bx2, by2, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
     }
 
@@ -2718,9 +3216,11 @@ class Kraken {
     // way a giant squid wears them. Rooted well below the apex so they can
     // never read as ears or horns.
     for (const side of [-1, 1]) {
-      const rootX = cx + side * shoulderW * 0.42;
+      const rootX = cx + side * shoulderW * 0.42 + spineOff(0.35);
       const rootY = apexY + this.height * 0.20;
-      const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) * 3;
+      // Fins beat with the swim: faster when moving, snapping on turn beats.
+      const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) *
+        (3 + Math.min(6, speedNow / 45)) + (squash || 0) * side * 9;
       ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.92 : 0.88);
       ctx.fillStyle = flash ? '#ffffff'
         : this.phase === 3 ? '#b91c1c' : this.phase === 2 ? '#e11d48' : '#fb7185';
@@ -2746,10 +3246,11 @@ class Kraken {
     // the head or sit asymmetrically: both orbs share ONE centre line through
     // `cx` and ONE shared row `ey`, identical size, identical pupil, identical
     // glint. No per-eye offset of any kind.
-    const ey = y + this.height * 0.60;
+    const ey = y + this.height * 0.60 + spineOff(0.75) * 0.5;
     // The eye pulse: a slow breathe plus a hard flash the instant a skill fires,
-    // so the weakpoint telegraphs the fight's rhythm.
-    const glow = 1 + Math.sin(this.animT * 5) * 0.12 + this.skillGlow * 0.6;
+    // so the weakpoint telegraphs the fight's rhythm. Turn beats dilate it.
+    const glow = 1 + Math.sin(this.animT * 5) * 0.12 + this.skillGlow * 0.6 +
+      (squash || 0) * 0.4;
     const haloColor = this.phase === 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
     const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
     const drawEye = (px, py, s, primary) => {
