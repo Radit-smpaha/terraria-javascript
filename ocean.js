@@ -2285,6 +2285,17 @@ class Kraken {
           type: 'sweep', x: this.x + this.width * 0.5, y: this.y + this.height * 0.6,
           radius: 210 + this.phase * 25, angle: toward, timer: 0.85, total: 0.85
         };
+      } else if (roll < 0.90) {
+        // INK SPEW — the maw opens and a sustained cone of blinding ink jets
+        // forward, tracking your position so it reads as the beast trying to
+        // swallow you whole. Blind + damage over the channel: personal and mythic.
+        const inkToward = Math.atan2(py - (this.y + this.height * 0.62),
+          px - (this.x + this.width * 0.5));
+        this.pending = {
+          type: 'ink_spew', x: this.x + this.width * 0.5, y: this.y + this.height * 0.62,
+          angle: inkToward, radius: 0, timer: 0.75, total: 0.75,
+          width: 0.9 + this.phase * 0.15
+        };
       } else if (roll < 0.94) {
         // AQUA LANCE — the Kraken locks a high-pressure water/laser beam onto
         // you and charges it. The eye superheats first (a white-hot line from
@@ -2546,6 +2557,34 @@ class Kraken {
         }
       }
       motes('rgba(168, 85, 247, 0.75)', 12, R * 0.85);
+    } else if (chord === 'inkspew') {
+      // INK SPEW impact: the maw erupts a fan of blinding mist along its spine,
+      // a twin ring of water and ink, and droplet mist racing down the cone.
+      flash('#4a0d1f', 9);
+      if (typeof particles.magicSparkle === 'function') {
+        particles.magicSparkle(x, y, '#93c5f7', 14);
+        particles.magicSparkle(x, y, '#1a0308', 18);
+      }
+      ring('rgba(147, 197, 253)', R, 16);
+      ring('rgba(26, 3, 8)', R * 0.7, 12, 1.0);
+      // Spine mist: droplets fanning along the spew direction toward the target.
+      if (opts.target) {
+        const bdx = opts.target.x - x, bdy = opts.target.y - y;
+        const blen = Math.hypot(bdx, bdy) || 1;
+        const nx = bdx / blen, ny = bdy / blen;
+        for (let i = 0; i < 22; i++) {
+          const f = i / 22;
+          const mx = x + nx * 200 * f + (Math.random() - 0.5) * 24;
+          const my = y + ny * 200 * f + (Math.random() - 0.5) * 24;
+          if (typeof particles.addParticle === 'function') {
+            particles.addParticle(mx, my, (Math.random() - 0.5) * 2,
+              (Math.random() - 0.5) * 2 - 1,
+              'rgba(26, 3, 8, ' + (0.4 + f * 0.3).toFixed(3) + ')',
+              4 - f * 2, 0.6 + Math.random() * 0.4, 0.18, false);
+          }
+        }
+      }
+      motes('rgba(124, 50, 94, 0.8)', 12, R * 0.8);
     }
   }
 
@@ -2662,6 +2701,25 @@ class Kraken {
           const klen = Math.hypot(kdx, kdy) || 1;
           player.x += (kdx / klen) * 52;
           player.y += (Math.max(0, kdy) / klen) * 18;
+        }
+      }
+    } else if (p.type === 'ink_spew') {
+      // INK SPEW resolve: the cone erupts in a burst of blinding mist. Anyone
+      // still inside the channel takes damage and is blinded — the sea goes dark.
+      this.skillFX(particles, p.x, p.y, 'inkspew', { angle: p.angle, width: p.width });
+      this.skillImpact('inkspew', 0.45);
+      if (player) {
+        const dx = (player.x + player.width / 2) - p.x;
+        const dy = (player.y + player.height / 2) - p.y;
+        const dist = Math.hypot(dx, dy);
+        const len = 230 + this.phase * 30;
+        const toP = Math.atan2(dy, dx);
+        const dAng = Math.abs(((toP - p.angle + Math.PI) % (Math.PI * 2)) - Math.PI);
+        if (dist <= len && dAng <= p.width + 0.18) {
+          this.game.damagePlayer(28 + this.phase * 9, p.x,
+            'The Abyssal Kraken’s cone of ink blinded you!', true, p.y);
+          if (this.game.buffs) this.game.buffs.add('ink_blindness', 10);
+          if (this.game.feel) this.game.feel.shake(0.3);
         }
       }
     }
@@ -2967,6 +3025,29 @@ class Kraken {
           ctx.fillRect(tx - 6, ty - 30 * armed, 12, 30 * armed);
         }
       }
+    } else if (p.type === 'ink_spew') {
+      // INK SPEW telegraph: a widening cone of murk pouring from the maw — you
+      // must leave the sector, not just the epicentre.
+      const len = 230 + this.phase * 30;
+      const wedge = ctx.createRadialGradient(sx, sy, 0, sx, sy, len);
+      wedge.addColorStop(0, 'rgba(26, 3, 8, ' + (0.12 + 0.18 * k).toFixed(3) + ')');
+      wedge.addColorStop(0.55, 'rgba(26, 3, 8, ' + (0.22 + 0.22 * k).toFixed(3) + ')');
+      wedge.addColorStop(1, 'rgba(26, 3, 8, 0)');
+      ctx.fillStyle = wedge;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      const inkA = p.angle, inkW = p.width;
+      ctx.arc(sx, sy, len, inkA - inkW / 2, inkA + inkW / 2);
+      ctx.closePath(); ctx.fill();
+      // Edge lances: ink racing along the cone borders as it widens.
+      ctx.strokeStyle = 'rgba(124, 50, 94, ' + (0.3 + 0.4 * k).toFixed(3) + ')';
+      ctx.lineWidth = 3 + 8 * k;
+      ctx.lineCap = 'round';
+      for (const sign of [-1, 1]) {
+        const ex = sx + Math.cos(inkA + sign * inkW / 2) * len * k;
+        const ey = sy + Math.sin(inkA + sign * inkW / 2) * len * k;
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+      }
     } else if (p.type === 'beam') {
       // AQUA LANCE telegraph: a white-hot eye, a charging spine that thickens
       // and brightens toward the player, and a ring that contracts to nothing
@@ -3197,39 +3278,46 @@ class Kraken {
     // 1. TWO long feeding tentacles, drawn first (furthest back). They curl
     //    out and UP like striking serpents -- the kraken's signature shape.
     // ====================================================================
-    // Player (world -> screen) the feeding tentacles strike toward. Falls back
-    // to a point ahead of the face so they still read alive when nothing's lit.
+    // Player (world -> screen) the feeding tentacles strike toward when attacking.
+    // Idle they keep their rest curl (out and down); only a strike lets them track prey.
     const _P = this.game && this.game.player;
     const aimX = _P ? _P.x + _P.width / 2 - camera.x : cx + faceDir * 320;
     const aimY = _P ? _P.y + _P.height / 2 - camera.y : limbRootY + 80;
     const aimA = Math.atan2(aimY - limbRootY, aimX - cx);
-    // Strike readiness: the hide/lash punch OR an aimed skill (aqua lance,
-    // sweep, ink burst, whirlpool) charging — the tentacles snap to attention.
+    // Strike readiness: the hide/lash punch OR an aimed skill (aqua lance, ink
+    // spew, sweep, ink burst, whirlpool) charging — then the tentacles snap to
+    // attention and lash OUT at the prey instead of resting at their sides.
     let feedStrike = 0;
     if (this.lashTimer > 0) feedStrike = Math.max(feedStrike, lash * 0.9);
-    if (this.pending && /^(beam|sweep|ink_burst|whirlpool)$/.test(this.pending.type)) {
+    if (this.pending && /^(beam|ink_spew|sweep|ink_burst|whirlpool)$/.test(this.pending.type)) {
       const pk = 1 - Math.max(0, this.pending.timer) / this.pending.total;
       feedStrike = Math.max(feedStrike, 0.25 + 0.7 * pk);
     }
     feedStrike = Math.min(1, feedStrike);
+    const striking = feedStrike > 0.03;
 
     for (const side of [-1, 1]) {
       const bx = cx + side * this.width * 0.10 + spineOff(0.85);
       const sway = Math.sin(t * 0.6 + (side > 0 ? 0 : Math.PI)) * (26 + this.phase * 8);
-      // Each feeding tentacle tracks the prey: it leads outward from its root,
-      // then the S-curve bows it wide so the hooked tip whips around the target
-      // -- striking serpents, not arms in the air.
-      const lead = aimA + side * 0.32;
-      const reach = 205 + this.phase * 12 + feedStrike * 115;
+      // Idle: the two feeding tentacles curl out and slightly down like serpents
+      // at rest. On a strike they pivot to aim at the prey and extend, hooking
+      // around it — the classic kraken "strike and grab".
+      const idleA = side < 0 ? Math.PI - 0.46 : 0.46;   // down-and-out, per side
+      const lead = striking ? (aimA + side * 0.28) : idleA;
+      const reach = striking
+        ? 205 + this.phase * 12 + feedStrike * 115
+        : 185 + Math.abs(sway);
       const tipX = bx + Math.cos(lead) * reach;
       const tipY = limbRootY + Math.sin(lead) * reach;
       // Travelling serpent wave down the shaft, louder when surging / striking.
-      const wave = Math.sin(t * 2.9 + side * 3.1) * (14 + this.surge * 18 + feedStrike * 16);
+      const wave = Math.sin(t * 2.9 + side * 3.1) *
+        (striking ? (16 + this.surge * 20 + feedStrike * 16) : (10 + this.surge * 14 + 3));
       const perX = -Math.sin(lead), perY = Math.cos(lead);
-      const ctrlX = bx + Math.cos(lead) * (reach * 0.52) + perX * 52 +
+      const bStrength = (striking ? 52 : 38);
+      const ctrlX = bx + Math.cos(lead) * (reach * 0.52) + perX * bStrength +
         lagRx * 0.5 + wave * perX * 0.3;
-      const ctrlY = limbRootY + Math.sin(lead) * (reach * 0.52) + perY * 52 +
-        lagRy * 0.5 + wave * perY * 0.3 + 16;
+      const ctrlY = limbRootY + Math.sin(lead) * (reach * 0.52) + perY * bStrength +
+        lagRy * 0.5 + wave * perY * 0.3 + (striking ? 16 : 12);
       limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 24);
       // Hooked tip: a wider, ink-rimmed sucker cup that flares on the strike.
       const tipScale = 1 + feedStrike * 0.35;
@@ -3506,55 +3594,49 @@ class Kraken {
     const irisColor = this.phase === 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
     const drawEye = (px, py, s, primary) => {
       if (primary) {
-        const halo = ctx.createRadialGradient(px, py, 4, px, py, 34 * s * glow);
-        halo.addColorStop(0, 'rgba(' + haloColor + ', 0.45)');
+        // Weakpoint glow: a flat disc of light behind the eye that blooms when
+        // skills fire and tightens when the aqua lance locks on.
+        const halo = ctx.createRadialGradient(px, py, 5, px, py, 32 * s * glow);
+        halo.addColorStop(0, 'rgba(' + haloColor + ', 0.5)');
         halo.addColorStop(1, 'rgba(' + haloColor + ', 0)');
         ctx.fillStyle = halo;
-        ctx.beginPath(); ctx.arc(px, py, 34 * s * glow, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, py, 32 * s * glow, 0, Math.PI * 2); ctx.fill();
       }
-      // Slanted sockets sit flush with the head instead of floating like
-      // round cartoon eyeballs.
+      // Round socket: a disc set flush with the head, not a floating eyeball.
       ctx.fillStyle = skinDark;
-      ctx.beginPath();
-      ctx.moveTo(px - 19 * s, py + s);
-      ctx.quadraticCurveTo(px - 8 * s, py - 16 * s, px + 15 * s, py - 9 * s);
-      ctx.quadraticCurveTo(px + 20 * s, py - 2 * s, px + 11 * s, py + 10 * s);
-      ctx.quadraticCurveTo(px - 5 * s, py + 16 * s, px - 19 * s, py + s);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.stroke();
-      ctx.strokeStyle = rimColor; ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(px - 15 * s, py - s);
-      ctx.quadraticCurveTo(px - 4 * s, py - 12 * s, px + 13 * s, py - 7 * s);
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 11 * s, 0, Math.PI * 2); ctx.fill();
+      // Wet ink rim around the lid.
+      ctx.strokeStyle = 'rgba(26, 3, 8, 0.8)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(px, py, 11 * s, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
+      // Iris: a wet disc, slightly off toward the face direction.
       const ix = px + faceDir * 2 * s;
-      const ild = ctx.createRadialGradient(ix, py, s, ix, py, 8 * s);
+      const ild = ctx.createRadialGradient(ix - 1.5 * s, py - 1.5 * s, 2 * s, ix, py, 7.5 * s);
       ild.addColorStop(0, irisColor);
       ild.addColorStop(1, '#0b0712');
       ctx.fillStyle = ild;
-      ctx.beginPath(); ctx.ellipse(ix, py, 7 * s, 8 * s, faceDir * -0.12, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ix, py, 7.5 * s, 0, Math.PI * 2); ctx.fill();
+      // Round pupil: the deep-sea hunter's mark.
       ctx.fillStyle = '#0b0712';
-      ctx.beginPath(); ctx.ellipse(ix, py, 2.2 * s, 6.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ix, py, 2 * s, 0, Math.PI * 2); ctx.fill();
+      // Wet glint for a living eye.
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(ix - 2.5 * s, py - 4 * s, 1.8 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ix - 2.6 * s, py - 2.8 * s, 1.8 * s, 0, Math.PI * 2); ctx.fill();
       if (primary) {
-        ctx.strokeStyle = 'rgba(' + haloColor + ', ' + (0.4 + Math.sin(this.animT * 6) * 0.2).toFixed(3) + ')';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.ellipse(px, py, 24 * s * glow, 17 * s * glow, 0, 0, Math.PI * 2); ctx.stroke();
-        // Corneal wet sheen: a crescent catchlight on the iris for a living eye.
-        ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.25 + 0.2 * Math.sin(this.animT * 7)).toFixed(3) + ')';
-        ctx.beginPath();
-        ctx.ellipse(ix + 2 * s, py - 3.5 * s, 2.6 * s, 1.3 * s, 0, 0, Math.PI * 2);
-        ctx.fill();
         // Aqua-lance lock-on: a contracting ring around the weakpoint as it charges.
         if (_beamCharge > 0.05) {
-          const ringR = 26 * s + 14 * _beamCharge;
-          ctx.strokeStyle = 'rgba(255, 241, 194, ' + (0.2 + 0.5 * _beamCharge).toFixed(3) + ')';
+          const ringR = 28 * s + 12 * _beamCharge;
+          ctx.strokeStyle = 'rgba(255, 241, 194, ' + (0.2 + 0.55 * _beamCharge).toFixed(3) + ')';
           ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, 12 - 8 * _beamCharge]);
-          ctx.beginPath(); ctx.ellipse(px, py, ringR, ringR * 0.6, 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([5, 14 - 10 * _beamCharge]);
+          ctx.beginPath(); ctx.arc(px, py, ringR, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
         }
+        // Corneal sheen: a crescent catchlight on the iris.
+        ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.2 * Math.sin(this.animT * 7)).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.ellipse(ix + 2 * s, py - 3.2 * s, 2.8 * s, 1.4 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
     };
     const eyeSpread = this.width * 0.075;
@@ -3562,58 +3644,46 @@ class Kraken {
     drawEye(cx + eyeSpread, ey, 1, true);
 
     // ====================================================================
-    // 6. A deep mouth and hooked keratin beak, tucked into the arm crown. The
-    //    jaw gapes with the jet surge and the lash, dripping ink when it does.
+    // 6. A round maw — no beak. The jaw drops with the jet surge and the lash,
+    //    ringed with teeth and a wet tongue, fouled with ink when it gapes.
     // ====================================================================
-    const jawOpen = Math.max(0, (this.surge - 0.35) * 1.3) +
-      (this.lashTimer > 0 ? (lash * 0.7) : 0);
+    const jawOpen = Math.max(0, (this.surge - 0.35) * 1.4) +
+      (this.lashTimer > 0 ? (lash * 0.75) : 0);
     const jaw = Math.min(1, jawOpen);
-    // Mouth cavity: a dark ellipse that opens as the beak gapes, rimmed in ink.
-    ctx.fillStyle = 'rgba(11, 2, 18, ' + (0.45 + 0.35 * jaw).toFixed(3) + ')';
+    const mawY = mouthY + jaw * 8;
+    // Mouth cavity: a dark disc that opens as the maw gapes, rimmed in ink.
+    ctx.fillStyle = 'rgba(11, 2, 18, ' + (0.65 + 0.3 * jaw).toFixed(3) + ')';
     ctx.strokeStyle = ink; ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(cx, mouthY + 2 + jaw * 10, 22 + jaw * 6, 12 + jaw * 10, 0, 0, Math.PI * 2);
+    ctx.arc(cx, mawY, 22 + jaw * 8, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
-    // Ink bleed: the gape leaks slow drips — the beak is fouled, not clean.
+    // Teeth ring: a jagged halo of pale triangles around the maw — the maw of a
+    // deep-sea predator that never looks clean.
+    ctx.strokeStyle = '#e9d5ff'; ctx.lineWidth = 1.6;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const r1 = 22 + jaw * 8;
+      const r2 = r1 + 9 + jaw * 5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r1, mawY + Math.sin(a) * r1);
+      ctx.lineTo(cx + Math.cos(a) * r2, mawY + Math.sin(a) * r2);
+      ctx.stroke();
+    }
+    // Wet tongue: a pulsing disc that sits deeper as the maw opens.
+    ctx.fillStyle = 'rgba(86, 16, 33, ' + (0.55 + 0.25 * jaw).toFixed(3) + ')';
+    ctx.beginPath();
+    ctx.arc(cx, mawY + 4 + jaw * 5, 16 + jaw * 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Ink bleed: the gape drips ink when the jaw is agape.
     if (jaw > 0.22) {
       ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.35 + 0.3 * jaw).toFixed(3) + ')';
       for (let d = 0; d < 3; d++) {
         const dx2 = cx - 10 + d * 10;
         ctx.beginPath();
-        ctx.ellipse(dx2, mouthY + 16 + jaw * 16 + Math.sin(this.animT * 3 + d) * 1.5,
+        ctx.ellipse(dx2, mawY + 16 + jaw * 16 + Math.sin(this.animT * 3 + d) * 1.5,
           3, 7 + jaw * 10, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-    }
-    // The keratin beak: upper plate + lower plate with a real hinge line.
-    const beak = ctx.createLinearGradient(cx - 12, mouthY - 9, cx + 12, mouthY + 25);
-    beak.addColorStop(0, '#fff1c2');
-    beak.addColorStop(0.45, '#d6a76a');
-    beak.addColorStop(1, '#70402f');
-    ctx.fillStyle = beak;
-    ctx.strokeStyle = '#2b1115'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx - 12, mouthY - 8);
-    ctx.quadraticCurveTo(cx, mouthY - 13 - jaw * 8, cx + 12, mouthY - 7);
-    ctx.quadraticCurveTo(cx + 8, mouthY + 1 + jaw * 6, cx + 7, mouthY + 8 + jaw * 8);
-    ctx.quadraticCurveTo(cx + 6, mouthY + 18 + jaw * 8, cx - 3, mouthY + 22 + jaw * 6);
-    ctx.quadraticCurveTo(cx - 8, mouthY + 15 + jaw * 4, cx - 5, mouthY + 7);
-    ctx.quadraticCurveTo(cx - 14, mouthY + 2, cx - 12, mouthY - 8);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    // Upper beak highlight.
-    ctx.strokeStyle = 'rgba(255, 241, 194, 0.8)'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx - 7, mouthY - 5);
-    ctx.quadraticCurveTo(cx - 1, mouthY - 7 - jaw * 5, cx + 6, mouthY - 4);
-    ctx.stroke();
-    // Hinge line between the mandibles, glistening when the jaw is agape.
-    if (jaw > 0.15) {
-      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.15 + 0.35 * jaw).toFixed(3) + ')';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(cx - 4, mouthY + 6 + jaw * 6);
-      ctx.lineTo(cx + 4, mouthY + 6 + jaw * 6);
-      ctx.stroke();
     }
 
     // ====================================================================
