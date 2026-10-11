@@ -1,2 +1,0 @@
-# terraria-javascript
-terraria game

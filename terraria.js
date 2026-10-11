@@ -8804,6 +8804,11 @@ this.player.dodgeTime = 0;
     this.world.renderTiles(ctx, this.camera);
     this.world.renderReefTemplePortal(ctx, this.camera);
 
+    // 3. Abyssal Colosseum: 3D arena floor, tiered seating, stone pillars
+    if (this.world.isInOcean() || this.world.isReefAtX((this.camera.x + this.camera.viewportWidth / 2) / TILE_SIZE)) {
+      this.world.renderColosseum(ctx, this.camera, Date.now() * 0.001);
+    }
+
     // 2b. Ambient weather layer (rain / snow / sand / fog) sits behind entities
     // (there is no weather in the Ossuary — it is a vacuum.)
     if (this.weather && !this.world.isInSpace() && !this.world.isInOcean()) this.weather.render(this, ctx, this.camera, 'back');

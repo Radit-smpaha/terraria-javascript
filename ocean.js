@@ -1567,20 +1567,104 @@ World.prototype.generateOceanPlanet = function() {
   // fight on and the boss is never a silent speck a screen (or a seabed) away.
   const bossX = spawnIsland ? spawnIsland.cx + spawnIsland.halfWidth + 5 : Math.floor(this.width * 0.38);
   const bossStandX = Math.max(6, Math.min(this.width - 7, bossX));
-  const arena = {
-    seaY,
-    floorY,
-    portalX,
-    islands,
-    shipwrecks: this.shipwrecks,
-    spawnX: (spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)) * TILE_SIZE,
-    spawnY: (Math.max(2, groundHeight[spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)] - 2)) * TILE_SIZE,
-    // Rise out of the water, not the seabed: the eye sits around the waterline
-    // (seaY), the mantle breaches it, and the tentacles trail down into the deep.
-    bossX: bossStandX * TILE_SIZE,
-    bossY: Math.max(2, seaY - 3) * TILE_SIZE
-  };
-  this.oceanArena = arena;
+  // ---- The Abyssal Colosseum: a colosseum carved into the deep floor -------
+  // A huge circular bowl in the abyss, with tiered stone seating curving
+  // up around a central pit. The Megalodon circles in the arena floor,
+  // the player stands on the seating tiers. Everything is carved from
+  // dark abyssal stone, lit by bioluminescent glow and the faint
+  // surface light filtering from above.
+  const colosseum = (() => {
+    const r = 18;                // radius in tiles (~430px)
+    const tierH = 3;             // tier height in tiles (each tier climbs 3)
+    const ringBand = 12;         // outer band width of seating
+    const pitR = 11;             // pit (no seating, open center)
+    const cols = Math.floor(r * 2);  // approx seating capacity
+
+    // Build a ring of tiers around the center: each tier is a circular
+    // bench ring that climbs up the sides of the arena pit.
+    const tiers = [];
+    for (let t = 0; t < 7; t++) {
+      const tierR = pitR + t * tierH + 4;  // radius of this tier
+      if (tierR > r) break;
+      tiers.push({ t, tierR });
+    }
+
+    // Place stone seating tiles: flat-topped bench blocks carved into
+    // the abyssal floor, going up in tiers around the central pit.
+    const seatTiles = [];
+    for (const tier of tiers) {
+      const cx = Math.floor(this.width * 0.5);
+      for (let a = 0; a < Math.PI * 2; a += 0.12) {
+        const angle = a;
+        const bx = Math.round(cx + Math.cos(angle) * tier.tierR);
+        const by = Math.round(seaY + 28 + (Math.sin(angle) < 0 ? -1 : 1) * tier.t);
+        if (bx < 6 || bx >= this.width - 6 || by < 0 || by >= this.height - 6) continue;
+        // Only fill the tier where the terrain is the deep floor
+        if (this.getTile(bx, by) === TILES.STONE) {
+          seatTiles.push({ x: bx, y: by });
+        }
+      }
+    }
+
+    // Carve the central pit (open arena floor, water falls in)
+    for (let a = 0; a < Math.PI * 2; a += 0.15) {
+      const angle = a;
+      const bx = Math.round(cx + Math.cos(angle) * pitR);
+      const by = Math.round(seaY + 28);
+      if (bx < 8 || bx >= this.width - 8 || by < 0 || by >= this.height - 8) continue;
+      this.setTile(bx, by, TILES.AIR);
+    }
+
+    // Add stone archways and pillars framing the arena's central cavern
+    const pillars = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const px = Math.round(cx + Math.cos(angle) * (pitR + 1.5));
+      const py = Math.round(seaY + 28);
+      if (px < 8 || px >= this.width - 8 || py < 0 || py >= this.height - 8) continue;
+      // Pillar base on the floor
+      for (let dy = 0; dy < 3; dy++) {
+        if (this.getTile(px, py - dy) === TILES.AIR) {
+          this.setTile(px, py - dy, TILES.STONE);
+        }
+      }
+      pillars.push({ x: px, y: py - 3 });
+    }
+
+    // Corner pillars outside the seating ring
+    for (const off of [-2, 2]) {
+      const angle = (Math.PI * 2) / 8 * 1 + (off > 0 ? 0 : Math.PI / 4);
+      const px = Math.round(cx + Math.cos(angle) * (r + 4));
+      const py = Math.round(seaY + 28 + Math.sin(angle) * 2);
+      if (px < 8 || px >= this.width - 8 || py < 0 || py >= this.height - 8) continue;
+      for (let dy = 0; dy < 3; dy++) {
+        if (this.getTile(px, py - dy) === TILES.AIR) {
+          this.setTile(px, py - dy, TILES.STONE);
+        }
+      }
+      pillars.push({ x: px, y: py - 3 });
+    }
+
+    return {
+      seaY,
+      floorY,
+      portalX,
+      arenaR: r * TILE_SIZE,            // arena radius in pixels
+      arenaCX: cx * TILE_SIZE,           // center X in pixels
+      arenaCY: (seaY + 28) * TILE_SIZE,  // center Y in pixels
+      seatTiles,
+      pillars,
+      tiers,
+      islands,
+      shipwrecks: this.shipwrecks,
+      spawnX: (spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)) * TILE_SIZE,
+      spawnY: (Math.max(2, groundHeight[spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)] - 2)) * TILE_SIZE,
+      bossX: Math.max(6, Math.min(this.width - 7, bossX)) * TILE_SIZE,
+      bossY: Math.max(2, seaY - 3) * TILE_SIZE
+    };
+  })();
+
+  this.oceanArena = colosseum;
   this.underworldStart = this.height + 1000;
   this.underworld = null;
   this.dungeon = null;
@@ -1589,7 +1673,158 @@ World.prototype.generateOceanPlanet = function() {
   this._tileCache = null;
   this._tileCacheDirty = true;
   this._spaceBgCache = null;
-  return arena;
+  return colosseum;
+};
+
+/**
+ * Render the Abyssal Colosseum: a colosseum carved into the deep floor,
+ * with tiered stone seating curving around a central pit.
+ * Uses 3D-looking depth, sheen, and bioluminescent lighting.
+ */
+World.prototype.renderColosseum = function(ctx, camera, time) {
+  const arena = this.oceanArena;
+  if (!arena || !arena.arenaCX) return;
+
+  const px = arena.arenaCX;
+  const py = arena.arenaCY;
+  const r = arena.arenaR / TILE_SIZE;
+  const ringR = r - 2;
+
+  // Lighting
+  const sTime = time * 0.8;
+  const sunGlow = 0.25 + 0.15 * Math.sin(sTime);
+  const biolum = 0.5 + 0.3 * Math.sin(sTime * 1.3);
+
+  const stoneBase = 'rgba(24, 35, 48, 1)';
+  const stoneTop = 'rgba(38, 52, 70, 1)';
+  const stoneLight = 'rgba(58, 77, 100, 1)';
+  const seatDark = 'rgba(18, 28, 40, 1)';
+  const seatLight = 'rgba(42, 62, 88, 1)';
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Deep floor around the colosseum
+  ctx.fillStyle = 'rgba(4, 12, 22, 1)';
+  ctx.beginPath();
+  ctx.ellipse(px, py, r * TILE_SIZE * 1.6, r * TILE_SIZE * 0.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Outer seating ring (tiers carved into the abyss)
+  for (let t = 0; t < 7; t++) {
+    const tierR = ringR - 1.5 - t * 2.8;
+    if (tierR < 8) break;
+    const yOff = t * 3 + 3;
+    const tierColor = t === 0 ? seatDark : t < 3 ? seatLight : 'rgba(28, 42, 62, 1)';
+    for (let a = 0; a < Math.PI * 2; a += 0.1) {
+      const bx = px + Math.cos(a) * tierR;
+      const by = py + Math.sin(a) * tierR - yOff;
+      const w = 1.8 + (Math.sin(a * 3 + t) * 0.3);
+      const h = 1.8 + t * 0.25;
+
+      if (Math.abs(bx - px) > r * 0.5) continue;
+      if (Math.abs(by - py) > r * 1.2) continue;
+
+      ctx.fillStyle = tierColor;
+      ctx.fillRect(bx - w / 2, by - h / 2, w, h);
+
+      ctx.fillStyle = 'rgba(60, 80, 110, 0.15)';
+      ctx.fillRect(bx - w / 2, by - h / 2 - 1, w, 1.5);
+
+      ctx.fillStyle = 'rgba(8, 14, 24, 0.5)';
+      ctx.fillRect(bx - w / 2, by + h / 2 - 1, w, 1);
+    }
+  }
+
+  // Solid stone pillars framing the arena
+  if (arena.pillars) {
+    for (const p of arena.pillars) {
+      const pxl = p.x * TILE_SIZE - camera.x;
+      const pyl = p.y * TILE_SIZE - camera.y;
+      const ph = 8;
+
+      ctx.fillStyle = 'rgba(40, 55, 78, 0.85)';
+      ctx.fillRect(pxl - 3, pyl - ph, 6, ph);
+
+      ctx.fillStyle = 'rgba(58, 77, 100, 0.9)';
+      ctx.fillRect(pxl - 4, pyl - ph - 3, 8, 3);
+
+      ctx.fillStyle = 'rgba(100, 180, 255, 0.08)';
+      ctx.fillRect(pxl - 4, pyl - ph - 3, 8, 1.5);
+    }
+  }
+
+  // Central pit: the open arena floor with water falling in
+  const pitR = r - 6;
+  if (pitR > 4) {
+    ctx.fillStyle = 'rgba(3, 8, 18, 1)';
+    ctx.beginPath();
+    ctx.ellipse(px, py, pitR * TILE_SIZE, pitR * TILE_SIZE * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.4 + 0.3 * Math.sin(sTime * 2);
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + sTime * 0.3;
+      const dist = 20 + Math.sin(sTime + i) * 8;
+      const fx = px + Math.cos(a) * dist;
+      const fy = py + Math.sin(a) * dist * 0.6;
+      const sz = 2 + Math.sin(sTime * 3 + i) * 1.5;
+      ctx.fillRect(fx - sz / 2, fy - sz / 2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Stone archways at the four cardinal points of the arena
+  for (const side of [-1, 1]) {
+    for (const ord of [-1, 1]) {
+      const angle = Math.atan2(ord, side) - Math.PI / 4;
+      const pxl = px + Math.cos(angle) * (r - 4) * TILE_SIZE;
+      const pyl = py + Math.sin(angle) * (r - 4) * TILE_SIZE;
+
+      const archW = 10 + Math.sin(time * 0.8 + side * ord) * 2;
+      ctx.fillStyle = 'rgba(20, 30, 45, 0.85)';
+      ctx.fillRect(pxl - archW / 2, pyl - 6, archW, 12);
+
+      ctx.fillStyle = 'rgba(58, 77, 100, 0.8)';
+      ctx.fillRect(pxl - 2, pyl - 7, 4, 3);
+
+      ctx.strokeStyle = `rgba(100, 180, 255, ${0.08 + 0.06 * Math.sin(sTime + side * 2)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(pxl, pyl, 8, 4, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Arena floor edge: a raised rim of stone around the outer pit
+  for (let x = -1; x <= 1; x += 2) {
+    for (let y = -1; y <= 1; y += 2) {
+      const rx = px + x * pitR * TILE_SIZE;
+      const ry = py + y * pitR * TILE_SIZE * 0.6;
+      if (Math.abs(rx - px) > r * TILE_SIZE * 0.7) continue;
+
+      ctx.fillStyle = 'rgba(32, 48, 66, 0.9)';
+      const rimW = 3 + Math.sin(time * 0.5 + x * y) * 1;
+      ctx.fillRect(rx - rimW / 2, ry - 2, rimW, 4);
+
+      ctx.fillStyle = 'rgba(70, 95, 125, 0.12)';
+      ctx.fillRect(rx - rimW / 2, ry - 2, rimW, 2);
+    }
+  }
+
+  // Bioluminescent floor glow in the central pit
+  const glowR = pitR * TILE_SIZE + 20;
+  const grad = ctx.createRadialGradient(px, py, 0, px, py, glowR);
+  grad.addColorStop(0, `rgba(80, 160, 255, ${0.06 * biolum})`);
+  grad.addColorStop(0.4, `rgba(40, 100, 200, ${0.03 * biolum})`);
+  grad.addColorStop(1, `rgba(10, 30, 60, 0)`);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(px, py, glowR / TILE_SIZE, glowR / TILE_SIZE * 0.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
 };
 
 World.prototype.renderOceanBackground = function(ctx, camera) {
@@ -1913,90 +2148,203 @@ class OceanFish {
 }
 
 // ============================================================
-// THE ABYSSAL KRAKEN — the ocean-planet boss.
-//
-// Replaces the three-headed Sea Leviathan wholesale: one giant mantle,
-// eight animated tentacles, and a single glowing eye that is the fight's
-// whole damage story — the eye weakpoint soaks 1.4x while the armoured
-// mantle shrugs off a third of every blow, so players learn to aim.
-//
-// Kit: a telegraphed Ink Blindness burst (catching you inside it applies
-// the ink_blindness debuff — see juice.js BUFF_DEFS), a tentacle slam,
-// and volleys of hostile ink globs that blind on contact.
-//
-// The old name stays exported (window.OceanLeviathan) because app.py's
-// inline probe, the HTML onload probe and older hooks still look for it —
-// the Kraken simply occupies the slot the Leviathan used to hold.
-// ============================================================
-class Kraken {
+
+// THE MEGALODON — the ancient apex predator of the drowned colosseum.
+// ============================================================================
+// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
+// and a speed nothing that big should have. Three phases:
+//   1. THE ANCIENT PREDATOR (100-65%) — circles, charges, punishes greed.
+//      Gimmick: the longer you tread water, the more aggressive it gets.
+//   2. BLOOD FRENZY (65-30%) — cracked hide, burning eyes, chained dashes,
+//      whirlpool spins and tooth volleys. Gimmick: turbulent currents drag
+//      you off your footing — dodge, don't outrun.
+//   3. APEX OF THE ANCIENT SEA (30-0%) — vanishing execution charges,
+//      depth-erupting leaps, suction bites and the Extinction Hunt combo,
+//      which leaves it EXHAUSTED: a real damage window for anyone who
+//      survives the whole chain.
+// The combat surface (headTargets / takeDamage / update / render /
+// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
+// exactly, so the game loop, boss panel, save-HP banking and every QA hook
+// keep working untouched. `kind` stays 'kraken' for save compatibility.
+class Megalodon {
   constructor(x, y, game) {
     this.kind = 'kraken';
-    this.name = 'ABYSSAL KRAKEN';
+    this.name = 'MEGALODON · THE ANCIENT PREDATOR';
     this.x = x;
     this.y = y;
-    this.width = 360;
-    this.height = 250;
-    this.maxHp = 110000;
-    this.hp = 110000;
+    // A long torpedo body, not a tall mantle: 420x200 reads as "shark" at
+    // every zoom and leaves the jaws the biggest single feature.
+    this.width = 420;
+    this.height = 200;
+    this.maxHp = 180000;
+    this.hp = 180000;
     this.phase = 1;
     this.dead = false;
     this.game = game;
-    this.lightRadius = 270;
-    this.glowRadius = 150;
-    this.lightColor = [168, 85, 247];
+    this.lightRadius = 300;
+    this.glowRadius = 160;
+    this.lightColor = [110, 170, 220];
     this.animT = 0;
-    this.attackTimer = 2.3;
-    /** Armed telegraphed skill: { type, x, y, radius, timer, total } */
+    this.attackTimer = 2.6;
+    /** Armed telegraphed skill: { type, x, y, radius, timer, total, ... } */
     this.pending = null;
     this.hitFlash = 0;
 
-    // ---- Whole-body motion state --------------------------------------
-    // The kraken is not a sprite that slides around: its mantle, head and
-    // limbs are all driven by recorded velocity, a bob/sway field and a
-    // follow-the-leader limb chain. vx/vy is the measured per-frame drift,
-    // which lets the limbs trail behind the mantle and the mantle lean into
-    // the swim; bob/sway carry the whole silhouette so it undulates as one.
+    // ---- Whole-body motion (same field set the old leviathan used, so the
+    // render springs and the QA harness stay valid) -----------------------
     this.vx = 0;
     this.vy = 0;
-    this.bob = 0;            // vertical breath/buoyancy offset of the mantle
-    this.sway = 0;           // horizontal swim sway of the mantle
-    this.lean = 0;           // mantle tilt driven by horizontal speed
-    this.surge = 0;          // jet-propulsion pulse (0..1) when it lunges
-    this.faceDir = 1;        // 1 = facing right, -1 = facing left
-    // ---- Hide-and-lash: it sinks its whole mantle to a shadow and whips
-    // out its ten limbs from ambush. hidden fades the body out; the lash
-    // runs the strike itself. Both are timed so the fight keeps a rhythm.
-    this.hidden = false;
-    this.hideT = 0;          // seconds remaining in the current hide cycle
-    this.hideAlpha = 1;      // 1 = fully visible, 0 = fully hidden (smooth)
-    this.lashTimer = 0;      // seconds remaining in the strike burst
-    this.lashPhase = 0;      // 0..1 eased punch of the lash
-    this.hideCooldown = 6;   // counts down to the next hide
-    this.inkPools = [];      // dark stains the boss leaves on the seabed
-    this.skillGlow = 0;      // eye flash + limb pulse when a skill fires
-    this.phaseFlash = 0;     // whole-silhouette flare on a phase step
+    this.bob = 0;
+    this.sway = 0;
+    this.lean = 0;
+    this.surge = 0;
+    this.faceDir = -1;        // sharks lead with the nose; hunt left-ward at spawn
+    this.pitch = 0;
+    this.skew = 0;
+    this.pulse = 0;
+    this.pulseCd = 0;
+    this.squash = 0;
+    this.squashV = 0;
+    this.recoil = 0;
+    this.recoilV = 0;
+    this.lunge = 0;
+    this.breath = 1;
+    this.swimPhase = 0;
+
+    // ---- Shark-specific state -------------------------------------------
+    this.jawOpen = 0;         // 0 closed .. 1 unhinged
+    this.jawTarget = 0;
+    this.tailSwing = 0;       // caudal sweep, driven by speed + swim cycle
+    this.circleAng = Math.random() * Math.PI * 2;
+    this.circleDir = Math.random() < 0.5 ? -1 : 1;
+    this.circleBurst = 0;     // hunting-circle acceleration window
+    this.dash = null;         // active charge: { vx, vy, t, dmg, kind, hit }
+    this.rushLeft = 0;        // frenzy-rush combo counter
+    this.vanishT = 0;         // apex execution: submerged ghost before the hit
+    this.apexLane = null;     // { x0, y0, x1, y1 } warning stripe
+    this.depthDive = 0;       // depth-charge: seconds until it erupts
+    this.tornadoT = 0;        // sharknado spin timer
+    this.suctionT = 0;        // devouring maw pull timer
+    this.hunt = null;         // extinction-hunt step scheduler
+    this.exhaustT = 0;        // post-hunt damage window
+    this.frenzy = 0;          // feeding-frenzy stacks (phase 2+)
+    this.frenzyT = 0;
+    this.waterT = 0;          // seconds the player has been treading water
+    this.currentT = 5;        // phase-2 turbulent-current pulse timer
+    this.currentPull = 0;     // seconds left of the current's drag on you
+    this.skillGlow = 0;
+    this.phaseFlash = 0;
+    /** Blood-cloud stains left on the arena floor by slammed attacks. */
+    this.stainPools = [];
   }
 
   /**
-   * Hittable points: the glowing eye (weakpoint, `eye: true`) and three
-   * armoured mantle nodes (`body: true`). Tentacle roots are decorative —
-   * swings along the skirt still land on a mantle node, so melee never
-   * whiffs against a body that visually fills the arc.
+   * Hittable points along the horizontal body: the eye/jaw (weakpoint,
+   * `eye: true`) at the nose, and three armoured flank/tail nodes
+   * (`body: true`). The nodes track the live swim offsets so a hit that
+   * visually connects always actually lands.
    */
   headTargets() {
-    // The nodes track the body's live swim offsets (bob/sway/lean) so a hit
-    // that visually connects is always a hit that actually lands.
-    // Node heights are keyed to the render's own geometry: the head (and the
-    // glowing eye) at 0.60 of the height, and two armoured mantle nodes up the
-    // tall cone at 0.30 and 0.18, plus one low body node at the crown of arms.
-    const cx = this.x + this.width * 0.5 + this.sway + this.lean * 40;
-    const bob = this.bob + Math.sin(this.animT * 2) * 4;
+    const cx = this.x + this.width * 0.5 + this.sway;
+    const cy = this.y + this.height * 0.5 + this.bob;
+    const f = this.faceDir || 1;
+    const jaw = this.jawOpen * 18;
     return [
-      { x: cx, y: this.y + this.height * 0.60 + bob, r: 30, head: true, eye: true, index: 0 },
-      { x: cx - 46, y: this.y + this.height * 0.30 + bob * 0.6, r: 46, body: true, index: 1 },
-      { x: cx + 46, y: this.y + this.height * 0.30 + bob * 0.6, r: 46, body: true, index: 2 },
-      { x: cx, y: this.y + this.height * 0.76 + bob * 0.3, r: 54, body: true, index: 3 }
+      // The eye, just above the jaw hinge — aim here.
+      { x: cx + f * this.width * 0.31, y: cy - this.height * 0.16 + jaw * 0.3,
+        r: 26, head: true, eye: true, index: 0 },
+      // Shoulder / gill mass behind the head.
+      { x: cx + f * this.width * 0.10, y: cy - this.height * 0.04,
+        r: 46, body: true, index: 1 },
+      // Mid-flank.
+      { x: cx - f * this.width * 0.13, y: cy + this.height * 0.02,
+        r: 48, body: true, index: 2 },
+      // Caudal peduncle — still armoured, but you must reach past the tail.
+      { x: cx - f * this.width * 0.33, y: cy + this.height * 0.04
+          + this.tailSwing * 0.25, r: 40, body: true, index: 3 }
     ];
+  }
+
+
+  takeDamage(amount, sound, particles, critical = false) {
+    if (this.dead) return 0;
+    const damage = Math.max(1, Math.round(amount));
+    this.hp = Math.max(0, this.hp - damage);
+    this.hitFlash = 0.2;
+    if (sound) sound.playHit();
+    if (particles) {
+      particles.addDamageText(this.x + this.width / 2, this.y, damage,
+        critical ? '#fef08a' : '#bae6fd', critical);
+      // Blood spray in the water, not violet magic.
+      particles.bloodBurst(this.x + this.width / 2, this.y + this.height / 2, 5);
+    }
+    // Three phases: the thresholds sit where the gimmicks take over.
+    const phase = this.hp <= this.maxHp * 0.30 ? 3
+      : this.hp <= this.maxHp * 0.65 ? 2 : 1;
+    if (phase > this.phase) {
+      this.phase = phase;
+      this.name = phase === 3 ? 'MEGALODON · APEX OF THE ANCIENT SEA'
+        : phase === 2 ? 'MEGALODON · BLOOD FRENZY'
+          : 'MEGALODON · THE ANCIENT PREDATOR';
+      if (sound) sound.playBossRoar();
+      if (this.game && this.game.feel) this.game.feel.shake(1.1);
+      // A phase step is a story beat: it rears, the scars split open, and
+      // the whole silhouette flares.
+      this.phaseFlash = 1.7;
+      this.skillGlow = Math.max(this.skillGlow || 0, 1.3);
+      // Blood Frenzy opens with a live feeding-frenzy stack already running.
+      if (phase >= 2) { this.frenzy = Math.max(this.frenzy, 1); this.frenzyT = 8; }
+      // Apex phase begins with a roar that hangs it in the water for a beat.
+      if (phase === 3) { this.jawTarget = 1; this.attackTimer = Math.max(this.attackTimer, 1.6); }
+    }
+    if (this.hp <= 0) {
+      this.dead = true;
+      if (sound) sound.playExplosion();
+      if (particles) {
+        particles.bloodBurst(this.x + this.width / 2, this.y + this.height / 2, 60);
+        particles.magicSparkle(this.x + this.width / 2, this.y, '#7dd3fc', 80);
+      }
+    }
+    return damage;
+  }
+
+  overlapsPlayer(player) {
+    // A vanished megalodon (apex execution) is a ghost in the water: it
+    // cannot body-check you — the lane charge does the hurting.
+    if (this.vanishT > 0) return false;
+    const cx = this.x + this.width / 2 + this.sway;
+    const cy = this.y + this.height / 2 + this.bob;
+    // The body is long but slim: the hitbox hugs the torso, not the fins.
+    return Math.abs(player.x + player.width / 2 - cx) < (player.width + this.width * 0.82) / 2 &&
+      Math.abs(player.y + player.height / 2 - cy) < (player.height + this.height * 0.66) / 2;
+  }
+
+  touchDamage() {
+    if (this.vanishT > 0) return 0;
+    const base = [0, 42, 60, 82][this.phase] || 42;
+    // Feeding frenzy makes every bump hurt more.
+    return Math.round(base * (1 + this.frenzy * 0.06));
+  }
+
+  /** Seconds of aggression pressure built from the player treading water. */
+  waterAggression() {
+    if (this.phase !== 1) return 1.35; // later phases never let the pressure off
+    return 1 + Math.min(1, this.waterT / 25) * 0.7;
+  }
+
+  /** Start a straight-line charge. The dash is the Megalodon's whole game. */
+  startDash(vx, vy, dur, dmg, kind) {
+    this.dash = { vx, vy, t: dur, dur, dmg, kind, hit: false };
+    this.jawTarget = kind === 'maw' ? 1 : 0.55;
+    this.pulse = 1;
+    this.surge = 1;
+  }
+
+  /** Blood-cloud stain on the arena floor where a heavy attack slammed down. */
+  addStain(x, y, r) {
+    this.stainPools.push({ x, y, r, t: 0, life: 7 + this.phase * 2, peak: 0.5 });
+    // Cap the record so a long fight cannot grow the array forever.
+    if (this.stainPools.length > 24) this.stainPools.shift();
   }
 
   hitTargets() { return this.headTargets(); }
@@ -2012,65 +2360,12 @@ class Kraken {
   }
 
   scaleDamageFor(target, damage) {
-    // The eye is the whole fight: it eats 1.4x. The armoured mantle shrugs
-    // off a third of everything (0.65x). Aiming at the glow is rewarded;
-    // flailing at the body grinds through 110k HP the slow way.
+    // The eye is the whole fight: it eats 1.4x. The armoured flank shrugs
+    // off a third (0.65x). And while it hangs exhausted after the Extinction
+    // Hunt, everything lands 1.5x harder — the reward for surviving the combo.
     const mult = target && target.eye ? 1.4 : target && target.body ? 0.65 : 1;
-    return Math.max(1, Math.round(damage * mult));
-  }
-
-  takeDamage(amount, sound, particles, critical = false) {
-    if (this.dead) return 0;
-    const damage = Math.max(1, Math.round(amount));
-    this.hp = Math.max(0, this.hp - damage);
-    this.hitFlash = 0.2;
-    if (sound) sound.playHit();
-    if (particles) {
-      particles.addDamageText(this.x + this.width / 2, this.y, damage,
-        critical ? '#fef08a' : '#d8b4fe', critical);
-      particles.magicSparkle(this.x + this.width / 2, this.y + this.height / 2, '#a855f7', 5);
-    }
-    // Four phases, each a genuine power step rather than a colour swap.
-    // The thresholds are tight at the bottom: the last 15% is the "final ink"
-    // rage where every skill maxes out and the beast fights to the death.
-    const phase = this.hp <= this.maxHp * 0.15 ? 4
-      : this.hp <= this.maxHp * 0.35 ? 3
-      : this.hp <= this.maxHp * 0.60 ? 2 : 1;
-    if (phase > this.phase) {
-      this.phase = phase;
-      this.name = phase === 4 ? 'WOUNDED KRAKEN · FINAL INK'
-        : phase === 3 ? 'WOUNDED KRAKEN · LAST INK'
-        : phase === 2 ? 'ENRAGED KRAKEN · INK STORM'
-        : 'ABYSSAL KRAKEN';
-      if (sound) sound.playBossRoar();
-      if (this.game && this.game.feel) this.game.feel.shake(1.0);
-      // A phase step is a story beat: the mantle flares, the limbs fan out,
-      // and the whole arena's lighting shifts to the new phase's colour.
-      this.phaseFlash = 1.6;
-      this.skillGlow = Math.max(this.skillGlow || 0, 1.2);
-    }
-    if (this.hp <= 0) {
-      this.dead = true;
-      if (sound) sound.playExplosion();
-      if (particles) particles.magicSparkle(this.x + this.width / 2, this.y, '#a855f7', 100);
-    }
-    return damage;
-  }
-
-  overlapsPlayer(player) {
-    // A hidden kraken cannot body-check you — it is a shadow on the seabed,
-    // not a wall. Only when it is surfaced does the mantle crush.
-    if (this.hideAlpha < 0.4) return false;
-    const cx = this.x + this.width / 2 + this.sway;
-    const cy = this.y + this.height / 2;
-    return Math.abs(player.x + player.width / 2 - cx) < (player.width + this.width) / 2 &&
-      Math.abs(player.y + player.height / 2 - cy) < (player.height + this.height) / 2;
-  }
-
-  touchDamage() {
-    // A hidden kraken deals no contact damage; the lash does the hurting.
-    if (this.hideAlpha < 0.4) return 0;
-    return [0, 38, 55, 72][this.phase];
+    const exhaust = this.exhaustT > 0 ? 1.5 : 1;
+    return Math.max(1, Math.round(damage * mult * exhaust));
   }
 
   update(dt, target, projectiles, sound, particles) {
@@ -2078,1660 +2373,1377 @@ class Kraken {
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     this.skillGlow = Math.max(0, this.skillGlow - dt * 2);
     this.phaseFlash = Math.max(0, this.phaseFlash - dt * 1.2);
+    this.exhaustT = Math.max(0, this.exhaustT - dt);
+    this.vanishT = Math.max(0, this.vanishT - dt);
+    this.circleBurst = Math.max(0, this.circleBurst - dt);
+    this.tornadoT = Math.max(0, this.tornadoT - dt);
+    this.depthDive = Math.max(0, this.depthDive - dt);
+    if (this.exhaustT > 0) this.jawTarget = 0.6; else this.jawTarget *= Math.pow(0.05, dt);
 
-    // ---- The Kraken stalks you across the sea, smoothly -----------------
-    // A leviathan that parked off-screen and never moved was the whole reason
-    // the fight felt broken. It now accelerates toward the player with real
-    // inertia — thrust toward a hover point, then water drag — so it glides and
-    // leans into its turns like something heavy swimming, instead of snapping
-    // along a straight line. A lazy swim-cycle bob keeps it alive at range.
-    // Every phase is a real power step: the power ladder rises sharply, so
-    // phase 4 is a completely different beast from phase 1 — not the same
-    // numbers in a different colour.
     const ph = this.phase;
-    // PHASE LADDER — every phase is a full level up, not a colour swap. Each of
-    // the four phases multiplies power, damage and aggression hard, so by the
-    // FINAL INK the same skill is a completely different, screen-filling spell.
-    const power = 1 + (ph - 1) * 1.7;      // 1.0 → 6.1 size/impact scale
-    const dmgMul = 1 + (ph - 1) * 1.5;     // 1.0 → 5.5 damage ladder
-    const atkMul = 1 + (ph - 1) * 0.85;    // 1.0 → 3.55 attack-rate ladder
+    // Phase ladders: 1.0 -> 2.1 speed, 1.0 -> 2.3 damage, 1.0 -> 1.9 rate.
+    const power = 1 + (ph - 1) * 0.55;
+    const dmgMul = 1 + (ph - 1) * 0.65;
+    const atkMul = (1 + (ph - 1) * 0.45) * this.waterAggression();
+
+    // ---- Feeding frenzy: landing hits makes it faster and meaner ---------
+    if (this.frenzyT > 0) {
+      this.frenzyT -= dt;
+      if (this.frenzyT <= 0) { this.frenzy = Math.max(0, this.frenzy - 1); this.frenzyT = this.frenzy > 0 ? 6 : 0; }
+    }
+    const frenzyMul = 1 + this.frenzy * 0.08;
+
+    // ---- Phase 1 gimmick: the water-logged player feeds its aggression ---
+    // While you tread water (below the surface), the hunt pressure climbs;
+    // get to the arena floor or the surface and it eases off.
     if (target && !this.dead) {
       const world = this.game && this.game.world;
-      const pcx = target.x + target.width / 2;
+      const seaY = (world && world.oceanArena ? world.oceanArena.seaY : 12) * TILE_SIZE;
       const pcy = target.y + target.height / 2;
-      const ccx = this.x + this.width / 2;
-      const ccy = this.y + this.height * 0.45;
+      if (pcy > seaY + TILE_SIZE * 2) this.waterT = Math.min(25, this.waterT + dt);
+      else this.waterT = Math.max(0, this.waterT - dt * 2);
+    }
 
-      // Desired hover point: hold station a little off the player, orbiting
-      // slowly so it never sits perfectly still. The orbit radius grows with
-      // phase so later phases loom from further out.
-      const orbit = (240 + ph * 55) * power;
-      const orbitAng = this.animT * 0.3 * atkMul;
-      const goalX = pcx + Math.cos(orbitAng) * orbit;
-      const goalY = pcy + Math.sin(orbitAng * 0.7) * orbit * 0.5 - 20;
-
-      // Steering: accelerate toward the goal, capped by a max speed that rises
-      // with phase. This is thrust, not teleport-on-a-line.
-      const dx = goalX - ccx;
-      const dy = goalY - ccy;
-      const dist = Math.hypot(dx, dy) || 1;
-      const maxSpeed = (120 + ph * 55) * power;
-      // Ease the thrust off as it arrives, so it settles instead of overshooting.
-      const arrive = Math.min(1, dist / 160);
-      const ax = (dx / dist) * maxSpeed * arrive;
-      const ay = (dy / dist) * maxSpeed * arrive;
-      // Velocity integrates thrust, then drag bleeds it off (frame-rate safe).
-      // pvx/pvy (captured before the push) let the body language below detect
-      // turn beats — sharp direction changes the render spends as pulses.
-      const pvx = this.vx || 0, pvy = this.vy || 0;
-      this.vx = (this.vx || 0) + ax * dt;
-      this.vy = (this.vy || 0) + ay * dt;
-      const drag = Math.pow(0.12, dt); // strong water drag
-      this.vx *= drag;
-      this.vy *= drag;
-      this.x += this.vx * dt;
-      this.y += this.vy * dt;
-
-      // Lean into the direction of travel — a heavy body banks as it turns.
-      this.lean = (this.lean || 0) + ((this.vx / (maxSpeed * 2)) - (this.lean || 0)) * Math.min(1, dt * 4);
-      // Dive/climb pitch: climbing noses the mantle up, diving noses it down.
-      const pitchTarget = Math.max(-0.5, Math.min(0.5, (this.vy || 0) / (maxSpeed * 1.6)));
-      this.pitch = (this.pitch || 0) + (pitchTarget - (this.pitch || 0)) * Math.min(1, dt * 3.2);
-      // Yaw skew: horizontal bursts shear the silhouette sideways for a beat.
-      this.skew = (this.skew || 0) * Math.pow(0.02, dt) +
-        Math.max(-1, Math.min(1, ((this.vx || 0) - pvx) / Math.max(1, maxSpeed * dt * 8))) * 0.12;
-      this.skew = Math.max(-0.35, Math.min(0.35, this.skew || 0));
-      // Turn beat: a sharp direction change fires a squash pulse. Cools down
-      // so it stays punchy instead of rattling every frame.
-      this.pulse = Math.max(0, (this.pulse || 0) - dt * 2.2);
-      this.pulseCd = Math.max(0, (this.pulseCd || 0) - dt);
-      if (Math.hypot((this.vx || 0) - pvx, (this.vy || 0) - pvy) > maxSpeed * 0.55 &&
-          (this.pulseCd || 0) <= 0) {
-        this.pulse = 1;
-        this.pulseCd = 0.9;
+    // ---- Phase 2 gimmick: turbulent currents -----------------------------
+    // Periodic sideways surges drag you toward the Megalodon's side of the
+    // arena. The water itself is fighting you; footwork beats top speed.
+    if (ph >= 2 && !this.dead) {
+      this.currentT -= dt * (ph === 3 ? 1.4 : 1);
+      if (this.currentT <= 0) {
+        this.currentT = 5 + Math.random() * 3;
+        this.currentPull = 1.6;
+        if (this.game && this.game.feel) this.game.feel.shake(0.25);
+        if (sound) sound.playBossLaser();
       }
-
-      // A slow vertical swim cycle so it undulates even while holding station.
-      this.y += Math.sin(this.animT * 1.1) * 10 * dt;
-      // Facing follows the swim direction, so the head and its long arms
-      // always lead the way instead of the boss sliding backwards.
-      if (Math.abs(pcx - ccx) > 14) this.faceDir = pcx >= ccx ? 1 : -1;
-      if (world) {
-        this.x = Math.max(0, Math.min(world.pixelWidth - this.width, this.x));
-        // A kraken is a sea creature, not a balloon: keep the body in the
-        // water. The mantle top must stay at-or-below the waterline (a small
-        // crown breach is allowed) and the skirt must stay above the floor.
-        const seaTop = (world.oceanArena ? world.oceanArena.seaY : 12) * TILE_SIZE;
-        const floorTop = world.pixelHeight || world.height * TILE_SIZE;
-        this.y = Math.max(seaTop - this.height * 0.10,
-          Math.min(floorTop - this.height * 1.25, this.y));
+      if (this.currentPull > 0) {
+        this.currentPull -= dt;
+        if (target) {
+          const dx = (this.x + this.width / 2) - (target.x + target.width / 2);
+          const dy = (this.y + this.height / 2) - (target.y + target.height / 2);
+          const d = Math.hypot(dx, dy) || 1;
+          const pull = 95 * dt * power;
+          target.x += (dx / d) * pull;
+          target.y += (dy / d) * pull * 0.6;
+        }
       }
     }
 
-    // ---- Whole-body motion --------------------------------------------
-    // Every part of the body hangs off these fields, so the kraken is never
-    // a static PNG: the mantle breathes, sways, pitches with its dives,
-    // skews with its turns, and SQUASHES through every surge — and the limbs
-    // (drawn from the same fields) trail behind. The chain:
-    //   pulse → squash spring: a turn beat briefly compresses the mantle
-    //     vertically and widens it, then releases with an overshoot bounce.
-    //   breath: slow inhale/exhale scaling the whole body ±4%.
-    //   swimPhase: a travelling wave down the body's length — the spine
-    //     ripples and the arms follow late, never all at once.
-    const breathRate = (1.15 + ph * 0.12) * atkMul;
-    this.bob = Math.sin(this.animT * breathRate) * (10 + ph * 2) * power
+    // ---- Extinction Hunt scheduler (phase 3 combo) -----------------------
+    // A chain of dashes, a tail sweep, then one final bite — and when the
+    // chain finishes the beast hangs spent in the water: EXHAUSTED.
+    if (this.hunt) {
+      this.hunt.t += dt;
+      for (const step of this.hunt.steps) {
+        if (!step.done && this.hunt.t >= step.at) {
+          step.done = true;
+          if (step.act === 'dash') {
+            const a = Math.atan2(
+              (target ? target.y + target.height / 2 : this.y) - (this.y + this.height / 2),
+              (target ? target.x + target.width / 2 : this.x) - (this.x + this.width / 2));
+            this.startDash(Math.cos(a) * 1500 * power, Math.sin(a) * 1500 * power,
+              0.5, (120 + ph * 30) * dmgMul, 'hunt_dash');
+            if (sound) sound.playBossRoar();
+          } else if (step.act === 'sweep') {
+            this.pending = {
+              type: 'tail_sweep', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+              radius: 260 * power, angle: this.faceDir > 0 ? 0 : Math.PI,
+              timer: 0.35, total: 0.35
+            };
+          } else if (step.act === 'bite') {
+            this.pending = {
+              type: 'extinction_bite', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+              radius: 200 * power, timer: 0.45, total: 0.45,
+              target: { x: target ? target.x : this.x, y: target ? target.y : this.y }
+            };
+          }
+        }
+      }
+      if (this.hunt.t >= this.hunt.dur && !this.pending && !this.dash) {
+        this.hunt = null;
+        // The damage window: it hangs, jaws slack, gills fluttering.
+        this.exhaustT = 3.4;
+        this.jawTarget = 0.65;
+        this.vx *= 0.1; this.vy *= 0.1;
+        if (sound) sound.playBossRoar();
+        if (particles) {
+          particles.addParticle(this.x + this.width / 2, this.y + this.height * 0.3,
+            0, -2, 'rgba(255, 255, 255, 0.55)', 3, 1.6, -0.02, true);
+        }
+      }
+    }
+
+    // ---- Frenzy-rush chaining (phase 2): three dashes, alternating sides -
+    if (this.rushLeft > 0 && !this.pending && !this.dash && !this.hunt) {
+      this.rushLeft--;
+      const pcx = target ? target.x + target.width / 2 : this.x;
+      const pcy = target ? target.y + target.height / 2 : this.y;
+      // Come in from above/below alternately so you must switch your dodge.
+      const side = this.rushLeft % 2 === 0 ? -1 : 1;
+      const fromX = pcx + side * 520 * power;
+      const fromY = pcy + side * -160;
+      this.x = Math.max(this.x - 600, Math.min(this.x + 600, fromX - this.width / 2));
+      this.y = Math.max(this.y - 300, Math.min(this.y + 300, fromY - this.height / 2));
+      const a = Math.atan2(pcy - (this.y + this.height / 2), pcx - (this.x + this.width / 2));
+      this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
+      this.startDash(Math.cos(a) * 1400 * power, Math.sin(a) * 1400 * power,
+        0.45, (95 + ph * 25) * dmgMul, 'frenzy');
+      if (sound) sound.playHit();
+    }
+
+
+    // ---- Movement: dash > spin > circle > exhausted ----------------------
+    const pvxBefore = this.vx || 0;
+    if (!this.dead) {
+      if (this.dash) {
+        // Full commitment: the charge travels in a straight, unstoppable line.
+        const d = this.dash;
+        d.t -= dt;
+        this.x += d.vx * dt;
+        this.y += d.vy * dt;
+        this.faceDir = d.vx >= 0 ? 1 : -1;
+        this.pitch = Math.max(-0.5, Math.min(0.5, d.vy / 1400));
+        // Water spray off the flanks while it charges.
+        if (particles && Math.random() < 0.55) {
+          particles.addParticle(this.x + this.width * 0.5 - this.faceDir * this.width * 0.3,
+            this.y + this.height * 0.5,
+            -d.vx * 0.05 + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3,
+            'rgba(186, 230, 253, 0.5)', 2.6, 0.4, 0, true);
+        }
+        // One bite per charge: contact while the jaws are open.
+        if (!d.hit && this.jawOpen > 0.3 && target && this.overlapsPlayer(target)) {
+          d.hit = true;
+          this.game.damagePlayer(Math.round(d.dmg), this.x + this.width / 2,
+            'The Megalodon’s jaws closed around you!', true, this.y + this.height / 2);
+          this.frenzy = Math.min(6, this.frenzy + 1);
+          this.frenzyT = 6;
+          if (this.game && this.game.feel) this.game.feel.shake(0.8);
+          if (sound) sound.playHit();
+        }
+        if (d.t <= 0) {
+          this.dash = null;
+          this.recoilV += 7;
+          // The charge ends in a hard turn back toward the hunt.
+          this.circleDir *= -1;
+        }
+      } else if (this.tornadoT > 0) {
+        // SHARKNADO: spin in place, hauling the player toward the teeth.
+        const pcx = target ? target.x + target.width / 2 : this.x;
+        const pcy = target ? target.y + target.height / 2 : this.y;
+        this.y += Math.sin(this.animT * 6) * 120 * dt;
+        if (target) {
+          const dx = pcx - (this.x + this.width / 2);
+          const dy = pcy - (this.y + this.height / 2);
+          const dist = Math.hypot(dx, dy) || 1;
+          if (dist < 560) {
+            const pull = 320 * dt * power;
+            target.x += (dx / dist) * pull;
+            target.y += (dy / dist) * pull * 0.75;
+          }
+          // Grazing the vortex hurts on a cooldown, not every frame.
+          this._spinTick = (this._spinTick || 0) + dt;
+          if (dist < 150 * power && this._spinTick > 0.7) {
+            this._spinTick = 0;
+            this.game.damagePlayer(Math.round((70 + ph * 20) * dmgMul), this.x + this.width / 2,
+              'The current dragged you into the Megalodon’s spin!', true, this.y + this.height / 2);
+            this.frenzy = Math.min(6, this.frenzy + 1);
+            this.frenzyT = 6;
+          }
+        }
+        if (particles && Math.random() < 0.8) {
+          const a = this.animT * 9;
+          particles.addParticle(this.x + this.width / 2 + Math.cos(a) * 130,
+            this.y + this.height / 2 + Math.sin(a) * 70,
+            -Math.sin(a) * 26, Math.cos(a) * 14,
+            'rgba(125, 211, 252, 0.5)', 3, 0.5, 0, true);
+        }
+      } else if (this.depthDive > 0) {
+
+        // DEPTH CHARGE: it sinks under you, invisible, then erupts upward.
+        if (target) {
+          const gx = target.x + target.width / 2 - this.width / 2;
+          const gy = target.y + target.height / 2 + 300;
+          this.x += (gx - this.x) * Math.min(1, dt * 6);
+          this.y += (gy - this.y) * Math.min(1, dt * 6);
+        }
+        if (this.depthDive <= dt + 0.001) {
+          // Erupt! Straight up through the player's column.
+          this.startDash(0, -2100 * power, 0.55, (130 + ph * 32) * dmgMul, 'erupt');
+          this.jawTarget = 1;
+          this.addStain(this.x + this.width / 2, this.y + this.height, 90 * power);
+          this.skillFX(particles, this.x + this.width / 2, this.y + this.height * 0.4, 'erupt', {});
+          if (this.game && this.game.feel) this.game.feel.shake(1.0);
+          if (sound) sound.playExplosion();
+        }
+      } else if (this.exhaustT > 0) {
+        // EXHAUSTED: it hangs in the water, trembling, gills fluttering.
+        this.x += Math.sin(this.animT * 2.3) * 30 * dt;
+        this.y += Math.cos(this.animT * 1.9) * 24 * dt;
+        if (particles && Math.random() < 0.25) {
+          particles.addParticle(this.x + this.width * 0.5 + (Math.random() - 0.5) * this.width * 0.5,
+            this.y + this.height * 0.3, 0, -1.5,
+            'rgba(255, 255, 255, 0.4)', 2, 1.2, -0.01, true);
+        }
+      } else {
+        // THE HUNTING CIRCLE: it stalks a lazy orbit around you, then the
+        // burst flag flips the orbit direction and launches a charge.
+        const pcx = target ? target.x + target.width / 2 : this.x + this.width / 2;
+        const ccx = this.x + this.width / 2;
+        // Orbit speed climbs with phase and the water-pressure gimmick.
+        this.circleAng += this.circleDir * (0.55 + ph * 0.12) * atkMul * frenzyMul * dt;
+        const radius = (330 - ph * 26) * (this.circleBurst > 0 ? 0.55 : 1);
+        const goalX = pcx + Math.cos(this.circleAng) * radius;
+        const goalY = (target ? target.y + target.height / 2 : this.y) +
+          Math.sin(this.circleAng) * radius * 0.45 - 10;
+        const dx = goalX - ccx;
+        const dy = goalY - (this.y + this.height / 2);
+        const dist = Math.hypot(dx, dy) || 1;
+        const maxSpeed = (300 + ph * 80) * power * frenzyMul * (this.circleBurst > 0 ? 2.2 : 1);
+        const arrive = Math.min(1, dist / 140);
+        const pvx = this.vx || 0;
+        this.vx = (this.vx || 0) + (dx / dist) * maxSpeed * arrive * dt * 3.2;
+        this.vy = (this.vy || 0) + (dy / dist) * maxSpeed * arrive * dt * 3.2;
+        const drag = Math.pow(0.06, dt);
+        this.vx *= drag;
+        this.vy *= drag;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        // Faces the player between bursts; faces the charge during one.
+        if (Math.abs(pcx - ccx) > 14) this.faceDir = pcx >= ccx ? 1 : -1;
+        this.pitch = Math.max(-0.4, Math.min(0.4, (this.vy || 0) / 900));
+      }
+    }
+
+    // ---- Arena bounds: it lives in the colosseum bowl, water or no water --
+    if (this.game && this.game.world) {
+      const world = this.game.world;
+      const seaTop = (world.oceanArena ? world.oceanArena.seaY : 12) * TILE_SIZE;
+      this.x = Math.max(TILE_SIZE, Math.min(world.pixelWidth - this.width - TILE_SIZE, this.x));
+      this.y = Math.max(seaTop - this.height * 0.18,
+        Math.min((world.pixelHeight || world.height * TILE_SIZE) - this.height * 1.1, this.y));
+    }
+
+    // ---- Whole-body motion springs --------------------------------------
+    const speedNow = Math.hypot(this.vx || 0, this.vy || 0);
+    const breathRate = (1.2 + ph * 0.14) * atkMul;
+    this.bob = Math.sin(this.animT * breathRate) * (8 + ph * 2) * power
       + Math.sin(this.animT * 2.7 + 1.3) * 3 * power;
-    this.sway = Math.cos(this.animT * breathRate * 0.7) * (12 + ph * 3) * power
-      + Math.sin(this.animT * 0.9) * 5 * power;
-    this.squashV = this.squashV || 0;
-    this.squash = this.squash || 0;
-    // ATTACK ANTICIPATION — while a telegraphed skill winds up, the whole body
-    // COILS: it leans back away from the target and compresses, the way a
-    // spring loads before it snaps. chargePose ramps 0→1 as the tell fills and
-    // is spent by the recoil the instant the skill resolves. This is what ties
-    // the movement to the attacks so the two can never feel disconnected.
+    this.sway = Math.cos(this.animT * breathRate * 0.7) * (10 + ph * 3) * power;
+    this.lean = (this.lean || 0) + (((this.vx || 0) / 900) - (this.lean || 0)) * Math.min(1, dt * 4);
+    this.skew = Math.max(-0.3, Math.min(0.3,
+      ((this.vx || 0) - pvxBefore) * 0.0006 + (this.skew || 0) * Math.pow(0.02, dt)));
+    this.pulse = Math.max(0, (this.pulse || 0) - dt * 2.2);
+    this.pulseCd = Math.max(0, (this.pulseCd || 0) - dt);
+    if (speedNow > 500 && (this.pulseCd || 0) <= 0) { this.pulse = 1; this.pulseCd = 0.8; }
+    // Squash spring: charges compress the body, the recoil releases it.
     let chargePose = 0;
     if (this.pending && this.pending.total) {
       chargePose = 1 - Math.max(0, this.pending.timer) / this.pending.total;
-      chargePose = chargePose * chargePose; // ease-in: slow load, sharp at the end
+      chargePose = chargePose * chargePose;
     }
-    this.chargePose = chargePose;
-    // RECOIL spring: a skill firing kicks it to 1, then it bounces back to 0.
     this.recoil = this.recoil || 0;
     this.recoilV = this.recoilV || 0;
     this.recoilV += ((0 - this.recoil) * 90 - this.recoilV * 9) * dt;
     this.recoil += this.recoilV * dt;
-    const squashTarget = (this.pulse || 0) * 0.55 + (this.lashTimer > 0 ? 0.3 : 0)
-      + chargePose * 0.35 - this.recoil * 0.4;
+    const squashTarget = (this.pulse || 0) * 0.4 + (this.dash ? 0.35 : 0)
+      + chargePose * 0.3 - this.recoil * 0.4;
     this.squashV += ((squashTarget - this.squash) * 26 - this.squashV * 7) * dt;
     this.squash += this.squashV * dt;
-    // The mantle dips forward on the recoil and pulls back on the charge, so
-    // the silhouette visibly lunges into each attack and settles after it.
-    this.lunge = (chargePose * 0.5 - this.recoil * 0.9);
-    this.breath = 1 + Math.sin(this.animT * breathRate * 0.5) * 0.035
-      + (this.lashTimer > 0 ? 0.03 : 0);
-    this.swimPhase = (this.swimPhase || 0) + dt * (2.2 + this.phase * 0.4 +
-      Math.min(2, Math.hypot(this.vx || 0, this.vy || 0) / 90));
-    // A jet pulse fires hardest while it is actually swimming somewhere.
-    const speedNow = Math.hypot(this.vx || 0, this.vy || 0);
-    const surgeTarget = Math.min(1, speedNow / 140) * 0.8 + (this.lashTimer > 0 ? 0.6 : 0.1);
-    this.surge += (surgeTarget - this.surge) * Math.min(1, dt * 3);
-    // Jet-spout particles: a real squid vents water/ink to thrust, so a
-    // pressurised plume vents from the apex while it is mid-swim. The hotter
-    // the surge, the blacker the ink in the jet.
-    if (this.surge > 0.45 && particles && Math.random() < 0.18) {
-      const cx = this.x + this.width * 0.5;
-      particles.addParticle(cx, this.y + this.height * 0.08,
-        (Math.random() - 0.5) * 3, -this.surge * 7 - 2,
-        this.surge > 0.75 ? 'rgba(124, 50, 94, 0.55)' : 'rgba(248, 250, 253, 0.45)',
-        2.5, 0.5, 0, true);
-    }
-    // Decay ink pools left on the seabed by slammed attacks.
-    for (let i = this.inkPools.length - 1; i >= 0; i--) {
-      const p = this.inkPools[i];
-      p.t += dt;
-      if (p.t > p.life) this.inkPools.splice(i, 1);
+    this.lunge = chargePose * 0.5 - this.recoil * 0.9;
+    this.breath = 1 + Math.sin(this.animT * breathRate * 0.5) * 0.03;
+    this.swimPhase = (this.swimPhase || 0) + dt * (3 + ph * 0.5 + Math.min(3, speedNow / 220));
+    const surgeTarget = Math.min(1, speedNow / 700) * 0.9 + (this.dash ? 0.6 : 0.05);
+    this.surge += (surgeTarget - this.surge) * Math.min(1, dt * 4);
+    // Tail sweeps hardest when swimming or spinning.
+    const tailRate = 2.4 + (this.dash ? 7 : this.tornadoT > 0 ? 10 : 0) + ph * 0.4;
+    this.tailSwing = Math.sin(this.swimPhase * tailRate * 0.45) * (14 + speedNow * 0.03);
+    // Jaws ease toward their target gape.
+    this.jawOpen += (this.jawTarget - this.jawOpen) * Math.min(1, dt * 7);
+
+    // ---- Stain decay ------------------------------------------------------
+    for (let i = this.stainPools.length - 1; i >= 0; i--) {
+      const s = this.stainPools[i];
+      s.t += dt;
+      if (s.t > s.life) this.stainPools.splice(i, 1);
     }
 
-    // ---- Hide-and-lash cycle ------------------------------------------
-    // The mythological kraken does not brawl in the open: it sinks into the
-    // dark, becomes a shadow, then erupts in a storm of arms. hideT runs
-    // the submerged phase, lashTimer the strike. The hide fades the mantle
-    // and immobilises the body; the lash snaps ten limbs out at the player.
-    if (!this.dead) {
-      const lashDuration = (1.0 + ph * 0.12) / atkMul;
-      if (this.lashTimer > 0) {
-        // Strike running: ease the lash punch up then down.
-        const k = 1 - this.lashTimer / lashDuration; // 0..1
-        this.lashPhase = Math.sin(Math.min(1, k) * Math.PI);
-        this.lashTimer -= dt;
-        this.hideAlpha += (1 - this.hideAlpha) * Math.min(1, dt * 6);
-        if (this.lashTimer <= 0) {
-          // The strike is spent: sink back to the shadows for the next one.
-          this.hidden = true;
-          this.hideT = Math.max(1.1, 2.0 - ph * 0.25) / atkMul;
-          this.hideCooldown = (5 + Math.random() * 4) / atkMul;
-          this.lashPhase = 0;
+
+    // ---- Wind up the armed telegraph; it resolves through resolvePending --
+    if (this.pending) {
+      this.pending.timer -= dt;
+      // DEVOURING MAW: the windup IS the suction — the water (and you) pour
+      // into the gape before the bite lands.
+      if (this.pending.type === 'devouring_maw' && target) {
+        const dx = (this.pending.x) - (target.x + target.width / 2);
+        const dy = (this.pending.y) - (target.y + target.height / 2);
+        const d = Math.hypot(dx, dy) || 1;
+        if (d < this.pending.radius * 1.3 && d > 6) {
+          const pull = 430 * dt * power;
+          target.x += (dx / d) * pull;
+          target.y += (dy / d) * pull * 0.7;
         }
-      } else if (this.hidden) {
-        // Submerged: fade the body out and hold still, then erupt.
-        this.hideT -= dt;
-        this.hideAlpha += (0.05 - this.hideAlpha) * Math.min(1, dt * 3);
-        if (this.hideT <= 0) {
-          this.hidden = false;
-          this.lashTimer = lashDuration;
-          this.lashPhase = 0;
-          if (sound) sound.playBossRoar();
-          if (particles) {
-            particles.magicSparkle(this.x + this.width / 2, this.y + this.height * 0.5, '#0e7490', 40);
-          }
-          // Every limb whips out as a hostile arm: a radial spray of globs.
-          if (projectiles && typeof Projectile === 'function') this.fireInkGlobs(target, projectiles);
-        }
-      } else {
-        // Surfaced: surface smoothly, and once the cooldown lapses dive again.
-        this.hideAlpha += (1 - this.hideAlpha) * Math.min(1, dt * 3);
-        this.hideCooldown -= dt;
-        if (this.hideCooldown <= 0 && !this.pending) {
-          this.hidden = true;
-          this.hideT = Math.max(1.1, 2.0 - ph * 0.25) / atkMul;
-        }
+        this.jawTarget = 1;
+      }
+      if (this.pending.timer <= 0) this.resolvePending(sound, particles);
+    }
+    // Apex warning lane burns down while it charges.
+    if (this.apexLane) {
+      this.apexLane.t = Math.max(0, (this.apexLane.t || 0) - dt);
+      if (this.apexLane.t <= 0 && (!this.pending || this.pending.type !== 'apex_execution')) {
+        this.apexLane = null;
       }
     }
 
-    // Wind up the armed telegraph; it resolves through resolvePending().
-    if (this.pending) {
-      this.pending.timer -= dt;
-      if (this.pending.timer <= 0) this.resolvePending(sound, particles);
-    }
-    // Attacks only fire while surfaced — a hidden kraken merely waits, which
-    // is what makes the ambush feel deliberate rather than random.
-    this.attackTimer -= dt;
-    if (this.attackTimer <= 0 && target && !this.pending && this.hideAlpha > 0.5) {
+    // ---- The hunt picks its next skill ------------------------------------
+    // No attacks while exhausted (that IS the damage window), while a combo
+    // chain is running, or while a dash already has the wheel.
+    this.attackTimer -= dt * atkMul * frenzyMul;
+    if (this.attackTimer <= 0 && target && !this.pending && !this.dash &&
+        !this.hunt && this.exhaustT <= 0 && this.vanishT <= 0 &&
+        this.tornadoT <= 0 && this.depthDive <= 0 && this.rushLeft === 0) {
       const px = target.x + target.width / 2;
       const py = target.y + target.height / 2;
       const roll = Math.random();
-      if (roll < 0.26) {
-        // INK BLINDNESS BURST — telegraphed circle on your position; caught
-        // inside means the debuff, not just damage. Dodge = counterplay.
-        this.pending = {
-          type: 'ink_burst', x: px, y: py,
-          radius: (130 + ph * 20) * power, timer: 0.95 / atkMul, total: 0.95 / atkMul
-        };
-      } else if (roll < 0.46) {
-        // TENTACLE SLAM — telegraphed circle, pure damage, no debuff.
-        this.pending = {
-          type: 'slam', x: px, y: py,
-          radius: (95 + ph * 15) * power, timer: 0.7 / atkMul, total: 0.7 / atkMul
-        };
-      } else if (roll < 0.62) {
-        // INK GEYSER — three erupting columns burst out of the water around
-        // you a beat later. Reads as the seabed vomiting ink; stay moving.
-        this.pending = {
-          type: 'geyser', x: px, y: py,
-          radius: (120 + ph * 15) * power, timer: 1.1 / atkMul, total: 1.1 / atkMul,
-          vents: [-1, 0, 1]
-        };
-      } else if (roll < 0.78) {
-        // WHIRLPOOL — a spiralling vortex opens under you and drags you toward
-        // its core while it spins up, then collapses. The pull is the threat.
-        this.pending = {
-          type: 'whirlpool', x: px, y: py,
-          radius: (150 + ph * 20) * power, timer: 1.3 / atkMul, total: 1.3 / atkMul
-        };
-      } else if (roll < 0.86) {
-        // TENTACLE SWEEP — a single arm scythes across a wide arc in front of
-        // the Kraken. The telegraph is a sweeping wedge, not a circle.
-        const toward = Math.atan2(py - (this.y + this.height * 0.5),
-          px - (this.x + this.width * 0.5));
-        this.pending = {
-          type: 'sweep', x: this.x + this.width * 0.5, y: this.y + this.height * 0.6,
-          radius: (210 + ph * 25) * power, angle: toward,
-          timer: 0.85 / atkMul, total: 0.85 / atkMul
-        };
-      } else if (roll < 0.90) {
-        // INK SPEW — the maw opens and a sustained cone of blinding ink jets
-        // forward, tracking your position so it reads as the beast trying to
-        // swallow you whole. Blind + damage over the channel: personal and mythic.
-        const inkToward = Math.atan2(py - (this.y + this.height * 0.62),
-          px - (this.x + this.width * 0.5));
-        this.pending = {
-          type: 'ink_spew', x: this.x + this.width * 0.5, y: this.y + this.height * 0.62,
-          angle: inkToward, radius: 0, timer: 0.75 / atkMul, total: 0.75 / atkMul,
-          width: 0.9 + ph * 0.15
-        };
-      } else if (roll < 0.94) {
-        // AQUA LANCE — the Kraken locks a high-pressure water/laser beam onto
-        // you and charges it. The eye superheats first (a white-hot line from
-        // the eye to your position), then the lance fires — a searing column
-        // you have to STRAFE, not merely dodge. The widest tell in the kit, and
-        // the one that turns the fight's pacing: you either commit or you pay.
-        const eyeX = this.x + this.width * 0.5 + this.faceDir * 8;
-        const eyeY = this.y + this.height * 0.60;
-        this.pending = {
-          type: 'beam', x: eyeX, y: eyeY,
-          radius: 0, timer: 0.9 / atkMul, total: 0.9 / atkMul,
-          target: { x: px, y: py }
-        };
-      } else if (roll < 0.99) {
-        // TENTACLE BARRAGE — a ring of tentacles stabs up from the deep in a
-        // sequence, each at its own delay. The whole arena lights up with warning
-        // spikes; you have to keep moving between the beats.
-        this.pending = {
-          type: 'barrage', x: px, y: py,
-          radius: (150 + ph * 20) * power, timer: 1.5 / atkMul, total: 1.5 / atkMul,
-          // Six stab points around the player, staggered.
-          stabs: [0, 1, 2, 3, 4, 5].map(i => {
-            const a = (i / 6) * Math.PI * 2;
-            return {
-              x: px + Math.cos(a) * (110 + ph * 20) * power,
-              y: py + Math.sin(a) * 60 * power,
-              at: (0.25 + i * 0.18) / atkMul // stagger, in seconds from the start
-            };
-          })
-        };
-      } else if (projectiles && typeof Projectile === 'function') {
-        // INK GLOB VOLLEY — immediate spread of hostile globs.
-        this.fireInkGlobs(target, projectiles);
-      }
-      // (In a QA sandbox with no Projectile class the volley branch is
-      // skipped and the cooldown simply recycles — never a thrown ReferenceError.)
-      this.skillGlow = 0.6 + ph * 0.25;     // eye + limb flash on a skill going off
-      this.attackTimer = Math.max(0.8, (3.0 - ph * 0.5) / atkMul);
-      if (sound) sound.playBossRoar();
-    }
+      if (ph === 1) {
+        // ---- PHASE 1: the ancient predator. Telegraphed, readable, cruel.
+        if (roll < 0.30) {
+          // PREDATOR DASH: a short tell, then a straight high-speed charge.
+          this.pending = {
+            type: 'predator_dash', x: px, y: py, radius: 60,
+            timer: 0.65, total: 0.65,
+            target: { x: px, y: py }
+          };
+        } else if (roll < 0.55) {
+          // CRUSHING BITE: jaws flare open, then a short lunge with the maw.
+          this.pending = {
+            type: 'crushing_bite', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+            radius: 170 * power, timer: 0.7, total: 0.7,
+            angle: Math.atan2(py - (this.y + this.height / 2), px - (this.x + this.width * 0.5)),
+            target: { x: px, y: py }
+          };
+        } else if (roll < 0.78) {
+          // TAIL SWEEP: the caudal fin scythes a wide arc; knockback heavy.
+          const toward = Math.atan2(py - (this.y + this.height * 0.5),
+            px - (this.x + this.width * 0.5));
+          this.pending = {
+            type: 'tail_sweep', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+            radius: 240 * power, angle: toward, timer: 0.6, total: 0.6
+          };
+        } else {
+          // HUNTING CIRCLE: it breaks the orbit, reverses, and bursts at you.
+          this.circleDir *= -1;
+          this.circleBurst = 2.2;
+          this.pending = {
+            type: 'hunt_call', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+            radius: 120, timer: 0.5, total: 0.5
+          };
+        }
+      } else if (ph === 2) {
 
-    // ---- Barrage stab timing: fire each tentacle stab as its beat arrives ----
-    if (this.pending && this.pending.type === 'barrage') {
-      const p = this.pending;
-      const ph = this.phase;
-      const dmgMul = 1 + (ph - 1) * 1.5;
-      const power = 1 + (ph - 1) * 1.7;
-      const elapsed = p.total - p.timer;
-      for (const stab of p.stabs) {
-        if (!stab.done && elapsed >= stab.at) {
-          stab.done = true;
-          this.skillFX(particles, stab.x, stab.y, 'stab', {});
-          this.pulse = Math.max(this.pulse || 0, 0.5);
-          if (this.game && this.game.player) {
-            const pl = this.game.player;
-            if (Math.hypot(pl.x + pl.width / 2 - stab.x, pl.y + pl.height / 2 - stab.y) <= 60 * power) {
-              this.game.damagePlayer(Math.round((88 + ph * 30) * dmgMul), stab.x,
-                'A tentacle speared up out of the deep!', true, stab.y);
-            }
-          }
-          if (sound) sound.playHit();
-          if (this.game && this.game.feel) this.game.feel.shake(0.3 * power);
+
+        // ---- PHASE 2: blood frenzy. Chains, spins, volleys.
+        if (roll < 0.32) {
+          // FRENZY RUSH: three dashes from alternating heights.
+          this.rushLeft = 3;
+          this.attackTimer = 2.4;
+          if (sound) sound.playBossRoar();
+          this.skillGlow = 1;
+        } else if (roll < 0.56) {
+          // SHARKNADO: it tucks and spins; the current does the rest.
+          this.pending = {
+            type: 'sharknado', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+            radius: 300 * power, timer: 0.7, total: 0.7
+          };
+        } else if (roll < 0.80) {
+          // TOOTH BARRAGE: a jaw-snap volley of razor teeth.
+          this.pending = {
+            type: 'tooth_barrage', x: this.x + this.width * 0.5, y: this.y + this.height * 0.42,
+            radius: 0, timer: 0.55, total: 0.55,
+            target: { x: px, y: py }
+          };
+        } else {
+          // A bigger predator dash, angled to cut off the swim.
+          this.pending = {
+            type: 'predator_dash', x: px, y: py, radius: 60,
+            timer: 0.5, total: 0.5, target: { x: px, y: py }
+          };
+        }
+      } else {
+        // ---- PHASE 3: apex of the ancient sea. Everything is lethal.
+        if (roll < 0.24) {
+          // APEX EXECUTION: it vanishes, a warning lane paints the arena,
+          // then it crosses the WHOLE bowl at killing speed.
+          const laneY = py;
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const startX = side < 0 ? TILE_SIZE * 2
+            : (this.game.world.pixelWidth - this.width - TILE_SIZE * 2);
+          this.vanishT = 0.9;
+          this.apexLane = { x0: startX, y0: laneY, x1: px, y1: laneY, t: 0.9 };
+          this.pending = {
+            type: 'apex_execution', x: startX, y: laneY - this.height * 0.5,
+            radius: 90, timer: 0.9, total: 0.9, lane: true
+          };
+          if (sound) sound.playBossRoar();
+        } else if (roll < 0.46) {
+          // DEPTH CHARGE: it sinks out of sight under you, then erupts.
+          this.depthDive = 0.8;
+          this.pending = {
+            type: 'depth_warning', x: px, y: py + 260, radius: 130 * power,
+            timer: 0.8, total: 0.8
+          };
+        } else if (roll < 0.70) {
+
+
+          // DEVOURING MAW: a suction pull, then one enormous bite.
+          this.pending = {
+            type: 'devouring_maw', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+            radius: 420 * power, timer: 1.1, total: 1.1,
+            target: { x: px, y: py }
+          };
+        } else {
+          // EXTINCTION HUNT: the full chain — dash, dash, sweep, bite —
+          // and when it finishes, the beast hangs EXHAUSTED in the water.
+          this.hunt = {
+            t: 0, dur: 3.6,
+            steps: [
+              { at: 0.4, act: 'dash', done: false },
+              { at: 1.2, act: 'dash', done: false },
+              { at: 2.0, act: 'sweep', done: false },
+              { at: 2.8, act: 'bite', done: false }
+            ]
+          };
+          this.pending = {
+            type: 'hunt_call', x: this.x + this.width * 0.5, y: this.y + this.height * 0.5,
+            radius: 140, timer: 0.55, total: 0.55
+          };
+          if (sound) sound.playBossRoar();
         }
       }
-    }
-
-    // ---- Whirlpool drag: while it spins up, haul the player toward the core --
-    if (this.pending && this.pending.type === 'whirlpool' && target) {
-      const p = this.pending;
-      const ph = this.phase;
-      const power = 1 + (ph - 1) * 1.7;
-      const px = target.x + target.width / 2;
-      const py = target.y + target.height / 2;
-      const dx = p.x - px, dy = p.y - py;
-      const dist = Math.hypot(dx, dy) || 1;
-      if (dist < p.radius * 2.2 && dist > 4) {
-        // Pull strengthens as the timer runs down; a real inward current.
-        const pull = (1 - p.timer / p.total) * 150 * dt * power;
-        target.x += (dx / dist) * pull;
-        target.y += (dy / dist) * pull * 0.7;
-      }
+      // Base cooldown between skill picks; the ladders above scale it down.
+      this.skillGlow = Math.max(this.skillGlow, 0.6 + ph * 0.2);
+      this.attackTimer = Math.max(1.1, (3.4 - ph * 0.55)) / Math.max(1, atkMul * frenzyMul * 0.9);
+      if (sound && !this.pending) sound.playBossRoar();
     }
   }
 
-  /** Resolve a spent telegraph: damage, the blindness debuff, and the show. */
+
   /**
-   * The skill show: layered particle chords every resolve spends. Each skill
-   * gets its own signature — a bright core flash, a coloured ring racing
-   * outward, arcing debris, and lingering motes — plus hit-stop + slow-mo on
-   * the heaviest hits so impacts LAND instead of just happening.
-   * Uses existing helpers only: addParticle / magicSparkle / bloodBurst.
+   * Resolve a spent telegraph: damage, knockback, projectiles, and the show.
+   * Every branch is defensive about a missing player/projectiles so a QA
+   * sandbox driving the class directly never throws.
    */
-  skillFX(particles, x, y, chord, opts = {}) {
-    if (!particles) return;
-    // Every phase turns the show up: more sparks, wider rings, longer-lived
-    // motes. A phase 4 skill burst is a wall of light, not a flash.
-    const ph = this.phase;
-    const power = 1 + (ph - 1) * 1.7;
-    const R = (opts.radius || 90) * power;
-    // Counts scale HARD with phase — a phase-4 burst throws several times the
-    // light of a phase-1 one, so the show itself levels up every phase.
-    const m = (n) => Math.max(n, Math.round(n * (0.7 + ph * 0.85)));
-    // Core flash: a fat white-hot disc that scales with power.
-    const flash = (color, size, life = 0.22) => {
-      if (typeof particles.addParticle === 'function') {
-        particles.addParticle(x, y, 0, 0, color, size * power * 1.5, life, 0, true);
-        // A second, longer-lived halo so the flash lingers and blooms.
-        particles.addParticle(x, y, 0, 0, color, size * power * 2.4, life * 2.2, 0, true);
-      }
-    };
-    // n sparks on an expanding circle.
-    const ring = (color, maxR, n, life = 0.7) => {
-      for (let i = 0; i < m(n); i++) {
-        const a = (i / n) * Math.PI * 2 + (opts.spin || 0);
-        const spd = maxR * (1.6 + Math.random() * 1.2);
-        if (typeof particles.addParticle === 'function') {
-          particles.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd * 0.7,
-            color, 3.2 + ph * 0.8, life * (0.7 + Math.random() * 0.6), 0, true);
-        }
-      }
-    };
-    // A triple stacked shockwave — three rings racing out at different speeds
-    // and sizes. This is the single biggest "cool" upgrade: every skill now
-    // reads as a pressure wave, not a single puff.
-    const shockwave = (colors, maxR, n) => {
-      for (let layer = 0; layer < 3; layer++) {
-        const cnt = m(n) + layer * 4;
-        const rr = maxR * (0.55 + layer * 0.28);
-        const c = colors[layer % colors.length];
-        for (let i = 0; i < cnt; i++) {
-          const a = (i / cnt) * Math.PI * 2 + (opts.spin || 0) + layer * 0.4;
-          const spd = rr * (2.0 + layer * 0.7 + Math.random() * 1.2);
-          if (typeof particles.addParticle === 'function') {
-            particles.addParticle(x, y, Math.cos(a) * spd, Math.sin(a) * spd * 0.7,
-              c, 3.6 + layer * 0.6, 0.6 + layer * 0.25 + Math.random() * 0.4, 0, true);
-          }
-        }
-      }
-    };
-    // Arcing shards with a gravity pull.
-    const debris = (colors, n, spd, up = -3) => {
-      for (let i = 0; i < m(n); i++) {
-        const a = Math.random() * Math.PI * 2;
-        const s = spd * (0.4 + Math.random() * 0.9);
-        const c = colors[(Math.random() * colors.length) | 0];
-        if (typeof particles.magicSparkle === 'function') {
-          particles.magicSparkle(x + Math.cos(a) * 8, y + Math.sin(a) * 6, c,
-            1 + ((Math.random() * 2) | 0));
-        }
-        if (typeof particles.addParticle === 'function') {
-          particles.addParticle(x, y, Math.cos(a) * s, Math.sin(a) * s * 0.6 + up,
-            c, 2.6 + ph * 0.4, 0.8 + Math.random() * 0.7, 0.35, false);
-        }
-      }
-    };
-    // Slow drifting embers that hang in the water.
-    const motes = (color, n, r, life = 2.2) => {
-      for (let i = 0; i < m(n); i++) {
-        const a = Math.random() * Math.PI * 2;
-        const rr = Math.sqrt(Math.random()) * r;
-        if (typeof particles.addParticle === 'function') {
-          particles.addParticle(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.7,
-            (Math.random() - 0.5) * 0.5, -0.3 - Math.random() * 0.5,
-            color, 2.2, life * (0.6 + Math.random() * 0.8), 0, true);
-        }
-      }
-    };
-    if (chord === 'inkburst') {
-      flash('#ffffff', 9);
-      if (typeof particles.magicSparkle === 'function') {
-        particles.magicSparkle(x, y, '#f43f5e', m(30));
-        particles.magicSparkle(x, y, '#1a0308', m(22));
-        particles.magicSparkle(x, y, '#e9d5ff', m(12));
-      }
-      shockwave(['#fb7185', '#f43f5e', '#e9d5ff'], R, 22);
-      ring('#fb7185', R, m(22));
-      ring('#4c0519', R * 0.7, m(14), 1.0);
-      debris(['#7f1d3a', '#be123c', '#0b0212'], m(16), 4.5);
-      motes('rgba(168, 85, 247, 0.8)', m(14), R * 0.8);
-    } else if (chord === 'slam') {
-      flash('#ffffff', 11);
-      if (typeof particles.bloodBurst === 'function') {
-        particles.bloodBurst(x, y, '#7f1d3a', m(20));
-        particles.bloodBurst(x, y, '#fecdd3', m(10));
-      }
-      shockwave(['#fef3c7', '#fb7185', '#be123c'], R * 1.15, 18);
-      ring('#fef3c7', R * 0.9, m(18), 0.5);
-      ring('#be123c', R * 1.15, m(20));
-      debris(['#7f1d3a', '#451a1a', '#fecaca'], m(20), 5.5, -4);
-      motes('rgba(251, 113, 133, 0.7)', m(10), R * 0.7);
-    } else if (chord === 'stab') {
-      flash('#fef3c7', 10);
-      if (typeof particles.bloodBurst === 'function') {
-        particles.bloodBurst(x, y, '#7f1d3a', m(16));
-        particles.bloodBurst(x, y, '#ffffff', m(6));
-      }
-      ring('#fb7185', 70, m(12), 0.5);
-      if (typeof particles.addParticle === 'function') {
-        for (let i = 0; i < m(12); i++) {
-          particles.addParticle(x + (Math.random() - 0.5) * 18, y,
-            (Math.random() - 0.5) * 2, -5 - Math.random() * 5,
-            i % 2 ? '#fecdd3' : '#be123c', 2.8, 0.6, 0, true);
-        }
-      }
-      motes('rgba(127, 29, 58, 0.8)', m(6), 50);
-    } else if (chord === 'geyser') {
-      flash('#fda4af', 8);
-      if (typeof particles.magicSparkle === 'function') {
-        particles.magicSparkle(x, y, '#f43f5e', m(24));
-        particles.magicSparkle(x, y - 60, '#fb7185', m(14));
-        particles.magicSparkle(x, y - 120, '#fecdd3', m(8));
-      }
-      // A vertical jet column: fast risers stacked up the vent.
-      if (typeof particles.addParticle === 'function') {
-        for (let i = 0; i < m(22); i++) {
-          particles.addParticle(x + (Math.random() - 0.5) * 34,
-            y - Math.random() * 40, (Math.random() - 0.5) * 1.2,
-            -6 - Math.random() * 5, i % 3 ? '#be123c' : '#ffe4e6',
-            3, 0.7 + Math.random() * 0.5, 0, true);
-        }
-      }
-      shockwave(['#fb7185', '#fecdd3', '#be123c'], R * 0.8, 14);
-      ring('#fb7185', R * 0.8, m(14), 0.6);
-      motes('rgba(76, 5, 25, 0.9)', m(12), R * 0.6);
-    } else if (chord === 'whirlpool') {
-      flash('#e9d5ff', 9);
-      // Spiral arms of debris spinning OUT of the collapsed core.
-      for (let arm = 0; arm < 4; arm++) {
-        for (let s = 0; s < m(7); s++) {
-          const a = arm * (Math.PI / 2) + s * 0.4 + (opts.spin || 0);
-          const rr = R * (0.12 + s * 0.15);
-          if (typeof particles.magicSparkle === 'function') {
-            particles.magicSparkle(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.6,
-              s % 2 ? '#fb7185' : '#4c0519', 3);
-          }
-        }
-      }
-      shockwave(['#fda4af', '#e9d5ff', '#a855f7'], R, 20);
-      ring('#fda4af', R, m(20), 0.9);
-      debris(['#be123c', '#0b0212', '#e9d5ff'], m(14), 5);
-      motes('rgba(168, 85, 247, 0.7)', m(16), R);
-    } else if (chord === 'sweep') {
-      flash('#ffffff', 8);
-      // Trail of spray along the whole swept arc, not just a single burst.
-      for (let s = 0; s <= m(10); s++) {
-        const a = (opts.angle || 0) - 0.9 + 1.8 * (s / m(10));
-        const ax = x + Math.cos(a) * R, ay = y + Math.sin(a) * R;
-        if (typeof particles.bloodBurst === 'function') {
-          particles.bloodBurst(ax, ay, '#be123c', 3);
-        }
-        if (typeof particles.magicSparkle === 'function') {
-          particles.magicSparkle(ax, ay, '#fecdd3', 2);
-        }
-      }
-      if (typeof particles.bloodBurst === 'function') {
-        particles.bloodBurst(x, y, '#7f1d3a', m(14));
-      }
-      ring('#fecdd3', R * 0.7, m(12), 0.5);
-      motes('rgba(251, 113, 133, 0.6)', m(8), R * 0.5);
-    } else if (chord === 'beam') {
-      // AQUA LANCE impact: a burst of pressurised water and ink erupting from
-      // the eye along the beam spine — ice-crack sparkles, a twin ring of water
-      // and ink, and a fan of mist droplets marching down the lance.
-      flash('#93c5f7', 11);
-      if (typeof particles.magicSparkle === 'function') {
-        particles.magicSparkle(x, y, '#93c5f7', m(22));
-        particles.magicSparkle(x, y, '#1a0308', m(14));
-        particles.magicSparkle(x, y, '#ffffff', m(10));
-      }
-      shockwave(['#ffffff', '#93c5f7', '#1a0308'], R, 18);
-      ring('rgba(147, 197, 253)', R, m(18));
-      ring('rgba(124, 50, 94)', R * 0.7, m(12), 1.0);
-      // Pressurised mist: droplets fanning down the charged spine toward the
-      // target, so the blast reads as a column, not a single point.
-      if (opts.target) {
-        const bdx = opts.target.x - x, bdy = opts.target.y - y;
-        const blen = Math.hypot(bdx, bdy) || 1;
-        const nx = bdx / blen, ny = bdy / blen;
-        for (let i = 0; i < m(20); i++) {
-          const f = i / m(20);
-          const mx = x + nx * blen * f + (Math.random() - 0.5) * 22;
-          const my = y + ny * blen * f + (Math.random() - 0.5) * 22;
-          if (typeof particles.addParticle === 'function') {
-            particles.addParticle(mx, my, (Math.random() - 0.5) * 1.8,
-              (Math.random() - 0.5) * 1.8 - 1.2,
-              i % 2 ? 'rgba(147, 197, 253, 0.8)' : 'rgba(124, 50, 94, 0.7)',
-              3, 0.7 + Math.random() * 0.5, 0.22, false);
-          }
-        }
-        // Crackle sparkles along the spine for a frozen-lance look.
-        if (typeof particles.magicSparkle === 'function') {
-          for (let i = 0; i < m(8); i++) {
-            const f = (i / m(8)) * 0.6 + 0.1;
-            particles.magicSparkle(x + nx * blen * f, y + ny * blen * f,
-              '#ffffff', 2 + (i % 2) * 2);
-          }
-        }
-      }
-      motes('rgba(168, 85, 247, 0.75)', m(12), R * 0.85);
-      // A second, bigger detonation at the far end of the lance where it lands,
-      // so the beam reads as a projectile that HITS, not just a line from A.
-      if (opts.target && typeof particles.magicSparkle === 'function') {
-        const tImpact = ['#ffffff', '#93c5f7', '#fecdd3'];
-        for (let i = 0; i < m(26); i++) {
-          const a = (i / m(26)) * Math.PI * 2;
-          const spd = (60 + ph * 22) * (0.6 + Math.random() * 0.8);
-          if (typeof particles.addParticle === 'function') {
-            particles.addParticle(opts.target.x, opts.target.y,
-              Math.cos(a) * spd, Math.sin(a) * spd * 0.7,
-              tImpact[i % tImpact.length], 3.4 + ph * 0.6, 0.6 + Math.random() * 0.5, 0, true);
-          }
-        }
-        particles.magicSparkle(opts.target.x, opts.target.y, '#ffffff', m(24));
-        particles.magicSparkle(opts.target.x, opts.target.y, '#93c5f7', m(18));
-      }
-    } else if (chord === 'inkspew') {
-      // INK SPEW impact: the maw erupts a fan of blinding mist along its spine,
-      // a twin ring of water and ink, and droplet mist racing down the cone.
-      flash('#4a0d1f', 9);
-      if (typeof particles.magicSparkle === 'function') {
-        particles.magicSparkle(x, y, '#93c5f7', m(14));
-        particles.magicSparkle(x, y, '#1a0308', m(18));
-      }
-      shockwave(['#0b0212', '#7f1d3a', '#93c5f7'], R, 16);
-      ring('rgba(147, 197, 253)', R, m(16));
-      ring('rgba(26, 3, 8)', R * 0.7, m(12), 1.0);
-      // Spine mist: droplets fanning along the spew direction toward the target.
-      if (opts.target) {
-        const bdx = opts.target.x - x, bdy = opts.target.y - y;
-        const blen = Math.hypot(bdx, bdy) || 1;
-        const nx = bdx / blen, ny = bdy / blen;
-        const nSpew = m(22);
-        for (let i = 0; i < nSpew; i++) {
-          const f = i / nSpew;
-          const mx = x + nx * 200 * f + (Math.random() - 0.5) * 24;
-          const my = y + ny * 200 * f + (Math.random() - 0.5) * 24;
-          if (typeof particles.addParticle === 'function') {
-            particles.addParticle(mx, my, (Math.random() - 0.5) * 2,
-              (Math.random() - 0.5) * 2 - 1,
-              'rgba(26, 3, 8, ' + (0.4 + f * 0.3).toFixed(3) + ')',
-              4 - f * 2, 0.6 + Math.random() * 0.4, 0.18, false);
-          }
-        }
-      }
-      motes('rgba(124, 50, 94, 0.8)', m(12), R * 0.8);
-    }
-  }
-
-  /** Cinematic weight for the heaviest resolves: hit-stop + slow-mo + shake. */
-  skillImpact(chord, baseShake) {
-    const feel = this.game && this.game.feel;
-    if (!feel) return;
-    // The cinematic weight scales with phase too — a FINAL INK hit freezes the
-    // screen harder and drops into slow-mo longer than the phase-1 version of
-    // the same skill, so the whole fight escalates in FEEL, not just numbers.
-    const w = 1 + (this.phase - 1) * 0.55;
-    if (chord === 'slam' || chord === 'whirlpool') {
-      if (typeof feel.stop === 'function') feel.stop(0.09 * w, 0.05);
-      if (typeof feel.slow === 'function') feel.slow(0.35 * w, 0.35);
-    } else if (chord === 'inkburst' || chord === 'geyser') {
-      if (typeof feel.stop === 'function') feel.stop(0.06 * w, 0.06);
-    }
-    if (typeof feel.shake === 'function') feel.shake(baseShake);
-  }
-
   resolvePending(sound, particles) {
     const p = this.pending;
     this.pending = null;
     if (!p) return;
     // Every resolve kicks the recoil spring so the body snaps forward the
-    // instant a skill fires — the anticipation coil pays off into a lunge, and
-    // the bigger the phase the harder the kick, so late-game attacks hit with
-    // real physical weight.
-    this.recoilV = (this.recoilV || 0) + 9 + this.phase * 2.5;
+    // instant a skill fires.
+    this.recoilV = (this.recoilV || 0) + 8 + this.phase * 2.5;
     this.pulse = Math.max(this.pulse || 0, 0.7 + this.phase * 0.1);
     const player = this.game && this.game.player;
     const ppx = player ? player.x + player.width / 2 : 0;
     const ppy = player ? player.y + player.height / 2 : 0;
-    // Phase power ladder: every phase is a real step up, so the final ink
-    // phase is a completely different fight from the opening salvo.
     const ph = this.phase;
-    const dmgMul = 1 + (ph - 1) * 1.5;
-    const power = 1 + (ph - 1) * 1.7;
-    const atkMul = 1 + (ph - 1) * 0.85;
-    if (p.type === 'ink_burst') {
-      this.skillFX(particles, p.x, p.y, 'inkburst', { radius: p.radius });
-      this.skillImpact('inkburst', 0.35);
-      if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
-        this.game.damagePlayer(Math.round((70 + ph * 26) * dmgMul), p.x,
-          'The Kraken’s ink cloud blinded you!', true, p.y);
-        if (this.game.buffs) this.game.buffs.add('ink_blindness', 14);
-        if (this.game.feel) this.game.feel.shake(0.35);
+    const dmgMul = 1 + (ph - 1) * 0.65;
+    const power = 1 + (ph - 1) * 0.55;
+    const ccx = this.x + this.width * 0.5;
+    const ccy = this.y + this.height * 0.5;
+
+    if (p.type === 'predator_dash') {
+      // The charge: lock onto where you WERE and go.
+      const tx = (p.target ? p.target.x : ppx) - ccx;
+      const ty = (p.target ? p.target.y : ppy) - ccy;
+      const a = Math.atan2(ty, tx);
+      this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
+      this.jawTarget = 0.8;
+      this.startDash(Math.cos(a) * (1250 + ph * 130) * power,
+        Math.sin(a) * (1250 + ph * 130) * power,
+        0.75, (100 + ph * 26) * dmgMul, 'dash');
+      this.skillFX(particles, ccx, ccy, 'charge', {});
+      if (sound) sound.playBossRoar();
+    } else if (p.type === 'crushing_bite') {
+      // A short, vicious lunge: the maw itself is the hit.
+      const tx = (p.target ? p.target.x : ppx) - ccx;
+      const ty = (p.target ? p.target.y : ppy) - ccy;
+      const a = Math.atan2(ty, tx);
+      this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
+      this.jawTarget = 1;
+      this.startDash(Math.cos(a) * 820 * power, Math.sin(a) * 820 * power,
+        0.42, (150 + ph * 34) * dmgMul, 'bite');
+      this.skillFX(particles, ccx + Math.cos(a) * 120, ccy + Math.sin(a) * 60, 'bite', {});
+      this.skillImpact('bite', 0.6);
+      if (player && Math.hypot(ppx - (ccx + Math.cos(a) * 130), ppy - ccy) <= p.radius) {
+        this.game.damagePlayer(Math.round((130 + ph * 30) * dmgMul), ccx,
+          'The Megalodon’s crushing bite shattered your guard!', true, ccy);
+        this.frenzy = Math.min(6, this.frenzy + 1);
+        this.frenzyT = 6;
       }
-    } else if (p.type === 'slam') {
-      this.skillFX(particles, p.x, p.y, 'slam', { radius: p.radius });
-      this.skillImpact('slam', 0.55);
-      if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
-        this.game.damagePlayer(Math.round((95 + ph * 32) * dmgMul), p.x,
-          'A Kraken tentacle slam crushed you!', true, p.y);
-      }
-    } else if (p.type === 'geyser') {
-      // Three columns erupt; each vent is its own damage + ink check.
-      for (const v of (p.vents || [-1, 0, 1])) {
-        this.skillFX(particles, p.x + v * 70, p.y, 'geyser', { radius: 70 * power });
-      }
-      this.skillImpact('geyser', 0.5);
-      for (const v of (p.vents || [-1, 0, 1])) {
-        const vx = p.x + v * 70;
-        if (player && Math.abs(ppx - vx) <= 46 * power) {
-          this.game.damagePlayer(Math.round((74 + ph * 26) * dmgMul), vx,
-            'A geyser of black ink erupted beneath you!', true, p.y);
-          if (this.game.buffs) this.game.buffs.add('ink_blindness', 6);
-        }
-      }
-      if (this.game && this.game.feel) this.game.feel.shake(0.5);
-    } else if (p.type === 'whirlpool') {
-      // The vortex collapses: a spiral burst of debris spinning out of the
-      // core, a final inward crush + blindness.
-      this.skillFX(particles, p.x, p.y, 'whirlpool',
-        { radius: p.radius, spin: this.animT * 6 });
-      this.skillImpact('whirlpool', 0.6);
-      if (player && Math.hypot(ppx - p.x, ppy - p.y) <= p.radius) {
-        this.game.damagePlayer(Math.round((82 + ph * 28) * dmgMul), p.x,
-          'The whirlpool dragged you into its crushing core!', true, p.y);
-        if (this.game.buffs) this.game.buffs.add('ink_blindness', 8);
-      }
-      if (this.game && this.game.feel) this.game.feel.shake(0.6 * power);
-    } else if (p.type === 'sweep') {
-      // A scything arc: hit if the player is within the radius AND within the
-      // swept angular band in front of the Kraken.
-      this.skillFX(particles, p.x, p.y, 'sweep', { radius: p.radius, angle: p.angle });
-      this.skillImpact('sweep', 0.45);
+      this.addStain(ccx + Math.cos(a) * 150, ccy, 70 * power);
+      if (sound) sound.playHit();
+    } else if (p.type === 'tail_sweep') {
+      // The caudal fin scythes a wide arc. Anyone inside gets hurled back.
+      this.skillFX(particles, ccx, ccy, 'sweep', { radius: p.radius, angle: p.angle });
+      this.skillImpact('sweep', 0.5);
       if (player) {
-        const dx = ppx - p.x, dy = ppy - p.y;
+        const dx = ppx - ccx, dy = ppy - ccy;
         const dist = Math.hypot(dx, dy);
-        let dAng = Math.atan2(dy, dx) - p.angle;
-        while (dAng > Math.PI) dAng -= Math.PI * 2;
-        while (dAng < -Math.PI) dAng += Math.PI * 2;
-        if (dist <= p.radius && Math.abs(dAng) <= 0.9) {
-          this.game.damagePlayer(Math.round((105 + ph * 34) * dmgMul), ppx,
-            'A sweeping tentacle hurled you aside!', true, ppy);
-        }
-      }
-      if (this.game && this.game.feel) this.game.feel.shake(0.45 * power);
-} else if (p.type === 'barrage') {
-      // All the stabs already fired on their beats; the resolve moment is just
-      // the arena exhaling — a last ring of ichor at each spent spike.
-      for (const stab of p.stabs) {
-        if (stab.done) this.skillFX(particles, stab.x, stab.y, 'stab', {});
-      }
-      this.skillImpact('barrage', 0.4);
-    } else if (p.type === 'beam') {
-      // AQUA LANCE resolve: the locked lance erupts from the eye along the
-      // charged spine. Players still intersecting the beam take the hit and are
-      // thrown back; the impact vents to the seabed as a high-pressure scar.
-      this.skillFX(particles, p.x, p.y, 'beam', { target: p.target, radius: p.radius });
-      this.skillImpact('beam', 0.5);
-      if (player) {
-        const x1 = p.x, y1 = p.y, x2 = p.target.x, y2 = p.target.y;
-        const bdx = x2 - x1, bdy = y2 - y1;
-        const blen2 = bdx * bdx + bdy * bdy || 1;
-        let tt = ((player.x + player.width / 2 - x1) * bdx +
-                  (player.y + player.height / 2 - y1) * bdy) / blen2;
-        tt = Math.max(0, Math.min(1, tt));
-        const cx2 = x1 + tt * bdx, cy2 = y1 + tt * bdy;
-        const dist = Math.hypot((player.x + player.width / 2) - cx2,
-                                (player.y + player.height / 2) - cy2);
-        const hitW = (34 + ph * 4) * power;
-        if (dist <= hitW) {
-          this.game.damagePlayer(Math.round((140 + ph * 40) * dmgMul), p.target.x,
-            'The Abyssal Kraken’s water-laser seared you!', true, p.target.y);
-          // Knockback AWAY from the eye along the beam spine.
-          const kdx = (player.x + player.width / 2) - p.x;
-          const kdy = (player.y + player.height / 2) - p.y;
-          const klen = Math.hypot(kdx, kdy) || 1;
-          player.x += (kdx / klen) * 52 * power;
-          player.y += (Math.max(0, kdy) / klen) * 18 * power;
-        }
-      }
-    } else if (p.type === 'ink_spew') {
-      // INK SPEW resolve: the cone erupts in a burst of blinding mist. Anyone
-      // still inside the channel takes damage and is blinded — the sea goes dark.
-      this.skillFX(particles, p.x, p.y, 'inkspew', { angle: p.angle, width: p.width });
-      this.skillImpact('inkspew', 0.45);
-      if (player) {
-        const dx = (player.x + player.width / 2) - p.x;
-        const dy = (player.y + player.height / 2) - p.y;
-        const dist = Math.hypot(dx, dy);
-        const len = (230 + ph * 30) * power;
         const toP = Math.atan2(dy, dx);
-        const dAng = Math.abs(((toP - p.angle + Math.PI) % (Math.PI * 2)) - Math.PI);
-        if (dist <= len && dAng <= p.width + 0.18) {
-          this.game.damagePlayer(Math.round((56 + ph * 20) * dmgMul), p.x,
-            'The Abyssal Kraken’s cone of ink blinded you!', true, p.y);
-          if (this.game.buffs) this.game.buffs.add('ink_blindness', 10);
-          if (this.game.feel) this.game.feel.shake(0.3);
+        const dAng = Math.abs(((toP - (p.angle || 0) + Math.PI) % (Math.PI * 2)) - Math.PI);
+        if (dist <= p.radius && dAng <= 1.15) {
+          this.game.damagePlayer(Math.round((105 + ph * 26) * dmgMul), ccx,
+            'The Megalodon’s tail sweep sent you flying!', true, ccy);
+          // Knockback: a real shove away from the tail.
+          if (player.vx !== undefined) {
+            player.vx += (dx / (dist || 1)) * 14;
+            player.vy += (dy / (dist || 1)) * 8 - 4;
+          }
+          this.frenzy = Math.min(6, this.frenzy + 1);
+          this.frenzyT = 6;
         }
       }
+      if (sound) sound.playHit();
+    } else if (p.type === 'hunt_call') {
+
+      // The call that opens the hunting circle / the extinction chain:
+      // a roar, a shockwave of bubbles, and the beast commits.
+      this.skillFX(particles, ccx, ccy, 'call', {});
+      if (sound) sound.playBossRoar();
+      if (this.game && this.game.feel) this.game.feel.shake(0.4);
+    } else if (p.type === 'sharknado') {
+      // It tucks and spins for the duration; update() drags you inward.
+      this.tornadoT = 2.3;
+      this.skillFX(particles, ccx, ccy, 'spin', { radius: p.radius });
+      this.skillImpact('spin', 0.55);
+      if (sound) sound.playBossLaser();
+    } else if (p.type === 'tooth_barrage') {
+      // A fan of razor teeth spat at where you stood.
+      this.jawTarget = 1;
+      this.fireTeeth(p.target ? p.target : { x: ppx, y: ppy });
+      this.skillFX(particles, p.x, p.y, 'teeth', {});
+      if (sound) sound.playHit();
+      this.recoilV += 5;
+    } else if (p.type === 'depth_warning') {
+      // The eruption itself fires from update()'s depthDive timer; the
+      // warning marker just pays off its show here.
+      this.skillFX(particles, p.x, p.y, 'rumble', { radius: p.radius });
+      if (sound) sound.playBossLaser();
+    } else if (p.type === 'apex_execution') {
+      // It appears at the lane start and crosses the entire arena.
+      this.x = p.x || this.x;
+      this.y = p.y || this.y;
+      this.vanishT = 0;
+      const dir = (this.apexLane && this.apexLane.x1 >= this.apexLane.x0) ? 1 : -1;
+      this.faceDir = dir;
+      this.jawTarget = 1;
+      this.startDash(dir * 2300, 0, 1.1, (190 + this.phase * 40) * dmgMul, 'apex');
+      this.skillFX(particles, this.x + this.width / 2, this.y + this.height / 2, 'charge', {});
+      this.skillImpact('apex', 0.9);
+      if (sound) sound.playExplosion();
+    } else if (p.type === 'devouring_maw') {
+      // The mega-bite at the end of the suction windup.
+      this.jawTarget = 1;
+      const tx = (p.target ? p.target.x : ppx) - ccx;
+      const ty = (p.target ? p.target.y : ppy) - ccy;
+      const a = Math.atan2(ty, tx);
+      this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
+      this.startDash(Math.cos(a) * 700, Math.sin(a) * 700, 0.4, (200 + ph * 44) * dmgMul, 'maw');
+      this.skillFX(particles, ccx, ccy, 'maw', {});
+      this.skillImpact('maw', 0.85);
+      if (player && Math.hypot(ppx - ccx, ppy - ccy) <= p.radius) {
+        this.game.damagePlayer(Math.round((120 + ph * 30) * dmgMul), ccx,
+          'The Megalodon swallowed the water — and you with it!', true, ccy);
+      }
+      this.addStain(ccx, ccy, 120 * power);
+      if (sound) sound.playExplosion();
+    } else if (p.type === 'extinction_bite') {
+      // The final bite of the Extinction Hunt chain.
+      this.jawTarget = 1;
+      this.recoilV += 10;
+      this.skillFX(particles, ccx, ccy, 'bite', { radius: p.radius });
+      this.skillImpact('bite', 0.9);
+      if (player && Math.hypot(ppx - ccx, ppy - ccy) <= p.radius) {
+        this.game.damagePlayer(Math.round((210 + ph * 46) * dmgMul), ccx,
+          'The Extinction Hunt ended in those jaws!', true, ccy);
+      }
+      this.addStain(ccx, ccy, 130 * power);
+      if (sound) sound.playExplosion();
     }
-    // The seabed remembers every slammed attack: a dark ink pool stains the
-    // ground where it landed, fading slowly so the arena tells the fight's
-    // story. This is what makes the skills FEEL like they matter, not just
-    // numbers — you see the crater you left behind.
-    this.inkPools.push({
-      x: p.x, y: p.y, r: ((p.radius || 80) * 0.55 + 10) * power,
-      t: 0, life: 6 + ph * 2, peak: 0.55
-    });
     this.skillGlow = 0.4 + ph * 0.15;
     if (sound) sound.playHit();
   }
-
-  /** A fan of hostile ink globs aimed at the player. Blind on contact. */
-  fireInkGlobs(target, projectiles) {
+  /** A fan of razor teeth spat at the player. Hostile projectiles. */
+  fireTeeth(target, projectiles) {
+    const projs = projectiles || (this.game && this.game.projectiles);
+    if (!projs || typeof Projectile !== 'function') return;
     const ph = this.phase;
-    const power = 1 + (ph - 1) * 1.7;
-    const dmgMul = 1 + (ph - 1) * 1.5;
-    const cx = this.x + this.width * 0.5;
+    const dmgMul = 1 + (ph - 1) * 0.65;
+    const cx = this.x + this.width * 0.5 + (this.faceDir || 1) * this.width * 0.36;
     const cy = this.y + this.height * 0.42;
-    const px = target.x + target.width / 2;
-    const py = target.y + target.height / 2;
+    const px = target ? target.x + (target.width || 24) / 2 : cx + this.faceDir * 300;
+    const py = target ? target.y + (target.height || 40) / 2 : cy;
     const base = Math.atan2(py - cy, px - cx);
-    // The volley thickens and bites harder every phase: more globs, faster, and
-    // a wider fan so late phases carpet the water instead of poking at you.
-    const count = 3 + ph * 2;
-    const speed = (6 + ph * 1.1) * power;
-    const spread = 0.30 - ph * 0.02;
+    // More teeth, tighter spread as the phases turn over.
+    const count = 5 + ph * 2;
+    const spread = 0.42 - ph * 0.05;
     for (let i = 0; i < count; i++) {
       const a = base + (i - (count - 1) / 2) * spread;
-      const glob = new Projectile(cx, cy,
+      const speed = (11 + ph * 1.6);
+      const tooth = new Projectile(cx, cy,
         Math.cos(a) * speed, Math.sin(a) * speed,
-        'ink_glob', Math.round((52 + ph * 18) * dmgMul), true, 3.5, 70);
-      glob.fromBoss = true;
-      projectiles.push(glob);
+        'tooth', Math.round((70 + ph * 22) * dmgMul), true, 3.0, 60);
+      tooth.fromBoss = true;
+      tooth.toothSpin = a;
+      projs.push(tooth);
     }
+  }
+
+  /**
+   * The skill show: layered particle chords every resolve spends. Each skill
+   * gets its own signature — a white water-flash, a ring racing outward,
+   * arcing spray, and lingering motes — plus hit-stop + slow-mo on the
+   * heaviest hits so impacts LAND instead of just happening.
+   * Uses existing helpers only: addParticle / magicSparkle / bloodBurst.
+   */
+  skillFX(particles, x, y, chord, opts = {}) {
+    if (!particles) return;
+    const ph = this.phase;
+    const power = 1 + (ph - 1) * 0.55;
+    const radius = (opts.radius || 90) * power;
+    // Palette: sea-foam white/cyan for water force, crimson for the jaws.
+    const wet = chord === 'charge' || chord === 'spin' || chord === 'rumble';
+    const tint = wet ? '#7dd3fc' : chord === 'teeth' ? '#e2e8f0' : '#f87171';
+    // Core flash.
+    for (let i = 0; i < 4 + ph * 2; i++) {
+      particles.addParticle(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20,
+        (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6,
+        i % 2 ? tint : 'rgba(255, 255, 255, 0.8)',
+        3 + Math.random() * 3, 0.4, 0, true);
+    }
+    // Racing ring of spray.
+    const rings = 1 + (ph > 2 ? 1 : 0);
+    for (let r = 0; r < rings; r++) {
+      const n = 10 + ph * 4;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + r * 0.3;
+        particles.addParticle(x + Math.cos(a) * radius * 0.3,
+          y + Math.sin(a) * radius * 0.3,
+          Math.cos(a) * (4 + ph * 2), Math.sin(a) * (4 + ph * 2),
+          tint, 2.4, 0.55, 0, true);
+      }
+    }
+    // Arcing spray.
+    for (let i = 0; i < 6 + ph * 3; i++) {
+      particles.addParticle(x, y,
+        (Math.random() - 0.5) * 12, -Math.random() * 8 - 2,
+        'rgba(186, 230, 253, 0.7)', 2.6, 0.7, 0.14, true);
+    }
+    particles.magicSparkle(x, y, tint, 5 + ph * 3);
+    // The heavier the hit, the harder the screen flinches.
+    if (chord === 'maw' || chord === 'apex' || chord === 'bite') {
+      this.skillImpact(chord, 0.7);
+    }
+  }
+
+  /** Hit-stop + slow-mo + shake tuned per skill, scaled by phase. */
+  skillImpact(chord, baseShake) {
+    const feel = this.game && this.game.feel;
+    if (!feel) return;
+    const w = 1 + (this.phase - 1) * 0.45;
+    if (chord === 'bite' || chord === 'maw' || chord === 'apex') {
+      if (typeof feel.stop === 'function') feel.stop(0.09 * w, 0.05);
+      if (typeof feel.slow === 'function') feel.slow(0.35 * w, 0.3);
+    } else if (chord === 'sweep' || chord === 'spin') {
+      if (typeof feel.stop === 'function') feel.stop(0.06 * w, 0.05);
+    }
+    if (typeof feel.shake === 'function') feel.shake(baseShake);
   }
 
   renderTelegraph(ctx, camera) {
     const p = this.pending;
-    if (!p) return;
+    const lane = this.apexLane;
     ctx.save();
+    const pulse = 0.5 + Math.sin(this.animT * 22) * 0.25;
+    // ---- Apex execution warning lane: painted even while it is vanished ----
+    if (lane && lane.t > 0) {
+      const lx0 = lane.x0 - camera.x, ly0 = lane.y0 - camera.y;
+      const lx1 = lane.x1 - camera.x, ly1 = lane.y1 - camera.y;
+      const fade = Math.min(1, lane.t);
+      ctx.globalAlpha = 0.25 + 0.35 * fade;
+      ctx.fillStyle = 'rgba(248, 113, 113, 0.4)';
+      const nx = -(ly1 - ly0), ny = (lx1 - lx0);
+      const nl = Math.hypot(nx, ny) || 1;
+      const halfW = 62;
+      ctx.beginPath();
+      ctx.moveTo(lx0 + (nx / nl) * halfW, ly0 + (ny / nl) * halfW);
+      ctx.lineTo(lx1 + (nx / nl) * halfW, ly1 + (ny / nl) * halfW);
+      ctx.lineTo(lx1 - (nx / nl) * halfW, ly1 - (ny / nl) * halfW);
+      ctx.lineTo(lx0 - (nx / nl) * halfW, ly0 - (ny / nl) * halfW);
+      ctx.closePath();
+      ctx.fill();
+      // Chevron arrows racing along the lane in the charge direction.
+      ctx.globalAlpha = 0.5 + 0.4 * pulse;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 3;
+      const dir = lane.x1 >= lane.x0 ? 1 : -1;
+      for (let i = 0; i < 6; i++) {
+        const f = ((this.animT * 1.4 + i / 6) % 1);
+        const cxp = lx0 + (lx1 - lx0) * f;
+        const cyp = ly0 + (ly1 - ly0) * f;
+        ctx.beginPath();
+        ctx.moveTo(cxp - dir * 14, cyp - 9);
+        ctx.lineTo(cxp + dir * 2, cyp);
+        ctx.lineTo(cxp - dir * 14, cyp + 9);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (!p) { ctx.restore(); return; }
     const sx = p.x - camera.x;
     const sy = p.y - camera.y;
     const k = 1 - Math.max(0, p.timer) / p.total; // 0 → 1 as it winds up
-    const pulse = 0.5 + Math.sin(this.animT * 22) * 0.25;
-    if (p.type === 'ink_burst') {
-      // INK BURST telegraph: a closing iris + a boiling core + orbiting
-      // sparks. Reads as "the sea is about to detonate HERE".
-      ctx.setLineDash([12, 8]);
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
+
+    if (p.type === 'predator_dash' || p.type === 'apex_execution') {
+      // A charge lane: a bright bar from the beast to the target, tightening.
+      const tx = (p.target ? p.target.x : p.x) - camera.x;
+      const ty = (p.target ? p.target.y : p.y) - camera.y;
+      ctx.setLineDash([16, 10]);
+      ctx.lineWidth = 4 + k * 4;
+      ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.5 + pulse * 0.45).toFixed(3) + ')';
       ctx.beginPath();
-      ctx.arc(sx, sy, p.radius, 0, Math.PI * 2);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(tx, ty);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Boiling core: stacked flickering discs that swell as it winds up.
-      for (let blob = 0; blob < 5; blob++) {
-        const ba = this.animT * 3 + blob * 1.256;
-        const br = p.radius * (0.12 + 0.10 * k) * (0.8 + 0.3 * Math.sin(ba * 2.3));
-        const bx = sx + Math.cos(ba) * p.radius * 0.22 * k;
-        const by = sy + Math.sin(ba * 1.3) * p.radius * 0.22 * k;
-        ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.35 + 0.3 * k).toFixed(3) + ')';
-        ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
-      }
-      // Orbiting warning sparks: 8 embers circling the rim, speeding up.
-      ctx.fillStyle = 'rgba(253, 164, 175, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
-      for (let s = 0; s < 8; s++) {
-        const a = this.animT * (2 + k * 6) + s * (Math.PI / 4);
+      // Target reticle: contracts as the charge launches.
+      const ringR = 34 * (1 - k) + 8;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.35 + 0.45 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(tx, ty, ringR, 0, Math.PI * 2); ctx.stroke();
+      for (let c = 0; c < 4; c++) {
+        const a = c * Math.PI / 2 + this.animT * 2;
         ctx.beginPath();
-        ctx.arc(sx + Math.cos(a) * p.radius, sy + Math.sin(a) * p.radius,
-          3 + k * 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = 'rgba(76, 5, 25, ' + (0.15 + 0.35 * k).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.arc(sx, sy, p.radius * (0.7 + 0.3 * k), 0, Math.PI * 2);
-      ctx.fill();
-    } else if (p.type === 'geyser') {
-      // GEYSER telegraph: three warning columns that brighten and fill upward,
-      // each crowned with a bubbling vent cap + rising bubble previews.
-      for (const v of (p.vents || [-1, 0, 1])) {
-        const vx = sx + v * 70;
-        ctx.setLineDash([8, 6]);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
-        ctx.strokeRect(vx - 24, sy - 150, 48, 150);
-        ctx.setLineDash([]);
-        // Ink surging up the column toward the surface as the timer runs down.
-        const colH = 150 * k;
-        const grad = ctx.createLinearGradient(vx, sy, vx, sy - colH);
-        grad.addColorStop(0, 'rgba(127, 29, 29, 0.55)');
-        grad.addColorStop(1, 'rgba(251, 113, 133, 0.05)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(vx - 24, sy - colH, 48, colH);
-        // Bubbling vent cap: a churning mound at the column base.
-        for (let b = 0; b < 4; b++) {
-          const ba = this.animT * 7 + b * 1.7 + v;
-          const br = 4 + 3 * Math.abs(Math.sin(ba)) * (0.5 + k);
-          ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.4 + 0.35 * k).toFixed(3) + ')';
-          ctx.beginPath();
-          ctx.arc(vx + Math.sin(ba * 1.4) * 14, sy - 4 - (b * 5), br, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        // Rising bubble previews climbing the column.
-        ctx.fillStyle = 'rgba(254, 205, 211, ' + (0.3 + 0.4 * k).toFixed(3) + ')';
-        for (let b = 0; b < 3; b++) {
-          const rise = ((this.animT * 90 + b * 50 + v * 17) % 150);
-          ctx.beginPath();
-          ctx.arc(vx + Math.sin(this.animT * 5 + b * 2 + v) * 10,
-            sy - rise, 2.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    } else if (p.type === 'whirlpool') {
-      // WHIRLPOOL telegraph: concentric rings that rotate and close in, spiral
-      // arms, a tightening dark core — plus orbiting debris chunks and inward
-      // streaklines so the PULL reads before it grabs you.
-      const spin = this.animT * 6;
-      for (let ring = 3; ring >= 1; ring--) {
-        const rr = p.radius * (ring / 3) * (1 - k * 0.35);
-        ctx.strokeStyle = 'rgba(251, 113, 133, ' + (0.25 + 0.35 * (1 - ring / 3)).toFixed(3) + ')';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(sx, sy, rr, 0, Math.PI * 2);
+        ctx.moveTo(tx + Math.cos(a) * (ringR + 8), ty + Math.sin(a) * (ringR + 8));
+        ctx.lineTo(tx + Math.cos(a) * (ringR + 20), ty + Math.sin(a) * (ringR + 20));
         ctx.stroke();
       }
-      for (let arm = 0; arm < 4; arm++) {
-        ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.4 + pulse * 0.4).toFixed(3) + ')';
-        ctx.lineWidth = 4;
+    } else if (p.type === 'crushing_bite' || p.type === 'devouring_maw' ||
+               p.type === 'extinction_bite') {
+
+
+      // A gape: two arcs closing like jaws over the danger zone.
+      const r = p.radius || 160;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
+      const gap = (1 - k) * 0.9;
+      // Upper jaw arc and lower jaw arc, closing as k approaches 1.
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, Math.PI + gap, Math.PI * 2 - gap, false);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, gap, Math.PI - gap, false);
+      ctx.stroke();
+      // Warning teeth marks around the rim.
+      ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.5 * k).toFixed(3) + ')';
+      for (let t = 0; t < 10; t++) {
+        const a = (t / 10) * Math.PI * 2;
+        const tr = r * (0.85 + 0.15 * Math.sin(this.animT * 18 + t));
         ctx.beginPath();
-        for (let s = 0; s <= 24; s++) {
-          const tt = s / 24;
-          const ang = spin + arm * (Math.PI / 2) + tt * 3.2;
-          const rr = p.radius * (1 - tt) * (0.4 + 0.6 * (1 - k * 0.3));
-          const px2 = sx + Math.cos(ang) * rr;
-          const py2 = sy + Math.sin(ang) * rr * 0.6;
+        ctx.moveTo(sx + Math.cos(a - 0.06) * tr, sy + Math.sin(a - 0.06) * tr);
+        ctx.lineTo(sx + Math.cos(a) * (tr - 14 * k - 4), sy + Math.sin(a) * (tr - 14 * k - 4));
+        ctx.lineTo(sx + Math.cos(a + 0.06) * tr, sy + Math.sin(a + 0.06) * tr);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Boiling core swelling toward the bite.
+      ctx.fillStyle = 'rgba(127, 29, 29, ' + (0.16 + 0.3 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, r * (0.3 + 0.55 * k), 0, Math.PI * 2); ctx.fill();
+      if (p.type === 'devouring_maw') {
+        // Inward streaklines: the suction, drawn before the bite lands.
+        ctx.strokeStyle = 'rgba(186, 230, 253, ' + (0.25 + 0.4 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 2;
+        for (let s = 0; s < 10; s++) {
+          const a = (s / 10) * Math.PI * 2 + this.animT * 0.8;
+          const r0 = r * 1.25, r1 = r * (0.35 + 0.5 * (1 - k));
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0);
+          ctx.lineTo(sx + Math.cos(a) * r1, sy + Math.sin(a) * r1);
+          ctx.stroke();
+        }
+      }
+    } else if (p.type === 'tail_sweep') {
+      // A sweeping wedge that closes in the swing direction.
+      const r = p.radius || 220;
+      const ang = p.angle || 0;
+      ctx.fillStyle = 'rgba(251, 146, 60, ' + (0.12 + 0.22 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.arc(sx, sy, r * (0.5 + 0.5 * k), ang - 1.15, ang + 1.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.45 + 0.4 * k).toFixed(3) + ')';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r * (0.5 + 0.5 * k), ang - 1.15, ang + 1.15);
+      ctx.stroke();
+      // The fin itself, cocked back and about to whip through.
+      const fx = sx - Math.cos(ang) * r * 0.8;
+      const fy = sy - Math.sin(ang) * r * 0.8;
+      ctx.fillStyle = 'rgba(226, 232, 240, ' + (0.35 + 0.4 * (1 - k)).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, 26, 12, ang, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.type === 'sharknado') {
+
+      // A spinning vortex of streaklines around the boss.
+      const r = (p.radius || 260) * (0.6 + 0.4 * k);
+      ctx.lineWidth = 3;
+      for (let arm = 0; arm < 5; arm++) {
+        ctx.strokeStyle = 'rgba(125, 211, 252, ' + (0.3 + 0.4 * k).toFixed(3) + ')';
+        ctx.beginPath();
+        for (let s = 0; s <= 14; s++) {
+          const f = s / 14;
+          const a = this.animT * 7 + arm * (Math.PI * 2 / 5) + f * 2.4;
+          const rr = r * (1 - f * 0.85);
+          const px2 = sx + Math.cos(a) * rr;
+          const py2 = sy + Math.sin(a) * rr * 0.55;
           if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
         }
         ctx.stroke();
       }
-      // Dark core that tightens as it collapses.
-      ctx.fillStyle = 'rgba(27, 3, 10, ' + (0.2 + 0.5 * k).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.arc(sx, sy, p.radius * 0.28 * (1 - k * 0.4), 0, Math.PI * 2);
-      ctx.fill();
-      // Orbiting debris chunks caught in the current.
-      ctx.fillStyle = 'rgba(69, 10, 10, ' + (0.4 + 0.4 * k).toFixed(3) + ')';
-      for (let d = 0; d < 7; d++) {
-        const da = spin * 1.4 + d * 0.9;
-        const dr = p.radius * (0.75 - k * 0.3) * (0.7 + (d % 3) * 0.15);
-        ctx.beginPath();
-        ctx.arc(sx + Math.cos(da) * dr, sy + Math.sin(da) * dr * 0.6,
-          2.5 + (d % 2) * 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Inward streaklines: short dashes racing toward the core.
-      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.25 + 0.35 * k).toFixed(3) + ')';
-      ctx.lineWidth = 2;
-      for (let s = 0; s < 10; s++) {
-        const sa = spin * 0.7 + s * 0.63;
-        const r0 = p.radius * (1.25 - k * 0.5);
-        const r1 = r0 * 0.82;
-        ctx.beginPath();
-        ctx.moveTo(sx + Math.cos(sa) * r0, sy + Math.sin(sa) * r0 * 0.6);
-        ctx.lineTo(sx + Math.cos(sa) * r1, sy + Math.sin(sa) * r1 * 0.6);
-        ctx.stroke();
-      }
-    } else if (p.type === 'sweep') {
-      // SWEEP telegraph: a rotating wedge + a ghost of the arm itself sweeping
-      // across the arc + spray streaks, so you see the limb coming, not just
-      // a shape on the floor.
-      const sweepNow = p.angle - 0.9 + 1.8 * k;
-      ctx.setLineDash([10, 6]);
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.arc(sx, sy, p.radius, sweepNow - 0.45, sweepNow + 0.45);
-      ctx.closePath();
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(127, 29, 29, ' + (0.18 + 0.3 * k).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.arc(sx, sy, p.radius, sweepNow - 0.45, sweepNow + 0.45);
-      ctx.closePath();
-      ctx.fill();
-      // Leading edge of the arm, a bright line at the sweep front.
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
+      ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.4 + pulse * 0.4).toFixed(3) + ')';
       ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + Math.cos(sweepNow + 0.45) * p.radius, sy + Math.sin(sweepNow + 0.45) * p.radius);
-      ctx.stroke();
-      // Ghost arm: a thick translucent limb from the kraken toward the sweep
-      // front, so the telegraph reads as a limb mid-swing.
-      ctx.strokeStyle = 'rgba(190, 18, 60, ' + (0.25 + 0.35 * k).toFixed(3) + ')';
-      ctx.lineWidth = 16;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo(
-        sx + Math.cos(sweepNow) * p.radius * 0.55,
-        sy + Math.sin(sweepNow) * p.radius * 0.55 - 30 * (1 - k),
-        sx + Math.cos(sweepNow) * p.radius * 0.92,
-        sy + Math.sin(sweepNow) * p.radius * 0.92);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(254, 205, 211, ' + (0.3 + 0.3 * k).toFixed(3) + ')';
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo(
-        sx + Math.cos(sweepNow) * p.radius * 0.55,
-        sy + Math.sin(sweepNow) * p.radius * 0.55 - 30 * (1 - k),
-        sx + Math.cos(sweepNow) * p.radius * 0.92,
-        sy + Math.sin(sweepNow) * p.radius * 0.92);
-      ctx.stroke();
-      // Spray streaks flung ahead of the swing.
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.2 + 0.3 * k).toFixed(3) + ')';
-      ctx.lineWidth = 2;
-      for (let s = 0; s < 5; s++) {
-        const sa = sweepNow + 0.45 + 0.06 * s;
-        const r0 = p.radius * (0.55 + 0.08 * s);
-        ctx.beginPath();
-        ctx.moveTo(sx + Math.cos(sa) * r0, sy + Math.sin(sa) * r0);
-        ctx.lineTo(sx + Math.cos(sa) * (r0 + 22), sy + Math.sin(sa) * (r0 + 22));
-        ctx.stroke();
-      }
-    } else if (p.type === 'barrage') {
-      // TENTACLE BARRAGE telegraph: each stab beat gets a churning mound, a
-      // rising tentacle ghost, and a timing ring that closes in — the whole
-      // arena becomes a rhythm of dodges.
-      const elapsed = p.total - p.timer;
-      for (const stab of p.stabs) {
-        const tx = stab.x - camera.x;
-        const ty = stab.y - camera.y;
-        const untilStab = stab.at - elapsed;
-        if (stab.done) {
-          // Already fired: a faint dark scar on the seabed.
-          ctx.fillStyle = 'rgba(43, 6, 8, 0.35)';
-          ctx.beginPath(); ctx.arc(tx, ty, 26, 0, Math.PI * 2); ctx.fill();
-          continue;
-        }
-        // Warning spike: a triangle rising from the seabed that pulses, then
-        // snaps bright white in the last moment before it stabs.
-        const armed = Math.max(0, Math.min(1, 1 - untilStab / 0.35)); // 0→1 over last .35s
-        const warmup = Math.max(0, Math.min(1, 1 - untilStab / 1.2)); // 0→1 over last 1.2s
-        // Churning mound: the seabed bulges before the spike.
-        if (warmup > 0 && !stab.done) {
-          ctx.fillStyle = 'rgba(69, 10, 10, ' + (0.25 + 0.4 * warmup).toFixed(3) + ')';
-          ctx.beginPath();
-          ctx.ellipse(tx, ty + 14, 20 + 14 * warmup, 7 + 5 * warmup, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        // Rising tentacle ghost: a thick translucent spear climbing out of the
-        // mound as the beat approaches.
-        if (warmup > 0.25 && !stab.done) {
-          const spearH = 70 * warmup;
-          ctx.strokeStyle = 'rgba(190, 18, 60, ' + (0.3 + 0.45 * warmup).toFixed(3) + ')';
-          ctx.lineWidth = 13;
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(tx, ty + 14);
-          ctx.quadraticCurveTo(tx + Math.sin(this.animT * 9 + stab.at * 10) * 8,
-            ty + 14 - spearH * 0.6, tx, ty + 14 - spearH);
-          ctx.stroke();
-          ctx.strokeStyle = 'rgba(254, 205, 211, ' + (0.3 + 0.4 * warmup).toFixed(3) + ')';
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.moveTo(tx, ty + 14);
-          ctx.quadraticCurveTo(tx + Math.sin(this.animT * 9 + stab.at * 10) * 8,
-            ty + 14 - spearH * 0.6, tx, ty + 14 - spearH);
-          ctx.stroke();
-        }
-        // Timing ring: closes in on the stab point as its beat arrives.
-        if (!stab.done && untilStab > 0) {
-          const ringR = 20 + untilStab * 90;
-          ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.25 + 0.3 * warmup).toFixed(3) + ')';
-          ctx.lineWidth = 2.5;
-          ctx.setLineDash([5, 5]);
-          ctx.beginPath(); ctx.arc(tx, ty + 14, ringR, 0, Math.PI * 2); ctx.stroke();
-          ctx.setLineDash([]);
-        }
-        const warn = 0.4 + 0.4 * Math.sin(this.animT * 18 + stab.at * 10);
-        ctx.strokeStyle = armed > 0.5
-          ? 'rgba(255, 255, 255, ' + (0.6 + 0.4 * armed).toFixed(3) + ')'
-          : 'rgba(244, 63, 94, ' + warn.toFixed(3) + ')';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(tx, ty + 14);
-        ctx.lineTo(tx - 16, ty - 18);
-        ctx.moveTo(tx, ty + 14);
-        ctx.lineTo(tx + 16, ty - 18);
-        ctx.stroke();
-        // Ground ring so the hit zone is readable.
-        ctx.setLineDash([6, 5]);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(251, 113, 133, ' + (0.3 + 0.3 * warn).toFixed(3) + ')';
-        ctx.beginPath();
-        ctx.ellipse(tx, ty + 14, 34, 16, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        // Rising ink plume preview under the armed spikes.
-        if (armed > 0.3) {
-          ctx.fillStyle = 'rgba(127, 29, 29, ' + (0.3 * armed).toFixed(3) + ')';
-          ctx.fillRect(tx - 6, ty - 30 * armed, 12, 30 * armed);
-        }
-      }
-    } else if (p.type === 'ink_spew') {
-      // INK SPEW telegraph: a widening cone of murk pouring from the maw — you
-      // must leave the sector, not just the epicentre.
-      const len = 230 + this.phase * 30;
-      const wedge = ctx.createRadialGradient(sx, sy, 0, sx, sy, len);
-      wedge.addColorStop(0, 'rgba(26, 3, 8, ' + (0.12 + 0.18 * k).toFixed(3) + ')');
-      wedge.addColorStop(0.55, 'rgba(26, 3, 8, ' + (0.22 + 0.22 * k).toFixed(3) + ')');
-      wedge.addColorStop(1, 'rgba(26, 3, 8, 0)');
-      ctx.fillStyle = wedge;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      const inkA = p.angle, inkW = p.width;
-      ctx.arc(sx, sy, len, inkA - inkW / 2, inkA + inkW / 2);
-      ctx.closePath(); ctx.fill();
-      // Edge lances: ink racing along the cone borders as it widens.
-      ctx.strokeStyle = 'rgba(124, 50, 94, ' + (0.3 + 0.4 * k).toFixed(3) + ')';
-      ctx.lineWidth = 3 + 8 * k;
-      ctx.lineCap = 'round';
-      for (const sign of [-1, 1]) {
-        const ex = sx + Math.cos(inkA + sign * inkW / 2) * len * k;
-        const ey = sy + Math.sin(inkA + sign * inkW / 2) * len * k;
-        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-      }
-    } else if (p.type === 'beam') {
-      // AQUA LANCE telegraph: a white-hot eye, a charging spine that thickens
-      // and brightens toward the player, and a ring that contracts to nothing
-      // at their feet — strafe or take the searing hit.
-      const tx = p.target.x - camera.x;
-      const ty = p.target.y - camera.y;
-      const charge = 0.5 + 0.5 * k;                  // 0.5 → 1.0 as it winds up
-      const bdx = p.target.x - p.x, bdy = p.target.y - p.y;
-      const blen = Math.hypot(bdx, bdy) || 1;
-      const nx = bdx / blen, ny = bdy / blen;
-      // Eye superheat core: the glow grows as it locks on.
-      ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.25 + 0.45 * charge).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(sx, sy, 6 + 12 * charge, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255, 241, 194, ' + (0.25 + 0.4 * charge).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(sx, sy, 3 + 7 * charge, 0, Math.PI * 2); ctx.fill();
-      // The charging spine: thin core → bright lance, widening along its length.
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = 'rgba(165, 243, 253, ' + (0.35 + 0.45 * charge).toFixed(3) + ')';
-      ctx.lineWidth = 3 + 10 * charge;
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.45 + 0.4 * charge).toFixed(3) + ')';
-      ctx.lineWidth = 1.5 + 4 * charge;
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
-      // Contracting ring at the player end — the moment it hits zero, it fires.
-      const ringR = 30 * (1 - k);
-      ctx.setLineDash([5, 6]);
-      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.3 + 0.5 * charge).toFixed(3) + ')';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(tx, ty, ringR, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
-      // Micro-spark streaks racing down the spine as the charge peaks.
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.15 + 0.35 * charge).toFixed(3) + ')';
-      ctx.lineWidth = 1.5;
-      for (let s = 0; s < 6; s++) {
-        const f = Math.random();
+    } else if (p.type === 'tooth_barrage') {
+      // Spark lines converging on the gape, then the volley fires.
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.5 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + this.animT;
+        const r0 = 60 + 50 * (1 - k);
         ctx.beginPath();
-        ctx.moveTo(sx + (tx - sx) * f, sy + (ty - sy) * f);
-        ctx.lineTo(sx + (tx - sx) * f + nx * 6, sy + (ty - sy) * f + ny * 6);
+        ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0 * 0.6);
+        ctx.lineTo(sx + Math.cos(a) * 14, sy + Math.sin(a) * 8);
         ctx.stroke();
       }
-    } else {
-      // SLAM telegraph: the generic circle becomes a cracking impact site —
-      // a dark crater disc, radiating cracks, a closing timing ring, a
-      // descending shadow of the incoming limb, and rising dust.
-      ctx.fillStyle = 'rgba(43, 6, 8, ' + (0.25 + 0.3 * k).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(sx, sy, p.radius * (0.5 + 0.5 * k), 0, Math.PI * 2); ctx.fill();
-      // Radiating cracks that lengthen as the hit approaches.
-      ctx.strokeStyle = 'rgba(26, 3, 8, ' + (0.5 + 0.4 * k).toFixed(3) + ')';
-      ctx.lineWidth = 3;
-      for (let c = 0; c < 8; c++) {
-        const ca = c * (Math.PI / 4) + 0.4;
-        const r0 = p.radius * 0.15;
-        const r1 = p.radius * (0.3 + 0.6 * k);
-        ctx.beginPath();
-        ctx.moveTo(sx + Math.cos(ca) * r0, sy + Math.sin(ca) * r0 * 0.6);
-        ctx.lineTo(sx + Math.cos(ca) * r1, sy + Math.sin(ca) * r1 * 0.6);
-        ctx.stroke();
-      }
-      // Closing timing ring: starts wide, lands exactly on the radius.
-      const ringR = p.radius * (1.6 - 0.6 * k);
+    } else if (p.type === 'depth_warning') {
+      // An eruption marker below the player: ring + rising chevrons.
       ctx.setLineDash([10, 7]);
       ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.35 + 0.4 * k).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(sx, sy, ringR, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.4 + 0.45 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, p.radius || 120, (p.radius || 120) * 0.4, 0, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.setLineDash([]);
-      // Descending limb shadow: a dark bar dropping onto the site.
-      const dropK = k * k;
-      ctx.fillStyle = 'rgba(26, 3, 8, ' + (0.25 + 0.45 * dropK).toFixed(3) + ')';
-      ctx.fillRect(sx - 14, sy - 160 * (1 - dropK) - 30, 28, 60);
-      // Rising dust motes shaken loose before the hit.
-      ctx.fillStyle = 'rgba(254, 205, 211, ' + (0.2 + 0.35 * k).toFixed(3) + ')';
-      for (let d = 0; d < 5; d++) {
-        const da = this.animT * 4 + d * 1.256;
+      ctx.fillStyle = 'rgba(125, 211, 252, ' + (0.2 + 0.4 * k).toFixed(3) + ')';
+      for (let c = 0; c < 4; c++) {
+        const rise = ((this.animT * 140 + c * 46) % 180);
         ctx.beginPath();
-        ctx.arc(sx + Math.cos(da) * p.radius * 0.6,
-          sy + Math.sin(da) * p.radius * 0.3 - 6 * k, 2, 0, Math.PI * 2);
+        ctx.moveTo(sx - 12, sy - rise);
+        ctx.lineTo(sx + 12, sy - rise);
+        ctx.lineTo(sx, sy - rise - 16);
+        ctx.closePath();
         ctx.fill();
       }
-      ctx.setLineDash([6, 6]);
+    } else if (p.type === 'hunt_call') {
+      // A roar ring: a hard bright circle snapping inward.
+      const r = (p.radius || 120) * (1.7 - 0.7 * k);
+      ctx.setLineDash([14, 9]);
       ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.arc(sx, sy, p.radius, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
-      // Crosshair so the slam point reads at a glance.
+      // Emanating shockwave ticks.
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.2 + 0.4 * k).toFixed(3) + ')';
       ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(sx - 14, sy);
-      ctx.lineTo(sx + 14, sy);
-      ctx.moveTo(sx, sy - 14);
-      ctx.lineTo(sx, sy + 14);
-      ctx.stroke();
+      for (let s = 0; s < 8; s++) {
+        const a = (s / 8) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a) * (r + 6), sy + Math.sin(a) * (r + 6));
+        ctx.lineTo(sx + Math.cos(a) * (r + 16 + 8 * k), sy + Math.sin(a) * (r + 16 + 8 * k));
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
 
+
+  /**
+   * Terraria-styled side-view Megalodon: a long slate-blue torpedo with a
+   * pale belly, one huge crescent tail, tall dorsal + sweeping pectorals,
+   * and a mouth that hangs open far past what looks possible — red gape,
+   * rows of white teeth, eye burning above the jawline. Scar count grows
+   * with injury; phase 2 cracks the hide open, phase 3 shreds the fins.
+   */
   render(ctx, camera) {
     const x = this.x - camera.x;
     const y = this.y - camera.y;
     const injury = 1 - this.hp / this.maxHp;
-    const cx = x + this.width * 0.5;
     const ph = this.phase;
-    // VISUAL SCALE, capped. Grows a touch per phase (1.0 -> 1.35) and NEVER
-    // the runaway 6x that used to blank the screen. Damage/rate live on a
-    // separate ladder in update(); the silhouette only has to read bigger.
-    const grow = Math.min(1.35, 1 + (ph - 1) * 0.12);
-    const t = this.animT * (1.6 + ph * 0.35);
-    const lash = this.lashPhase || 0;
-    const hiddenNow = this.hideAlpha < 0.6;
     const flash = this.hitFlash > 0;
     const faceDir = this.faceDir || 1;
-    // Snap every drawn coordinate to a 2px grid so the art keeps the chunky,
-    // pixel-sprite read Terraria tiles have instead of drifting sub-pixels.
+    // VISUAL SCALE: grows a touch per phase, capped — never runaway.
+    const grow = Math.min(1.3, 1 + (ph - 1) * 0.12);
     const P = (v) => Math.round(v / 2) * 2;
 
-    // ---- Terraria palette: a SMALL, FLAT set. Nothing is blended on the
-    // body — tone comes from hard-banded fills, not gradients. `heat` only
-    // swaps which flat colours are used; it never scales geometry.
-    const skinLit  = flash ? '#ffffff' : ph === 4 ? '#fffbeb' : ph === 3 ? '#fca5a5' : ph === 2 ? '#fda4af' : '#fecdd3';
-    const skinTop  = flash ? '#ffe4e6' : ph === 4 ? '#fde68a' : ph === 3 ? '#ef4444' : ph === 2 ? '#f43f5e' : '#fb7185';
-    const skinMid  = flash ? '#fecaca' : ph === 4 ? '#f97316' : ph === 3 ? '#b91c1c' : ph === 2 ? '#be123c' : '#e11d48';
-    const skinLow  = flash ? '#fca5a5' : ph === 4 ? '#7f1d1d' : ph === 3 ? '#7f1d1d' : ph === 2 ? '#881337' : '#9f1239';
-    const skinDark = '#2b0608';
-    const ink = '#16060a';            // the hard outline colour
-    const suckerColor = flash ? '#ffffff' : ph >= 3 ? '#fecdd3' : '#ffe4e6';
+    // ---- Palette: hard flat bands, Terraria-style. Phase tints shift the
+    // blues toward charcoal + blood as the frenzy takes over. --------------
+    const hideTop  = flash ? '#ffffff' : ph === 3 ? '#3a4258' : ph === 2 ? '#465578' : '#556590';
+    const hideMid  = flash ? '#ffe4e6' : ph === 3 ? '#4c5670' : ph === 2 ? '#5c6d97' : '#6b7dab';
+    const hideLow  = flash ? '#fecdd3' : ph === 3 ? '#7b88a8' : '#93a2c4';
+    const belly    = flash ? '#ffffff' : ph === 3 ? '#c9d2e4' : '#dde4f2';
+    const finDark  = flash ? '#ffffff' : ph === 3 ? '#333b50' : ph === 2 ? '#3f4d72' : '#4a5a87';
+    const finLite  = flash ? '#ffe4e6' : ph === 3 ? '#5d6a8a' : '#7486b3';
+    const outline  = '#10182b';
+    const mouthDeep = ph >= 2 ? '#5c0d1a' : '#6b1220';
+    const mouthLit  = ph >= 2 ? '#a41c33' : '#b52538';
+    const gum       = '#d76a78';
+    const tooth     = '#f4f6fa';
+    const eyeGlow   = ph === 1 ? 0 : ph === 2 ? 0.5 : 1;
 
     ctx.save();
-    // ---- The WHOLE body moves: bank, pitch, skew, squash, breathe, lunge.
-    // All of it stacks off bounded springs so the silhouette is alive but
-    // never flies apart. grow is applied ONCE, here, as a uniform scale —
-    // individual features are NOT re-multiplied by it.
+    // ---- Whole-body transform: bank, pitch, squash, breathe, lunge. ------
     const squash = this.squash || 0;
     const breath = this.breath || 1;
     const pitch = this.pitch || 0;
-    const skew = this.skew || 0;
+    const lean = this.lean || 0;
     const lunge = this.lunge || 0;
-    const bodyCX = cx + (this.sway || 0);
+    const bodyCX = x + this.width * 0.5 + (this.sway || 0);
     const bodyCY = y + this.height * 0.5 + (this.bob || 0);
     ctx.translate(bodyCX, bodyCY);
     ctx.scale(grow, grow);
-    ctx.rotate((this.lean || 0) * 0.18 + pitch * 0.35 + lunge * 0.06 * faceDir);
-    ctx.transform(1 + skew * 0.6 + squash * 0.35, skew * 0.25,
-      skew * 0.25, (1 - squash * 0.45) * breath, 0, 0);
-    ctx.scale(breath, breath);
-    ctx.translate(-bodyCX, -bodyCY);
-    ctx.translate((this.sway || 0) + faceDir * lunge * 26, (this.bob || 0) - Math.abs(lunge) * 8);
-    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
+    ctx.rotate(lean * 0.14 + pitch * 0.5 + lunge * 0.05 * faceDir);
+    ctx.transform(1 + squash * 0.22, squash * 0.06 * pitch,
+      squash * 0.06 * pitch, (1 - squash * 0.3) * breath, 0, 0);
+    // Face left or right with a single flip; all art below draws NOSE RIGHT.
+    ctx.scale(faceDir, 1);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    // Travelling ripple: a wave running apex->arms the limbs spend as lag.
-    const swimPh = this.swimPhase || 0;
-    const speedNow = Math.hypot(this.vx || 0, this.vy || 0);
-    const rippleAmp = 4 + Math.min(10, speedNow / 22) + (this.lashTimer > 0 ? 5 : 0);
-    const spineOff = (k) => Math.sin(swimPh * 2.1 - k * 3.4) * rippleAmp * (0.25 + k * 0.75);
-
-    // ====================================================================
-    // Geometry. A kraken is: a TALL tapering mantle (apex up), a narrow
-    // head with two big eyes below it, then a heavy crown of ten limbs below
-    // the head. NO mouth — the face is the twin eyes only.
-    const apexY = y + this.height * 0.02;        // pointed tip of the mantle
-    const shoulderY = y + this.height * 0.30;    // widest point of the cone
-    const headY = y + this.height * 0.57;        // eyes, low above the arms
-    const limbRootY = headY + this.height * 0.04; // where the arm crown roots
-    const shoulderW = this.width * 0.20;   // mantle half-width at the shoulder
-    const collarW = this.width * 0.13;     // mantle half-width at the head
-    const headW = this.width * 0.22;
-
-    // ---- Helper: a tapering limb from a base to a curling tip -----------
-    // Terraria limbs are FAT at the root and taper hard, banded into flat
-    // tone steps with a single dark outline — no soft sheen. lagRx/lagRy
-    // bend the control point opposite the swim so fast limbs trail behind.
-    const lagRx = -(this.vx || 0) * 0.16;
-    const lagRy = -(this.vy || 0) * 0.10;
-    const qPoint = (x0, y0, x1, y1, x2, y2, tt) => {
-      const it = 1 - tt;
-      return { x: it * it * x0 + 2 * it * tt * x1 + tt * tt * x2,
-        y: it * it * y0 + 2 * it * tt * y1 + tt * tt * y2 };
-    };
-    const limb = (bx, by, ctrlX, ctrlY, tipX, tipY, baseW) => {
-      const segs = 10;
-      // 1. Hard outline, one step wider than the limb body.
-      ctx.strokeStyle = ink;
-      ctx.lineWidth = baseW + 5;
-      ctx.beginPath(); ctx.moveTo(P(bx), P(by));
-      ctx.quadraticCurveTo(P(ctrlX), P(ctrlY), P(tipX), P(tipY)); ctx.stroke();
-      // 2. Flat body tones, quantised into four hard bands (no gradient).
-      const tones = [skinLit, skinTop, skinMid, skinLow];
-      const bounds = [0.18, 0.42, 0.74, 1.0];
-      for (let s = 0; s < segs; s++) {
-        const t0 = s / segs, t1 = (s + 1) / segs;
-        const w0 = baseW * (1 - t0) + 2.5 * t0;
-        let band = 0; while (band < 3 && t0 > bounds[band]) band++;
-        const p0 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t0);
-        const p1 = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, t1);
-        ctx.strokeStyle = tones[band];
-        ctx.lineWidth = w0;
-        ctx.beginPath(); ctx.moveTo(P(p0.x), P(p0.y)); ctx.lineTo(P(p1.x), P(p1.y)); ctx.stroke();
-      }
-      // 3. Suckers: SQUARE pixel discs down the underside, flat-toned with a
-      //    dark rim. They pop a touch brighter with swim speed + skill glow.
-      const suckerPulse = Math.min(1, 0.30 + Math.min(0.35, speedNow / 400) +
-        this.skillGlow * 0.5 + squash * 0.5);
-      for (const tt of [0.28, 0.40, 0.52, 0.64, 0.76, 0.88]) {
-        const pt = qPoint(bx, by, ctrlX, ctrlY, tipX, tipY, tt);
-        const r = Math.max(2, Math.round((3.4 * (1 - tt) + 1.1) / 2) * 2);
-        ctx.fillStyle = suckerPulse > 0.6 ? suckerColor : '#f9a8d4';
-        ctx.fillRect(P(pt.x - r), P(pt.y - r), r * 2, r * 2);
-        ctx.strokeStyle = 'rgba(22, 6, 10, 0.8)'; ctx.lineWidth = 1;
-        ctx.strokeRect(P(pt.x - r), P(pt.y - r), r * 2, r * 2);
-      }
-    };
-
-    // ====================================================================
-    // 1. TWO long feeding tentacles, drawn first (furthest back). They curl
-    //    out and UP like striking serpents -- the kraken's signature shape.
-    // ====================================================================
-    const _P = this.game && this.game.player;
-    const aimX = _P ? _P.x + _P.width / 2 - camera.x : cx + faceDir * 320;
-    const aimY = _P ? _P.y + _P.height / 2 - camera.y : limbRootY + 80;
-    const aimA = Math.atan2(aimY - limbRootY, aimX - cx);
-    let feedStrike = 0;
-    if (this.lashTimer > 0) feedStrike = Math.max(feedStrike, lash * 0.9);
-    if (this.pending && /^(beam|ink_spew|sweep|ink_burst|whirlpool)$/.test(this.pending.type)) {
-      const pk = 1 - Math.max(0, this.pending.timer) / this.pending.total;
-      feedStrike = Math.max(feedStrike, 0.25 + 0.7 * pk);
+    // Apex-execution vanish: a ghost silhouette in the water.
+    const vanished = this.vanishT > 0;
+    if (vanished) ctx.globalAlpha = 0.16 + Math.abs(Math.sin(this.animT * 30)) * 0.08;
+    if (this.exhaustT > 0) {
+      // Exhausted: desaturated tremble, drawn slightly slack in the water.
+      ctx.globalAlpha = 0.92;
     }
-    feedStrike = Math.min(1, feedStrike);
-    const striking = feedStrike > 0.03;
+    // Local frame: x right = nose direction, y down. Body ~420 long.
+    const HW = this.width * 0.5;   // 210
+    const HH = this.height * 0.5;  // 100
+    const wob = Math.sin(this.swimPhase * 0.9) * 3;
 
-    for (const side of [-1, 1]) {
-      const bx = cx + side * this.width * 0.10 + spineOff(0.85);
-      const sway = Math.sin(t * 0.6 + (side > 0 ? 0 : Math.PI)) * (26 + ph * 8);
-      const idleA = side < 0 ? Math.PI - 0.46 : 0.46;   // down-and-out, per side
-      const lead = striking ? (aimA + side * 0.28) : idleA;
-      const reach = striking ? (205 + ph * 12 + feedStrike * 115) : (185 + Math.abs(sway));
-      const tipX = bx + Math.cos(lead) * reach;
-      const tipY = limbRootY + Math.sin(lead) * reach;
-      const wave = Math.sin(t * 2.9 + side * 3.1) *
-        (striking ? (16 + this.surge * 20 + feedStrike * 16) : (10 + this.surge * 14 + 3));
-      const perX = -Math.sin(lead), perY = Math.cos(lead);
-      const bStrength = (striking ? 52 : 38);
-      const ctrlX = bx + Math.cos(lead) * (reach * 0.52) + perX * bStrength +
-        lagRx * 0.5 + wave * perX * 0.3;
-      const ctrlY = limbRootY + Math.sin(lead) * (reach * 0.52) + perY * bStrength +
-        lagRy * 0.5 + wave * perY * 0.3 + (striking ? 16 : 12);
-      limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 24);
-      // Hooked tip: a wider, ink-rimmed sucker cup that flares on the strike.
-      const tipScale = 1 + feedStrike * 0.35;
-      ctx.fillStyle = skinMid;
-      ctx.strokeStyle = ink; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(P(tipX), P(tipY), 7 * tipScale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      if (feedStrike > 0.6) {
-        ctx.fillStyle = 'rgba(22, 6, 10, ' + (0.25 + 0.35 * feedStrike).toFixed(3) + ')';
-        ctx.beginPath();
-        ctx.ellipse(P(tipX + Math.cos(lead) * 12), P(tipY + Math.sin(lead) * 12),
-          4 * tipScale, 10 * tipScale, lead, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
 
     // ====================================================================
-    // 2. The EIGHT short arms, fanned across a full lower arc. Each arm is a
-    //    heavy curl with its own slot so the crown reads as eight limbs.
+    // 1. THE TAIL — a huge crescent caudal fin, drawn first (furthest back).
+    //    It sweeps with tailSwing; the swing is the swim cycle made visible.
     // ====================================================================
-    for (let i = 0; i < 8; i++) {
-      const f = i / 7;
-      const ang = Math.PI * (0.06 + 0.88 * f);   // 0 = right, PI = left, under
-      const dirX = Math.cos(ang);
-      const dirY = Math.sin(ang);                 // 0..1, always downward-ish
-      const reach = this.height * (0.40 + 0.30 * Math.abs(Math.cos(ang * 1.5)));
-      const sway = Math.sin(t * 0.9 + i * 1.2) * (14 + ph * 5);
-      const punch = lash * (0.4 + 0.6 * Math.abs(dirX));
-      const rootLag = spineOff(0.9);
-      const bx = cx + dirX * (collarW * 0.8) + rootLag;
-      const tipLag2 = Math.sin(swimPh * 2.1 - 3.6 - i * 0.35) * rippleAmp * 0.9;
-      const tipX = cx + dirX * (reach * 0.95 + punch * 70) + sway +
-        lagRx * (0.5 + 0.08 * i) + tipLag2 * 0.6;
-      const tipY = limbRootY + dirY * (reach * 0.9) + punch * 30 +
-        lagRy * (0.5 + 0.08 * i) +
-        Math.cos(swimPh * 2.1 - 3.0 - i * 0.35) * rippleAmp * 0.5;
-      const wave = Math.sin(t * 3.1 + i * 0.9) * (6 + this.surge * 8);
-      const ctrlX = bx + dirX * (reach * 0.55) + sway * 0.5 + lagRx * 0.3;
-      const ctrlY = limbRootY + dirY * (reach * 0.25) + reach * 0.30 + wave + lagRy * 0.3;
-      limb(bx, limbRootY, ctrlX, ctrlY, tipX, tipY, 13);
-    }
-
-    // ====================================================================
-    // 3. THE MANTLE: a tall tapering cone, apex up, drawn with FLAT tone
-    //    bands (not a gradient). The cone keeps its long, narrow read so it
-    //    is unmistakably a squid mantle and not a jellyfish bell.
-    // ====================================================================
-    ctx.beginPath();
-    ctx.moveTo(P(cx), P(apexY));
-    ctx.bezierCurveTo(P(cx + shoulderW * 0.22), P(apexY + this.height * 0.12),
-      P(cx + shoulderW * 0.78), P(shoulderY - this.height * 0.06),
-      P(cx + shoulderW), P(shoulderY));
-    ctx.bezierCurveTo(P(cx + shoulderW * 0.80), P(shoulderY + this.height * 0.16),
-      P(cx + collarW * 1.20), P(headY - this.height * 0.06),
-      P(cx + collarW), P(headY));
-    ctx.bezierCurveTo(P(cx + collarW * 1.2), P(headY + this.height * 0.10),
-      P(cx + headW * 0.9), P(limbRootY - this.height * 0.02),
-      P(cx + headW * 0.5), P(limbRootY + this.height * 0.02));
-    ctx.quadraticCurveTo(P(cx), P(limbRootY + this.height * 0.09),
-      P(cx - headW * 0.5), P(limbRootY + this.height * 0.02));
-    ctx.bezierCurveTo(P(cx - headW * 0.9), P(limbRootY - this.height * 0.02),
-      P(cx - collarW * 1.2), P(headY + this.height * 0.10),
-      P(cx - collarW), P(headY));
-    ctx.bezierCurveTo(P(cx - collarW * 1.20), P(headY - this.height * 0.06),
-      P(cx - shoulderW * 0.80), P(shoulderY + this.height * 0.16),
-      P(cx - shoulderW), P(shoulderY));
-    ctx.bezierCurveTo(P(cx - shoulderW * 0.78), P(shoulderY - this.height * 0.06),
-      P(cx - shoulderW * 0.22), P(apexY + this.height * 0.12),
-      P(cx), P(apexY));
-    ctx.closePath();
-    ctx.fillStyle = skinMid;
-    ctx.fill();
-    // Hard cut-out outline.
-    ctx.strokeStyle = ink; ctx.lineWidth = 5; ctx.stroke();
-    // Flat dorsal highlight: a single lighter band down the spine (a hard
-    // parallelogram of light, NOT a gradient) so the cone reads as rounded
-    // volume the Terraria way.
-    ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.5 : 0.5);
-    ctx.fillStyle = skinTop;
-    ctx.beginPath();
-    ctx.moveTo(P(cx - shoulderW * 0.30), P(apexY + this.height * 0.10));
-    ctx.lineTo(P(cx + shoulderW * 0.06), P(apexY + this.height * 0.10));
-    ctx.lineTo(P(cx + shoulderW * 0.20), P(shoulderY));
-    ctx.lineTo(P(cx - shoulderW * 0.55), P(shoulderY));
-    ctx.closePath(); ctx.fill();
-    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    // Flat ventral shadow: one dark band on the lower-left flank for weight.
-    ctx.globalAlpha = ctx.globalAlpha * 0.35;
-    ctx.fillStyle = skinDark;
-    ctx.beginPath();
-    ctx.moveTo(P(cx - shoulderW * 0.55), P(shoulderY));
-    ctx.lineTo(P(cx + shoulderW * 0.20), P(shoulderY));
-    ctx.lineTo(P(cx + collarW * 0.9), P(headY));
-    ctx.lineTo(P(cx - collarW * 0.9), P(headY));
-    ctx.closePath(); ctx.fill();
-    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    // Dorsal spine ridges: a short row of pixel ticks up the mantle midline,
-    // brightening with the jet surge — a living apex, not a smooth teardrop.
-    const spineAmp = this.surge * 0.4 + (1 - hiddenNow) * 0.25 + (this.phaseFlash || 0) * 0.4;
-    ctx.strokeStyle = 'rgba(22, 6, 10, 0.9)'; ctx.lineWidth = 1.4;
-    for (let i = 0; i < 6; i++) {
-      const ridgeX = P(cx + Math.cos(this.animT * 3.3 + i) * shoulderW * 0.11 * spineAmp);
-      const midY = P(apexY + (shoulderY - apexY) * (0.12 + i * 0.13));
-      const spH = (9 + (i % 3) * 2 + spineAmp * 3);
-      const spW = (6 + spineAmp * 2);
-      ctx.beginPath();
-      ctx.moveTo(ridgeX - spW, midY); ctx.lineTo(ridgeX, midY - spH); ctx.lineTo(ridgeX + spW, midY);
-      ctx.stroke();
-      ctx.beginPath(); ctx.arc(ridgeX, midY - spH * 0.3, 1.5, 0, Math.PI * 2); ctx.stroke();
-    }
-
-    // ====================================================================
-    // 4. Terminal FINS on the mantle: two low, wide arrowhead fins laid
-    //    flat along the upper flanks, exactly as a giant squid wears them.
-    // ====================================================================
-    for (const side of [-1, 1]) {
-      const rootX = cx + side * shoulderW * 0.42 + spineOff(0.35);
-      const rootY = apexY + this.height * 0.20;
-      const flap = Math.sin(t * 1.4 + (side > 0 ? 0 : Math.PI)) *
-        (3 + Math.min(6, speedNow / 45)) + (squash || 0) * side * 9;
-      ctx.globalAlpha = ctx.globalAlpha * (flash ? 0.92 : 0.9);
-      ctx.fillStyle = flash ? '#ffffff' : skinTop;
-      ctx.beginPath();
-      ctx.moveTo(P(rootX), P(rootY - 16));
-      ctx.quadraticCurveTo(P(rootX + side * 40), P(rootY - 6 + flap),
-        P(rootX + side * 66), P(rootY + 18 + flap * 0.4));
-      ctx.quadraticCurveTo(P(rootX + side * 52), P(rootY + 34), P(rootX + side * 28), P(rootY + 36));
-      ctx.quadraticCurveTo(P(rootX + side * 12), P(rootY + 24), P(rootX), P(rootY + 6));
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
-      ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    }
-
-    // ====================================================================
-    // 5. THE EYES: two big black-rimmed orbs, STRICTLY SYMMETRIC. Both
-    //    share ONE centre row `ey` and ONE radius `s`; the only difference
-    //    is the right eye carries the weakpoint glow. No per-eye size or
-    //    vertical offset of any kind — that asymmetry was the bug reported.
-    // ====================================================================
-    const ey = P(y + this.height * 0.60 + spineOff(0.75) * 0.5);
-    const _beamCharge = this.pending && this.pending.type === 'beam'
-      ? (1 - Math.max(0, this.pending.timer) / this.pending.total) : 0;
-    const chargeGlow = (this.chargePose || 0) * (0.5 + ph * 0.25);
-    const glow = 1 + Math.sin(this.animT * 5) * 0.12 + this.skillGlow * 0.6 +
-      (squash || 0) * 0.4 + _beamCharge * 0.9 + chargeGlow;
-    const haloColor = this.phase >= 3 ? '248, 113, 113' : this.phase === 2 ? '251, 146, 60' : '253, 224, 71';
-    const irisColor = this.phase >= 3 ? '#f87171' : this.phase === 2 ? '#fbbf24' : '#fef08a';
-    // ONE shared eye radius for both orbs.
-    const eyeR = 14;
-    const drawEye = (px, primary) => {
-      px = P(px);
-      if (primary) {
-        // Weakpoint glow: a flat ring of light behind the eye (a stroked
-        // annulus, not a soft gradient) that blooms when skills fire.
-        const haloR = P((eyeR + 6) * Math.min(1.6, glow));
-        ctx.globalAlpha = Math.min(0.55, 0.22 + this.skillGlow * 0.25 + chargeGlow * 0.3);
-        ctx.strokeStyle = 'rgba(' + haloColor + ', 0.9)';
-        ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(px, ey, haloR, 0, Math.PI * 2); ctx.stroke();
-        ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-      }
-      // Round socket: a disc set flush with the head.
-      ctx.fillStyle = skinDark;
-      ctx.beginPath(); ctx.arc(px, ey, eyeR, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(22, 6, 10, 0.9)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(px, ey, eyeR, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.stroke();
-      // Iris: a flat wet disc, slightly off toward the face direction.
-      const ix = P(px + faceDir * 2.4);
-      ctx.fillStyle = irisColor;
-      ctx.beginPath(); ctx.arc(ix, ey, 10, 0, Math.PI * 2); ctx.fill();
-      // Round pupil.
-      ctx.fillStyle = '#0b0712';
-      ctx.beginPath(); ctx.arc(ix, ey, 3, 0, Math.PI * 2); ctx.fill();
-      // Wet glint for a living eye.
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(P(ix - 3.2), P(ey - 3.4), 2.3, 0, Math.PI * 2); ctx.fill();
-      if (primary) {
-        // Aqua-lance lock-on: a contracting dashed ring as it charges.
-        if (_beamCharge > 0.05) {
-          const ringR = eyeR + 12 + 12 * _beamCharge;
-          ctx.strokeStyle = 'rgba(255, 241, 194, ' + (0.2 + 0.55 * _beamCharge).toFixed(3) + ')';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, Math.max(2, 14 - 10 * _beamCharge)]);
-          ctx.beginPath(); ctx.arc(px, ey, ringR, 0, Math.PI * 2); ctx.stroke();
-          ctx.setLineDash([]);
-        }
-        // Corneal sheen: a crescent catchlight on the iris.
-        ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.2 * Math.sin(this.animT * 7)).toFixed(3) + ')';
-        ctx.beginPath();
-        ctx.ellipse(P(ix + 2), P(ey - 3.2), 2.8, 1.4, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    };
-    // Mirror-symmetric placement about cx: |offset| identical on both sides.
-    const eyeSpread = this.width * 0.085;
-    drawEye(cx - eyeSpread, false);
-    drawEye(cx + eyeSpread, true);
-
-    // ---- Jet spout: a pressurised plume vents from the apex mid-swim ----
-    if (this.surge > 0.45) {
-      const jx = P(cx);
-      const jy = P(apexY - this.height * 0.04);
-      const spoutLen = this.surge * 26 * (1 + (1 - this.hideAlpha) * 0.4);
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.moveTo(jx - 4, jy); ctx.lineTo(jx - 2, jy - spoutLen);
-      ctx.lineTo(jx + 2, jy - spoutLen); ctx.lineTo(jx + 4, jy); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.4)';
-      ctx.beginPath(); ctx.arc(jx, jy - spoutLen * 0.6, 3 + this.surge * 4, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
-    }
-    // ---- Abyssal aura: a BOUNDED glow so it frames the beast and never
-    // blankets the screen. Capped to ~0.7x body width and modestly alpha'd —
-    // the old unbounded aura (radius up to 1860px) is what hid the tiles.
-    const auraBase = hiddenNow ? 0.10 : 0.20;
-    const auraHot = auraBase + this.skillGlow * 0.18 + squash * 0.2 + injury * 0.12
-      + (this.phaseFlash || 0) * 0.25;
-    const auraR = Math.min(this.width * 0.7, this.width * 0.55 * (1 + (ph - 1) * 0.08));
-    const auraCore = this.phase === 4 ? '255, 231, 179'
-      : this.phase === 3 ? '248, 113, 113'
-      : this.phase === 2 ? '251, 146, 60' : '168, 85, 247';
-    const aura = ctx.createRadialGradient(bodyCX, bodyCY, this.height * 0.2,
-      bodyCX, bodyCY, auraR);
-    aura.addColorStop(0, 'rgba(' + auraCore + ', ' + Math.min(0.32, auraHot).toFixed(3) + ')');
-    aura.addColorStop(0.6, 'rgba(76, 5, 25, ' + (auraHot * 0.3).toFixed(3) + ')');
-    aura.addColorStop(1, 'rgba(76, 5, 25, 0)');
-    ctx.fillStyle = aura;
-    ctx.beginPath(); ctx.arc(bodyCX, bodyCY, auraR, 0, Math.PI * 2); ctx.fill();
-    // ---- Bioluminescent rune-rings: flat dashed ellipses, bounded radius.
+    const tailX = -HW + 30;
+    const tSwing = (this.tailSwing || 0) * 0.02;
     ctx.save();
-    ctx.globalAlpha = (hiddenNow ? 0.15 : 0.3) + this.skillGlow * 0.35 + (this.phaseFlash || 0) * 0.25;
-    for (const ring of [0, 1]) {
-      const rr = this.width * (0.28 + ring * 0.08) * grow;
-      const rot = this.animT * (ring ? -1.1 : 0.8) + ring * 1.7;
-      ctx.strokeStyle = ring ? '#fda4af' : '#e9d5ff';
-      ctx.lineWidth = (ring ? 2.5 : 3);
-      ctx.setLineDash(ring ? [4, 10] : [16, 9]);
-      ctx.lineDashOffset = rot * 22;
-      ctx.beginPath();
-      ctx.ellipse(bodyCX, bodyCY - this.height * 0.08, rr, rr * 0.42, 0, 0, Math.PI * 2);
-      ctx.stroke();
+    ctx.translate(tailX, wob * 0.5);
+    ctx.rotate(tSwing);
+    // Upper lobe (longer, shark-style).
+    ctx.fillStyle = finDark;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-46, -58, -64, -92);
+    ctx.quadraticCurveTo(-40, -60, -12, -26);
+    ctx.lineTo(0, -6);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Lower lobe (shorter).
+    ctx.fillStyle = finDark;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-38, 40, -50, 66);
+    ctx.quadraticCurveTo(-30, 42, -8, 20);
+    ctx.lineTo(0, 6);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Ragged notches on the caudal fin in the apex phase.
+    if (ph === 3) {
+      ctx.fillStyle = 'rgba(16, 24, 43, 0.9)';
+      ctx.beginPath(); ctx.moveTo(-30, -46); ctx.lineTo(-18, -34); ctx.lineTo(-34, -30); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-26, 30); ctx.lineTo(-16, 22); ctx.lineTo(-30, 18); ctx.closePath(); ctx.fill();
     }
-    ctx.setLineDash([]);
     ctx.restore();
-    ctx.globalAlpha = hiddenNow ? Math.max(0.12, this.hideAlpha) : 1;
 
-    // ---- Bumpy hide: a golden-angle scatter of small flat spots; at high
-    // injury some crack into pixel embers — the beast visibly falls apart.
-    ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
-    for (let i = 0; i < 22; i++) {
-      const a = i * 2.399;
-      const rad = Math.sqrt(i / 22);
-      const kSpot = 0.18 + rad * 0.8;
-      const bx2 = P(cx + Math.cos(a) * shoulderW * 0.72 * rad + spineOff(kSpot * 0.6));
-      const by2 = P(apexY + (shoulderY - apexY) * kSpot);
-      const cracked = injury > 0.45 && (i % 4 === 0);
-      if (cracked) {
-        ctx.fillStyle = injury > 0.7 ? '#fde68a' : '#f97316';
-        ctx.fillRect(bx2 - 3, by2 - 3, 6, 6);
-        ctx.fillStyle = 'rgba(69, 10, 10, 0.45)';
-      } else {
-        ctx.fillRect(bx2 - 1, by2 - 1, 2 + (i % 3), 2 + (i % 3));
-      }
-    }
+    // ====================================================================
+    // 2. PECTORAL FINS — the big swept wings low on the flanks. The far-side
+    //    fin is drawn dark (behind the body), the near-side one on top.
+    // ====================================================================
+    const pecBase = HW * 0.34;
+    // Far pectoral (behind body): darker, smaller.
+    ctx.fillStyle = finDark;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(pecBase - 10, HH * 0.34);
+    ctx.quadraticCurveTo(pecBase - 60, HH * 0.9, pecBase - 92, HH * 1.15 + wob);
+    ctx.quadraticCurveTo(pecBase - 40, HH * 0.72, pecBase - 26, HH * 0.3);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
 
-    // ---- Ink dripping off the crown, and the wounds the boss has taken ---
-    ctx.fillStyle = '#0b0212';
-    for (let i = 0; i < 7; i++) {
-      const dx = P(cx - shoulderW * 0.8 + i * (shoulderW * 1.6 / 6));
-      const drip = (this.animT * 26 + i * 37) % (this.height * 0.34);
-      ctx.fillRect(dx - 1, P(headY + drip), 3, 4 + drip * 0.05);
+    // ====================================================================
+    // 3. THE BODY — one long bezier torpedo: nose at +HW, peduncle at -HW.
+    // ====================================================================
+    const noseY = -6 + wob * 0.3;           // the snout dips slightly
+    const backY = -HH * 0.62 + wob;         // arch of the back
+    const bellyY = HH * 0.58 + wob;         // swell of the belly
+    ctx.beginPath();
+    ctx.moveTo(HW, noseY + 8);                                   // snout tip
+    ctx.quadraticCurveTo(HW * 0.72, backY, HW * 0.18, backY - 4); // upper jawline back
+    ctx.quadraticCurveTo(-HW * 0.42, backY - 2, -HW + 24, wob * 0.6); // back to peduncle
+    ctx.lineTo(-HW + 24, wob * 0.6 + 14);
+    ctx.quadraticCurveTo(-HW * 0.42, bellyY + 6, HW * 0.2, bellyY);
+    ctx.quadraticCurveTo(HW * 0.78, bellyY - 24, HW, noseY + 8);  // jawline forward
+    ctx.closePath();
+    ctx.fillStyle = hideMid;
+    ctx.fill();
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // Dorsal dark band (top half) and pale belly (bottom): hard flat tones.
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = hideTop;
+    ctx.beginPath();
+    ctx.moveTo(HW, backY);
+    ctx.lineTo(-HW, backY + 2);
+    ctx.lineTo(-HW, backY + 26);
+    ctx.quadraticCurveTo(0, backY + 34, HW, backY + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = hideLow;
+    ctx.beginPath();
+    ctx.moveTo(HW, bellyY - 30);
+    ctx.quadraticCurveTo(0, bellyY - 20, -HW, bellyY - 26);
+    ctx.lineTo(-HW, bellyY + 20);
+    ctx.lineTo(HW, bellyY + 20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = belly;
+    ctx.beginPath();
+    ctx.moveTo(HW, noseY + 12);
+    ctx.quadraticCurveTo(HW * 0.5, bellyY - 12, -HW * 0.3, bellyY - 14);
+    ctx.lineTo(-HW * 0.3, bellyY + 20);
+    ctx.lineTo(HW, bellyY + 20);
+    ctx.closePath();
+    ctx.fill();
+    // Counter-shading seam: a hard line where dark meets light.
+    ctx.strokeStyle = 'rgba(16, 24, 43, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(HW - 8, bellyY - 26);
+    ctx.quadraticCurveTo(0, bellyY - 18, -HW * 0.6, bellyY - 24);
+    ctx.stroke();
+    ctx.restore();
+
+
+    // ====================================================================
+    // 4. DORSAL FIN — the tall triangle that reads "shark" from a mile off.
+    // ====================================================================
+    ctx.fillStyle = finDark;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(HW * 0.30, backY + 4);
+    ctx.quadraticCurveTo(-2, backY - 40, -26, backY - 78 + wob);   // swept-back tip
+    ctx.quadraticCurveTo(-16, backY - 30, -HW * 0.22, backY + 2);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Fin highlight edge.
+    ctx.strokeStyle = finLite;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(HW * 0.28, backY);
+    ctx.quadraticCurveTo(-2, backY - 36, -24, backY - 72 + wob);
+    ctx.stroke();
+    if (ph === 3) {
+      // Apex: the dorsal is notched and torn.
+      ctx.fillStyle = hideMid;
+      ctx.beginPath(); ctx.moveTo(-10, backY - 34); ctx.lineTo(2, backY - 22); ctx.lineTo(-18, backY - 20); ctx.closePath(); ctx.fill();
     }
-    if (injury > 0.05) {
-      ctx.strokeStyle = 'rgba(248, 113, 113, ' + Math.min(0.9, injury).toFixed(3) + ')';
-      ctx.lineWidth = 3 + injury * 3;
+    // Second dorsal + pelvic nubs for silhouette richness.
+    ctx.fillStyle = finDark;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-HW * 0.52, backY + 4);
+    ctx.quadraticCurveTo(-HW * 0.58, backY - 22, -HW * 0.66, backY - 30 + wob);
+    ctx.quadraticCurveTo(-HW * 0.62, backY - 8, -HW * 0.68, backY + 4);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // ====================================================================
+    // 5. NEAR PECTORAL — big swept wing on the viewer's side, drawn ON TOP.
+    // ====================================================================
+    ctx.fillStyle = finLite;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(pecBase + 14, HH * 0.40);
+    ctx.quadraticCurveTo(pecBase - 42, HH * 1.05 + wob, pecBase - 86, HH * 1.42 + wob * 1.4);
+    ctx.quadraticCurveTo(pecBase - 20, HH * 0.86, pecBase + 34, HH * 0.36);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(16, 24, 43, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(pecBase + 6, HH * 0.44);
+    ctx.quadraticCurveTo(pecBase - 36, HH * 1.02, pecBase - 76, HH * 1.34 + wob);
+    ctx.stroke();
+
+    // ====================================================================
+    // 6. GILL SLITS — five slashes behind the head. They flutter with breath.
+    // ====================================================================
+    ctx.strokeStyle = 'rgba(16, 24, 43, 0.75)';
+    ctx.lineWidth = 3;
+    for (let g = 0; g < 5; g++) {
+      const gx = HW * 0.52 - g * 13;
+      const gl = 26 + Math.sin(this.animT * 4 + g * 0.6) * 3 * breath + this.surge * 5;
       ctx.beginPath();
-      for (let i = 0; i < 5; i++) {
-        const px2 = P(cx - 60 + i * 30);
-        const py2 = P(apexY + (shoulderY - apexY) * (0.25 + (i % 2) * 0.4));
-        ctx.moveTo(px2, py2); ctx.lineTo(px2 + 9, py2 + 13); ctx.lineTo(px2 - 4, py2 + 24);
-      }
+      ctx.moveTo(gx, backY + 14);
+      ctx.quadraticCurveTo(gx - 5, backY + 14 + gl * 0.5, gx - 3, backY + 14 + gl);
       ctx.stroke();
     }
 
-    // Hit flash: whole-silhouette white, same as every other boss.
-    if (this.hitFlash > 0) {
-      ctx.globalAlpha = Math.min(0.6, this.hitFlash * 3);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(P(x - 20), P(y - 20), this.width + 40, this.height + 40);
+    // ====================================================================
+    // 7. SCARS — the record of a million years of hunting. Count + severity
+    //    climb with injury; phase 2 splits them open, phase 3 is chewed raw.
+    // ====================================================================
+    const scarCount = Math.floor(3 + injury * 9 + (ph - 1) * 3);
+    for (let s = 0; s < scarCount; s++) {
+      // Deterministic scatter along the flank.
+      const sSeed = s * 2.399;
+      const sxp = Math.cos(sSeed) * HW * 0.55;
+      const syp = Math.sin(sSeed * 1.7) * HH * 0.34 + wob;
+      const slen = 12 + (s % 4) * 6;
+      const sang = 0.7 + (s % 3) * 0.5;
+      ctx.strokeStyle = ph >= 2
+        ? 'rgba(212, 74, 90, ' + Math.min(0.95, 0.5 + injury * 0.5).toFixed(2) + ')'
+        : 'rgba(148, 163, 198, 0.75)';
+      ctx.lineWidth = 2.5 + (s % 2);
+      ctx.beginPath();
+      ctx.moveTo(sxp, syp);
+      ctx.lineTo(sxp + Math.cos(sang) * slen, syp + Math.sin(sang) * slen);
+      // Cross-hatch second stroke on every other scar — like the reference.
+      if (s % 2 === 0) {
+        ctx.moveTo(sxp + Math.cos(sang) * slen * 0.2, syp + Math.sin(sang) * slen);
+        ctx.lineTo(sxp + Math.cos(sang) * slen * 0.9, syp - 4);
+      }
+      ctx.stroke();
+      // Phase 2+: the scars crack and weep light.
+      if (ph >= 2 && s % 3 === 0) {
+        ctx.fillStyle = 'rgba(248, 113, 113, ' + (0.35 + eyeGlow * 0.3).toFixed(2) + ')';
+        ctx.fillRect(sxp + 2, syp + 2, 3, 3);
+      }
+    }
+
+
+    // ====================================================================
+    // 8. THE HEAD — blunt snout, burning eye, and THE MAW.
+    // ====================================================================
+    // Brow ridge: a heavy shadow above the eye, angriest in the apex phase.
+    ctx.fillStyle = hideTop;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(HW, noseY + 2);
+    ctx.quadraticCurveTo(HW * 0.9, backY + 16, HW * 0.62, backY + 12);
+    ctx.quadraticCurveTo(HW * 0.8, backY + 30, HW, noseY + 14);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // THE EYE: a black bead with a hard white glint. It ignites red as the
+    // frenzy takes hold — phase 1 cold slate, phase 2 ember, phase 3 furnace.
+    const eyeX = HW * 0.76;
+    const eyeY = backY + 30;
+    if (eyeGlow > 0) {
+      ctx.fillStyle = 'rgba(248, 113, 113, ' + (0.22 + eyeGlow * 0.3).toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(eyeX, eyeY, 11 + eyeGlow * 3 + Math.sin(this.animT * 6) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 7, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = ph === 1 ? '#0f172a' : '#7f1d1d';
+    ctx.beginPath(); ctx.ellipse(eyeX + 1.5, eyeY, 4, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(eyeX - 1, eyeY - 3, 2, 2);
+    // Angry brow crease over the eye.
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(eyeX - 14, eyeY - 10);
+    ctx.lineTo(eyeX + 9, eyeY - 7);
+    ctx.stroke();
+
+    // --------------------------------------------------------------------
+    // THE MAW. jawOpen (0..1) drops the lower jaw and flares the gape. The
+    // reference: a mouth nearly as tall as the body, dark red throat, rows
+    // of white triangular teeth on both jaws.
+    // --------------------------------------------------------------------
+    const j = this.jawOpen;               // 0..1
+    const gape = j * HH * 0.62;           // how far the jaw drops
+    const jawPivotX = HW * 0.55;          // hinge behind the mouth
+    const mouthTopY = noseY + 16;
+    // Mouth interior: a wedge from the hinge to the snout, filled dark red.
+    ctx.fillStyle = mouthDeep;
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(jawPivotX, mouthTopY + 6);
+    ctx.quadraticCurveTo(HW * 0.86, mouthTopY - 2 + j * -6, HW - 2, noseY + 14);
+    // Lower jaw line, dropped by gape.
+    ctx.quadraticCurveTo(HW * 0.84, mouthTopY + 20 + gape * 0.7, jawPivotX + 8, mouthTopY + 16 + gape);
+    ctx.closePath();
+    ctx.fill();
+    if (j > 0.02) {
+      // Lit throat: a smaller bright-red wedge inside the gape.
+      ctx.fillStyle = mouthLit;
+      ctx.beginPath();
+      ctx.moveTo(jawPivotX + 10, mouthTopY + 10);
+      ctx.quadraticCurveTo(HW * 0.82, mouthTopY + 4 + j * 2, HW * 0.96, noseY + 16);
+      ctx.quadraticCurveTo(HW * 0.8, mouthTopY + 18 + gape * 0.55, jawPivotX + 16, mouthTopY + 18 + gape * 0.8);
+      ctx.closePath();
+      ctx.fill();
+      // Tongue: a dark muscular curl at the floor of the mouth.
+      ctx.fillStyle = '#8f1220';
+      ctx.beginPath();
+      ctx.ellipse(jawPivotX + 44, mouthTopY + 16 + gape * 0.5, 26 + j * 8, 8 + j * 5, 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      // Gum line.
+      ctx.strokeStyle = gum;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(jawPivotX + 6, mouthTopY + 9);
+      ctx.quadraticCurveTo(HW * 0.85, mouthTopY - 1 + j * -5, HW - 4, noseY + 15);
+      ctx.stroke();
+    }
+
+
+    // UPPER TEETH: a row of triangles hanging from the upper jaw.
+    const upperTeeth = 9;
+    for (let t = 0; t < upperTeeth; t++) {
+      const f = t / (upperTeeth - 1);
+      const tx = jawPivotX + 12 + (HW - jawPivotX - 16) * f;
+      const tyCurve = mouthTopY + 4 - Math.sin(f * Math.PI) * 6 + j * f * -4;
+      const tlen = 8 + f * 8 + j * 3;
+      ctx.fillStyle = tooth;
+      ctx.strokeStyle = 'rgba(16, 24, 43, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tx - 4.5, tyCurve);
+      ctx.lineTo(tx + 4.5, tyCurve);
+      ctx.lineTo(tx + (t % 2) * 2 - 1, tyCurve + tlen);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    // LOWER TEETH: they ride the dropped jaw, pointing up into the gape.
+    if (j > 0.05) {
+      const lowerTeeth = 8;
+      for (let t = 0; t < lowerTeeth; t++) {
+        const f = t / (lowerTeeth - 1);
+        const tx = jawPivotX + 18 + (HW - jawPivotX - 24) * f;
+        const tyCurve = mouthTopY + 17 + gape * (0.55 + f * 0.4) - Math.sin(f * Math.PI) * 4;
+        const tlen = 7 + f * 7 + j * 3;
+        ctx.fillStyle = tooth;
+        ctx.strokeStyle = 'rgba(16, 24, 43, 0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(tx - 4, tyCurve);
+        ctx.lineTo(tx + 4, tyCurve);
+        ctx.lineTo(tx + (t % 2) * 2 - 1, tyCurve - tlen);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      // The jaw itself: a heavy slab under the lower teeth.
+      ctx.fillStyle = hideMid;
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(jawPivotX + 6, mouthTopY + 18 + gape);
+      ctx.quadraticCurveTo(HW * 0.84, mouthTopY + 22 + gape * 0.75, HW - 4, noseY + 18 + j * 10);
+      ctx.quadraticCurveTo(HW * 0.85, mouthTopY + 34 + gape * 0.9, jawPivotX + 14, mouthTopY + 34 + gape * 1.1);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    } else {
+      // Closed-mouth lip line with a few teeth peeking through — the
+      // reference's resting snarl.
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(jawPivotX + 6, mouthTopY + 12);
+      ctx.quadraticCurveTo(HW * 0.86, mouthTopY + 4, HW - 2, noseY + 5);
+      ctx.stroke();
+      ctx.fillStyle = tooth;
+      for (let t = 0; t < 4; t++) {
+        const f = 0.35 + t * 0.17;
+        const tx = jawPivotX + 12 + (HW - jawPivotX - 16) * f;
+        const ty = mouthTopY + 9 - Math.sin(f * Math.PI) * 4;
+        ctx.beginPath();
+        ctx.moveTo(tx - 2.5, ty);
+        ctx.lineTo(tx + 2.5, ty);
+        ctx.lineTo(tx, ty + 5);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    // Nostril slit near the snout tip.
+    ctx.fillStyle = 'rgba(16, 24, 43, 0.8)';
+    ctx.beginPath();
+    ctx.ellipse(HW - 14, noseY + 9, 3, 2, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+
+    // ====================================================================
+    // 9. PHASE FLARE + HIT FLASH + the always-balanced restore.
+    // ====================================================================
+    if (this.phaseFlash > 0) {
+      ctx.globalAlpha = Math.min(0.5, this.phaseFlash * 0.35);
+      ctx.fillStyle = ph === 3 ? '#fef2f2' : ph === 2 ? '#fee2e2' : '#ffffff';
+      ctx.fillRect(-HW - 30, -HH - 90, this.width + 60, this.height + 170);
       ctx.globalAlpha = 1;
     }
-    // ALWAYS pop the body transform — guarantees no leak even if a branch
-    // above bailed early. This closes the screen-fill bug class for good.
     ctx.restore();
-
-    // Ink pools stain the seabed where a slammed attack landed. Drawn in
-    // world space (after the body transform is popped) so they sit flat and
-    // persist after the kraken dives — a visible record of every skill.
-    for (let i = this.inkPools.length - 1; i >= 0; i--) {
-      const p = this.inkPools[i];
-      const fade = 1 - p.t / p.life;
-      const open = 0.5 + 0.5 * Math.min(1, p.t / p.peak);
-      const rNow = p.r * (0.55 + 0.45 * open) * Math.min(1, fade * 1.3);
-      ctx.globalAlpha = Math.min(0.55, (0.2 + 0.35 * open) * fade);
-      ctx.fillStyle = '#0b0212';
-      ctx.beginPath(); ctx.arc(p.x - camera.x, p.y - camera.y, rNow, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.22)';
-      ctx.beginPath(); ctx.arc(p.x - camera.x, p.y - camera.y, rNow * 0.6, 0, Math.PI * 2); ctx.fill();
+    // Hit flash: whole-silhouette white, same as every other boss.
+    if (this.hitFlash > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.55, this.hitFlash * 3);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(P(x - 20), P(y - 10), this.width + 40, this.height + 20);
+      ctx.restore();
     }
-    if (this.inkPools.length) ctx.globalAlpha = 1;
+
+    // Blood-cloud stains on the arena floor: the record of every slam,
+    // drawn in world space so they persist after the beast swims on.
+    for (let i = this.stainPools.length - 1; i >= 0; i--) {
+      const s = this.stainPools[i];
+      const fade = 1 - s.t / s.life;
+      const open = 0.5 + 0.5 * Math.min(1, s.t / s.peak);
+      const rNow = s.r * (0.55 + 0.45 * open) * Math.min(1, fade * 1.3);
+      ctx.globalAlpha = Math.min(0.5, (0.18 + 0.32 * open) * fade);
+      ctx.fillStyle = '#3f0d14';
+      ctx.beginPath();
+      ctx.arc(s.x - camera.x, s.y - camera.y, rNow, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(248, 113, 113, 0.16)';
+      ctx.beginPath();
+      ctx.arc(s.x - camera.x, s.y - camera.y, rNow * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (this.stainPools.length) ctx.globalAlpha = 1;
   }
 }
 
-window.Kraken = Kraken;
-// Back-compat alias: app.py's inline probe, the HTML onload probe and older
-// hooks that still name the class OceanLeviathan resolve straight to Kraken.
-window.OceanLeviathan = Kraken;
+// The game spawns `new Kraken(...)` in several places (terraria.js, the QA
+// suites, the app.py probe). Keep both names pointing at the same class so
+// saves, the boss panel, the victory hooks and the deploy probe all resolve.
+window.Megalodon = Megalodon;
+window.Kraken = Megalodon;
+// Back-compat alias: older hooks that named the class OceanLeviathan.
+window.OceanLeviathan = Megalodon;
 
 window.OceanFish = OceanFish;
