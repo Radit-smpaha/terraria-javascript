@@ -76,10 +76,14 @@ const CHANNELS = ['jawOpen', 'tailBend', 'tailSwing', 'finKick', 'gillFlare', 'b
   'pitch', 'lean', 'sway', 'bob'];
 const finite = (o) => CHANNELS.every((k) => Number.isFinite(o[k]));
 
-// every clip the pack can play must be reachable from the AI at some point
+// every clip the pack can play must be reachable from the AI at some point.
+// V2 kit: the rotation changed (Tsunami Breaker, Death Spiral, Extinction
+// Rush...), so the per-phase lists follow the NEW pendings; clips the V2 AI
+// no longer arms on its own (tooth_barrage, frenzy_rush...) stay non-orphan
+// through the DRIVE map below, which documents how each pose is produced.
 const REACHABLE = {
   1: ['idle', 'swim', 'fast_swim', 'turn', 'bite', 'tail_sweep', 'hurt'],
-  2: ['frenzy_rush', 'sharknado', 'tooth_barrage', 'feeding_frenzy', 'bite', 'fast_swim'],
+  2: ['feeding_frenzy', 'bite', 'fast_swim', 'sharknado', 'devouring_maw'],
   3: ['apex_execution', 'depth_charge', 'devouring_maw', 'extinction_hunt', 'exhausted']
 };
 const manifest = JSON.parse(fs.readFileSync('assets/bosses/megalodon/manifest.json', 'utf8'));
@@ -137,6 +141,9 @@ const DRIVE = {
   exhausted: (b) => { b.exhaustT = 3; },
   extinction_hunt: (b) => { b.hunt = { t: 0, dur: 3.6, steps: [] }; },
   bite: (b) => { b.pending = { type: 'crushing_bite', timer: 0.3, total: 0.7 }; },
+  // V2 note: the V2 rotation no longer arms tooth_barrage itself, but the
+  // pose is still a live mapping the render supports (QA/bake drive it).
+  tooth_barrage: (b) => { b.pending = { type: 'tooth_barrage', timer: 0.3, total: 0.55 }; },
   death: (b) => { b.dead = true; b.deadT = 1; }
 };
 const driveSeen = {};

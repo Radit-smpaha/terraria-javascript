@@ -8303,7 +8303,13 @@ this.player.dodgeTime = 0;
       if (bossPanel) bossPanel.classList.remove('hidden');
       if (bossHpBar) bossHpBar.style.width = `${Math.max(0, (this.boss.hp / this.boss.maxHp) * 100)}%`;
       if (bossHpText) bossHpText.textContent = `${Math.max(0, Math.floor(this.boss.hp))} / ${this.boss.maxHp}`;
-      if (bossName) bossName.textContent = this.boss.name;
+      if (bossName) {
+        // The Megalodon publishes its current named skill (V2 kit) so the
+        // player always knows what is telegraphing. Other bosses have no
+        // skillName and keep the plain title.
+        const skillTag = this.boss.skillName ? ' — ' + this.boss.skillName : '';
+        bossName.textContent = this.boss.name + skillTag;
+      }
       if (bossBadge) {
         bossBadge.textContent = `PHASE ${this.boss.phase}`;
         bossBadge.className = this.boss.phase >= 2 ? 'boss-phase-badge enraged' : 'boss-phase-badge';
@@ -8317,7 +8323,9 @@ this.player.dodgeTime = 0;
         document.getElementById('boss-panel').classList.add('hidden');
         this.showAnnouncement(knightWin
           ? '⚔️ THE CURSED KNIGHT IS UNDONE!'
-          : '👑 THE ANCIENT FOREST GUARDIAN HAS BEEN FELLED!');
+          : this.boss.kind === 'kraken'
+            ? '🦈 THE MEGALODON — LAST PREDATOR — IS BROKEN!'
+            : '👑 THE ANCIENT FOREST GUARDIAN HAS BEEN FELLED!');
         this.feel.slow(1.6, 0.25);
         this.feel.shake(1.0);
 
