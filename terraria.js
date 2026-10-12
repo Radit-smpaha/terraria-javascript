@@ -8228,13 +8228,18 @@ this.player.dodgeTime = 0;
         } else {
           this.boss.update(dt, bossTarget, this.projectiles, this.sound, this.particles, this.world);
         }
-
         // Venom on the boss too. Feature-detected because DemonBoss carries its
         // own poison implementation while Monster/UnderworldMonster have theirs.
         if (typeof this.boss.tickPoison === 'function' && this.boss.poisonTime > 0) {
           const venom = this.boss.tickPoison(dt, this.particles);
           if (venom > 0) this.stats.damageDealt += venom;
         }
+      } else if (typeof this.boss.animatePresentation === 'function') {
+        // A guest never simulates the boss: it interpolates a puppet. Give the
+        // Megalodon its visual rig back (swim, blink, fin beats, death) so a
+        // client is not watching a frozen snapshot. Presentation only -- no
+        // movement, damage, attacks or phase changes can happen here.
+        this.boss.animatePresentation(dt);
       }
 
       // Dead player: the fight is over. Purge any hostile projectiles the
