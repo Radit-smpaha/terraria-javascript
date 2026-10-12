@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Megalodon sprite pack manifest",
+  "type": "object",
+  "required": ["assets"],
+  "properties": {
+    "name": { "type": "string" },
+    "generatedBy": { "type": "string" },
+    "background": { "type": "string" },
+    "cellConvention": { "type": "string" },
+    "originConvention": { "type": "string" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file", "animation", "group", "frames", "columns", "rows",
+          "frameWidth", "frameHeight", "fps", "loop", "once", "source"
+        ],
+        "properties": {
+          "file": { "type": "string", "description": "PNG filename, next to this manifest." },
+          "animation": { "type": "string", "description": "Clip name, also boss.poseMode value." },
+          "group": { "enum": ["base", "phase2", "phase3", "effects"] },
+          "phase": { "type": "integer", "description": "1, 2, 3 or 0 for effects." },
+          "frames": { "type": "integer", "minimum": 1 },
+          "columns": { "type": "integer", "minimum": 1 },
+          "rows": { "type": "integer", "minimum": 1 },
+          "frameWidth": { "type": "integer", "minimum": 1 },
+          "frameHeight": { "type": "integer", "minimum": 1 },
+          "sheetWidth": { "type": "integer" },
+          "sheetHeight": { "type": "integer" },
+          "origin": {
+            "type": "object",
+            "description": "Draw anchor in cell pixels (animal/effect centre).",
+            "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+          },
+          "fps": { "type": "number", "description": "Recommended playback rate." },
+          "loop": { "type": "boolean" },
+          "once": { "type": "boolean" },
+          "source": {
+            "enum": ["extracted", "reconstructed"],
+            "description": "extracted = baked from the live boss render; reconstructed = drawn procedurally."
+          },
+          "rigChannel": { "type": "string", "description": "Game state that produces this pose." },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Megalodon boss asset pack - preview</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 24px; background: #0a1220; color: #dbeafe;
+    font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: 0.08em; }
+  p.sub { margin: 0 0 20px; color: #7dd3fc; }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+  .card { background: #0f1b2e; border: 1px solid #1e3a5f; border-radius: 8px; padding: 12px; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; color: #e0f2fe; }
+  .meta { color: #94a3b8; font-size: 11px; margin-bottom: 8px; }
+  canvas {
+    display: block; width: 100%; height: auto; image-rendering: pixelated;
+    background: repeating-conic-gradient(#132033 0% 25%, #0e1a2b 0% 50%) 50% / 16px 16px;
+    border-radius: 4px; cursor: pointer;
+  }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  button { background: #1d4ed8; color: #fff; border: 0; border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  button.ghost { background: #1e293b; }
+  label { color: #94a3b8; font-size: 11px; }
+  .group { margin: 22px 0 10px; font-size: 14px; color: #7dd3fc; letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+<h1>MEGALODON - SPRITE ASSET PACK</h1>
+<p class="sub">Every clip is a transparent-RGBA horizontal spritesheet baked from the live boss renderer. Click a canvas or a play button to play / pause. The small red dot is the draw anchor.</p>
+<div id="root"></div>
+
+<script src="sprite-animator.js"></script>
+<script>
+(function () {
+  const root = document.getElementById('root');
+  let showGrid = true;
+
+  function card(spec) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML =
+      '<h2></h2><div class="meta"></div><canvas></canvas>' +
+      '<div class="row"><button class="p">play</button><button class="o ghost">play once</button>' +
+      '<label>show grid <input type="checkbox" class="g" checked></label></div>';
+    el.querySelector('h2').textContent = spec.animation +
+      (spec.phase ? '   |   phase ' + spec.phase : '   |   effect');
+    el.querySelector('.meta').textContent =
+      spec.frames + ' frames | ' + spec.frameWidth + 'x' + spec.frameHeight + ' cell | ' +
+      spec.fps + ' fps | ' + (spec.loop ? 'loop' : 'once') + ' | ' + spec.source +
+      ' | anchor (' + (spec.origin ? spec.origin.x : 0) + ',' + (spec.origin ? spec.origin.y : 0) + ')';
+    const cv = el.querySelector('canvas');
+    cv.width = spec.frameWidth;
+    cv.height = spec.frameHeight;
+    // one animator per card; the image cache in sprite-animator.js keeps each
+    // sheet decoded exactly once.
+    const anim = new window.MegaSpriteAnimator({ assets: [spec] }, { basePath: '.' });
+    return { el, cv, anim, spec, ctx: cv.getContext('2d'), on: false };
+  }
+
+  function paint(c) {
+    const ctx = c.ctx, s = c.spec;
+    ctx.clearRect(0, 0, s.frameWidth, s.frameHeight);
+    const f = c.anim.frame();
+    if (f && f.image && c.on) window.megaDrawFrame(ctx, f, s.frameWidth / 2, s.frameHeight / 2, 1);
+    if (f && showGrid) {
+      ctx.strokeStyle = 'rgba(125, 211, 252, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, s.frameWidth - 1, s.frameHeight - 1);
+      ctx.fillStyle = 'rgba(248, 113, 113, 0.9)';
+      ctx.fillRect(f.originX - 1, f.originY - 1, 3, 3);
+    }
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.8)';
+    ctx.font = '10px monospace';
+    ctx.fillText(s.animation + (c.on ? '' : '  (paused)'), 6, 12);
+  }
+
+  fetch('manifest.json')
+    .then(function (r) { return r.json(); })
+    .then(async function (manifest) {
+      const groups = {
+        base: 'BASE ANIMATIONS',
+        phase2: 'PHASE 2 - BLOOD FRENZY',
+        phase3: 'PHASE 3 - APEX OF THE ANCIENT SEA',
+        effects: 'EFFECTS & PROJECTILES'
+      };
+      const cards = [];
+      let lastGroup = null;
+      for (const spec of manifest.assets) {
+        if (spec.group !== lastGroup) {
+          const h = document.createElement('div');
+          h.className = 'group';
+          h.textContent = groups[spec.group] || spec.group;
+          root.appendChild(h);
+          lastGroup = spec.group;
+        }
+        const c = card(spec);
+        cards.push(c);
+        root.appendChild(c.el);
+        await c.anim.load();                 // sheets are cached across cards
+        const playBtn = c.el.querySelector('.p');
+        const toggle = function () {
+          c.on = !c.on;
+          c.anim.play(spec.animation, { once: !spec.loop });
+          playBtn.textContent = c.on ? 'pause' : 'play';
+        };
+        playBtn.onclick = toggle;
+        c.cv.onclick = toggle;
+        c.el.querySelector('.o').onclick = function () {
+          c.on = true;
+          c.anim.play(spec.animation, { once: true, restart: true });
+          playBtn.textContent = 'pause';
+        };
+        c.el.querySelector('.g').onchange = function (e) { showGrid = e.target.checked; paint(c); };
+        paint(c);
+      }
+      let last = performance.now();
+      (function loop(now) {
+        const dt = Math.min(0.1, (now - last) / 1000);
+        last = now;
+        for (const c of cards) {
+          if (!c.on) continue;
+          c.anim.update(dt);
+          paint(c);
+        }
+        requestAnimationFrame(loop);
+      })(last);
+    })
+    .catch(function (e) {
+      root.textContent = 'Failed to load manifest.json: ' + e.message +
+        ' - serve this folder over http:// (not file://)';
+    });
+})();
+</script>
+</body>
+</html>

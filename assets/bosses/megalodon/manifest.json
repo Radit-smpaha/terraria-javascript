@@ -1,0 +1,676 @@
+{
+  "$schema": "./manifest.schema.json",
+  "name": "Megalodon pixel-art boss asset pack",
+  "generatedBy": "tools/bake-mega-pack.js (renders the real Megalodon class)",
+  "paletteNote": "Phase 1 dark navy; Phase 2 Blood Frenzy red energy; Phase 3 Apex battle damage",
+  "cellConvention": "One animation = one horizontal spritesheet. Frame cells are the union of every frame bounding box plus a 6px margin, so the animal never jumps inside its cell.",
+  "originConvention": "origin = the animal centre (the point the game keeps at boss.x + width/2, boss.y + height/2) expressed in cell pixels.",
+  "background": "transparent RGBA (alpha recovered by a black/white two-pass un-blend)",
+  "assets": [
+    {
+      "file": "idle.png",
+      "animation": "idle",
+      "group": "base",
+      "phase": 1,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 571,
+      "frameHeight": 410,
+      "sheetWidth": 4568,
+      "sheetHeight": 410,
+      "origin": {
+        "x": 297,
+        "y": 195
+      },
+      "fps": 8,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"idle\"",
+      "notes": [
+        "Resting drift: no velocity, so the tail beat is a slow 0.55-amplitude wave."
+      ]
+    },
+    {
+      "file": "swim.png",
+      "animation": "swim",
+      "group": "base",
+      "phase": 1,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 582,
+      "frameHeight": 382,
+      "sheetWidth": 4656,
+      "sheetHeight": 382,
+      "origin": {
+        "x": 288,
+        "y": 196
+      },
+      "fps": 10,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"swim\"",
+      "notes": [
+        "Default cruise at ~300 u/s; sampled across one full swim cycle (1.55 s)."
+      ]
+    },
+    {
+      "file": "fast_swim.png",
+      "animation": "fast_swim",
+      "group": "base",
+      "phase": 1,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 526,
+      "frameHeight": 372,
+      "sheetWidth": 4208,
+      "sheetHeight": 372,
+      "origin": {
+        "x": 286,
+        "y": 201
+      },
+      "fps": 16,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"fast_swim\"",
+      "notes": [
+        "High-speed cruise: 1.35x wave amplitude at 1.9x beat rate, body streamlined."
+      ]
+    },
+    {
+      "file": "turn.png",
+      "animation": "turn",
+      "group": "base",
+      "phase": 1,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 534,
+      "frameHeight": 345,
+      "sheetWidth": 4272,
+      "sheetHeight": 345,
+      "origin": {
+        "x": 291,
+        "y": 180
+      },
+      "fps": 12,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"turn\"",
+      "notes": [
+        "Banking reversal: +18% pre-coiled spine, roll/yaw cheat and a slow fin beat."
+      ]
+    },
+    {
+      "file": "bite.png",
+      "animation": "bite",
+      "group": "base",
+      "phase": 1,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 519,
+      "frameHeight": 372,
+      "sheetWidth": 4152,
+      "sheetHeight": 372,
+      "origin": {
+        "x": 271,
+        "y": 188
+      },
+      "fps": 14,
+      "loop": false,
+      "once": true,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"bite\"",
+      "notes": [
+        "Jaw spring snap: closed, unhinged (ja ~0.74 rad), throat lit, then shut."
+      ]
+    },
+    {
+      "file": "tail_sweep.png",
+      "animation": "tail_sweep",
+      "group": "base",
+      "phase": 1,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 539,
+      "frameHeight": 363,
+      "sheetWidth": 4312,
+      "sheetHeight": 363,
+      "origin": {
+        "x": 290,
+        "y": 181
+      },
+      "fps": 14,
+      "loop": false,
+      "once": true,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"tail_sweep\"",
+      "notes": [
+        "Caudal sweep tail coil, crescent trail receding through the attack arc."
+      ]
+    },
+    {
+      "file": "hurt.png",
+      "animation": "hurt",
+      "group": "base",
+      "phase": 1,
+      "frames": 6,
+      "columns": 6,
+      "rows": 1,
+      "frameWidth": 525,
+      "frameHeight": 368,
+      "sheetWidth": 3150,
+      "sheetHeight": 368,
+      "origin": {
+        "x": 281,
+        "y": 187
+      },
+      "fps": 12,
+      "loop": false,
+      "once": true,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"hurt\"",
+      "notes": [
+        "Damage reaction: recoil kick, white flash bloom, gape and a hard blink."
+      ]
+    },
+    {
+      "file": "death.png",
+      "animation": "death",
+      "group": "phase3",
+      "phase": 3,
+      "frames": 10,
+      "columns": 10,
+      "rows": 1,
+      "frameWidth": 738,
+      "frameHeight": 482,
+      "sheetWidth": 7380,
+      "sheetHeight": 482,
+      "origin": {
+        "x": 404,
+        "y": 227
+      },
+      "fps": 8,
+      "loop": false,
+      "once": true,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"death\"",
+      "notes": [
+        "Sagging, sinking wreck: droop 1, tail gone slack, alpha fading out."
+      ]
+    },
+    {
+      "file": "frenzy_rush.png",
+      "animation": "frenzy_rush",
+      "group": "phase2",
+      "phase": 2,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 672,
+      "frameHeight": 403,
+      "sheetWidth": 5376,
+      "sheetHeight": 403,
+      "origin": {
+        "x": 357,
+        "y": 231
+      },
+      "fps": 16,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"frenzy_rush\"",
+      "notes": [
+        "Blood Frenzy charge: 1.15x wave, 1.6x rate, straight spine, spray off the flanks."
+      ]
+    },
+    {
+      "file": "sharknado.png",
+      "animation": "sharknado",
+      "group": "phase2",
+      "phase": 2,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 696,
+      "frameHeight": 331,
+      "sheetWidth": 5568,
+      "sheetHeight": 331,
+      "origin": {
+        "x": 362,
+        "y": 174
+      },
+      "fps": 20,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"sharknado\"",
+      "notes": [
+        "Sharknado spin: 2.1x wave amplitude, rolled 0.85 rad, vortex water wrap."
+      ]
+    },
+    {
+      "file": "tooth_barrage.png",
+      "animation": "tooth_barrage",
+      "group": "phase2",
+      "phase": 2,
+      "frames": 6,
+      "columns": 6,
+      "rows": 1,
+      "frameWidth": 602,
+      "frameHeight": 410,
+      "sheetWidth": 3612,
+      "sheetHeight": 410,
+      "origin": {
+        "x": 328,
+        "y": 207
+      },
+      "fps": 10,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"tooth_barrage\"",
+      "notes": [
+        "Repeating head shakes while teeth are spat; gullet glow pulsing at 2x."
+      ]
+    },
+    {
+      "file": "feeding_frenzy.png",
+      "animation": "feeding_frenzy",
+      "group": "phase2",
+      "phase": 2,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 652,
+      "frameHeight": 405,
+      "sheetWidth": 5216,
+      "sheetHeight": 405,
+      "origin": {
+        "x": 338,
+        "y": 215
+      },
+      "fps": 14,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"feeding_frenzy\"",
+      "notes": [
+        "Frenzy stacks up: jape held at 0.9, hide wash lit, gills bleeding red light."
+      ]
+    },
+    {
+      "file": "apex_execution.png",
+      "animation": "apex_execution",
+      "group": "phase3",
+      "phase": 3,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 681,
+      "frameHeight": 468,
+      "sheetWidth": 5448,
+      "sheetHeight": 468,
+      "origin": {
+        "x": 385,
+        "y": 237
+      },
+      "fps": 14,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"apex_execution\"",
+      "notes": [
+        "Vanishing ghost phase materialising into the charge (alpha ghost ripple)."
+      ]
+    },
+    {
+      "file": "depth_charge.png",
+      "animation": "depth_charge",
+      "group": "phase3",
+      "phase": 3,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 789,
+      "frameHeight": 418,
+      "sheetWidth": 6312,
+      "sheetHeight": 418,
+      "origin": {
+        "x": 417,
+        "y": 195
+      },
+      "fps": 12,
+      "loop": false,
+      "once": true,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"depth_charge\"",
+      "notes": [
+        "Depth-charge dive: pitched nose-over, tail coiled, gullet lit from below."
+      ]
+    },
+    {
+      "file": "devouring_maw.png",
+      "animation": "devouring_maw",
+      "group": "phase3",
+      "phase": 3,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 695,
+      "frameHeight": 465,
+      "sheetWidth": 5560,
+      "sheetHeight": 465,
+      "origin": {
+        "x": 385,
+        "y": 237
+      },
+      "fps": 14,
+      "loop": false,
+      "once": true,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"devouring_maw\"",
+      "notes": [
+        "Devouring maw: suction cycles with the gape; breath tears out of the hinge."
+      ]
+    },
+    {
+      "file": "extinction_hunt.png",
+      "animation": "extinction_hunt",
+      "group": "phase3",
+      "phase": 3,
+      "frames": 10,
+      "columns": 10,
+      "rows": 1,
+      "frameWidth": 373,
+      "frameHeight": 424,
+      "sheetWidth": 3730,
+      "sheetHeight": 424,
+      "origin": {
+        "x": 199,
+        "y": 207
+      },
+      "fps": 16,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"extinction_hunt\"",
+      "notes": [
+        "Extinction Hunt chain: alternating hunt dashes, spine straight, jaws locked."
+      ]
+    },
+    {
+      "file": "exhausted.png",
+      "animation": "exhausted",
+      "group": "phase3",
+      "phase": 3,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 723,
+      "frameHeight": 486,
+      "sheetWidth": 5784,
+      "sheetHeight": 486,
+      "origin": {
+        "x": 392,
+        "y": 225
+      },
+      "fps": 6,
+      "loop": true,
+      "once": false,
+      "source": "extracted",
+      "rigChannel": "boss.poseMode=\"exhausted\"",
+      "notes": [
+        "Post-hunt damage window: every fin sags, half-lidded eye, tremble in the water."
+      ]
+    },
+    {
+      "file": "water_splash.png",
+      "animation": "water_splash",
+      "group": "effects",
+      "phase": 0,
+      "frames": 6,
+      "columns": 6,
+      "rows": 1,
+      "frameWidth": 156,
+      "frameHeight": 87,
+      "sheetWidth": 936,
+      "sheetHeight": 87,
+      "origin": {
+        "x": 78,
+        "y": 44
+      },
+      "fps": 14,
+      "loop": false,
+      "once": true,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "water_wave.png",
+      "animation": "water_wave",
+      "group": "effects",
+      "phase": 0,
+      "frames": 6,
+      "columns": 6,
+      "rows": 1,
+      "frameWidth": 200,
+      "frameHeight": 147,
+      "sheetWidth": 1200,
+      "sheetHeight": 147,
+      "origin": {
+        "x": 100,
+        "y": 74
+      },
+      "fps": 10,
+      "loop": true,
+      "once": false,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "turbulent_current.png",
+      "animation": "turbulent_current",
+      "group": "effects",
+      "phase": 0,
+      "frames": 6,
+      "columns": 6,
+      "rows": 1,
+      "frameWidth": 142,
+      "frameHeight": 114,
+      "sheetWidth": 852,
+      "sheetHeight": 114,
+      "origin": {
+        "x": 71,
+        "y": 57
+      },
+      "fps": 10,
+      "loop": true,
+      "once": false,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "bite_shockwave.png",
+      "animation": "bite_shockwave",
+      "group": "effects",
+      "phase": 0,
+      "frames": 5,
+      "columns": 5,
+      "rows": 1,
+      "frameWidth": 172,
+      "frameHeight": 166,
+      "sheetWidth": 860,
+      "sheetHeight": 166,
+      "origin": {
+        "x": 86,
+        "y": 83
+      },
+      "fps": 14,
+      "loop": false,
+      "once": true,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "tooth_projectile.png",
+      "animation": "tooth_projectile",
+      "group": "effects",
+      "phase": 0,
+      "frames": 4,
+      "columns": 4,
+      "rows": 1,
+      "frameWidth": 78,
+      "frameHeight": 80,
+      "sheetWidth": 312,
+      "sheetHeight": 80,
+      "origin": {
+        "x": 39,
+        "y": 40
+      },
+      "fps": 8,
+      "loop": false,
+      "once": true,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "blood_effect.png",
+      "animation": "blood_effect",
+      "group": "effects",
+      "phase": 0,
+      "frames": 6,
+      "columns": 6,
+      "rows": 1,
+      "frameWidth": 111,
+      "frameHeight": 116,
+      "sheetWidth": 666,
+      "sheetHeight": 116,
+      "origin": {
+        "x": 56,
+        "y": 58
+      },
+      "fps": 12,
+      "loop": true,
+      "once": false,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "impact_effect.png",
+      "animation": "impact_effect",
+      "group": "effects",
+      "phase": 0,
+      "frames": 5,
+      "columns": 5,
+      "rows": 1,
+      "frameWidth": 122,
+      "frameHeight": 122,
+      "sheetWidth": 610,
+      "sheetHeight": 122,
+      "origin": {
+        "x": 61,
+        "y": 61
+      },
+      "fps": 16,
+      "loop": false,
+      "once": true,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "phase2_transition.png",
+      "animation": "phase2_transition",
+      "group": "effects",
+      "phase": 0,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 264,
+      "frameHeight": 199,
+      "sheetWidth": 2112,
+      "sheetHeight": 199,
+      "origin": {
+        "x": 132,
+        "y": 100
+      },
+      "fps": 12,
+      "loop": false,
+      "once": true,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "phase3_transition.png",
+      "animation": "phase3_transition",
+      "group": "effects",
+      "phase": 0,
+      "frames": 8,
+      "columns": 8,
+      "rows": 1,
+      "frameWidth": 264,
+      "frameHeight": 264,
+      "sheetWidth": 2112,
+      "sheetHeight": 264,
+      "origin": {
+        "x": 132,
+        "y": 132
+      },
+      "fps": 12,
+      "loop": false,
+      "once": true,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    },
+    {
+      "file": "apex_warning_indicator.png",
+      "animation": "apex_warning_indicator",
+      "group": "effects",
+      "phase": 0,
+      "frames": 4,
+      "columns": 4,
+      "rows": 1,
+      "frameWidth": 264,
+      "frameHeight": 72,
+      "sheetWidth": 1056,
+      "sheetHeight": 72,
+      "origin": {
+        "x": 132,
+        "y": 36
+      },
+      "fps": 8,
+      "loop": true,
+      "once": false,
+      "source": "reconstructed",
+      "notes": [
+        "Drawn procedurally by tools/bake-mega-pack.js in the pack palette; replace with hand-drawn frames if you have sheet art for it."
+      ]
+    }
+  ]
+}
