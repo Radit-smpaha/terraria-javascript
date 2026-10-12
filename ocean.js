@@ -3714,20 +3714,20 @@ class Megalodon {
     const dull = (ph >= 2 && exhausted ? 0.5 : exhausted ? 0.35 : 0) ;
     const dullMix = (c) => dull > 0 ? this._mixColor(c, '#59627a', dull) : c;
     // HIDE: five hard bands, Terraria-style — dark navy back, pale belly.
-    const hideBack = dullMix(flash ? '#ffffff' : ph === 3 ? '#1a1320' : ph === 2 ? '#121a34' : '#111a33');
-    const hideTop  = dullMix(flash ? '#ffffff' : ph === 3 ? '#221827' : ph === 2 ? '#18224a' : '#182447');
-    const hideMid  = dullMix(flash ? '#ffe4e6' : ph === 3 ? '#2e1f2f' : ph === 2 ? '#1f2f5e' : '#213463');
-    const hideLow  = dullMix(flash ? '#fecdd3' : ph === 3 ? '#452a3c' : ph === 2 ? '#2f4576' : '#334b80');
-    const belly    = dullMix(flash ? '#ffffff' : ph === 3 ? '#c6b3bb' : ph === 2 ? '#c6cfe4' : '#c9d7ec');
-    const bellySh  = dullMix(flash ? '#ffffff' : ph === 3 ? '#a8979f' : ph === 2 ? '#a9b6d2' : '#acbbd9');
-    const finDark  = dullMix(flash ? '#ffffff' : ph === 3 ? '#1d1420' : ph === 2 ? '#141f3f' : '#152344');
-    const finLite  = dullMix(flash ? '#ffe4e6' : ph === 3 ? '#37223a' : ph === 2 ? '#27396c' : '#2b4074');
+    const hideBack = dullMix(flash ? '#ffffff' : ph === 3 ? '#141a24' : ph === 2 ? '#0a2138' : '#0b2440');
+    const hideTop  = dullMix(flash ? '#ffffff' : ph === 3 ? '#1c2230' : ph === 2 ? '#0f2d4c' : '#113558');
+    const hideMid  = dullMix(flash ? '#ffe4e6' : ph === 3 ? '#28303e' : ph === 2 ? '#174065' : '#1b4c78');
+    const hideLow  = dullMix(flash ? '#fecdd3' : ph === 3 ? '#4a4450' : ph === 2 ? '#3a658c' : '#43749e');
+    const belly    = dullMix(flash ? '#ffffff' : ph === 3 ? '#cfd0d4' : ph === 2 ? '#ccd8e2' : '#cbd7e1');
+    const bellySh  = dullMix(flash ? '#ffffff' : ph === 3 ? '#a9abb2' : ph === 2 ? '#a7b6c4' : '#a6b4c2');
+    const finDark  = dullMix(flash ? '#ffffff' : ph === 3 ? '#171c26' : ph === 2 ? '#0c2743' : '#0d2b4c');
+    const finLite  = dullMix(flash ? '#ffe4e6' : ph === 3 ? '#333b49' : ph === 2 ? '#22547f' : '#28608e');
     // One outline colour, very dark navy — the pixel-art keyline of the sheet.
-    const outline  = '#060a14';
-    const mouthDeep = flash ? '#7f1d1d' : ph >= 2 ? '#3a060e' : '#480a14';
-    const mouthLit  = flash ? '#fecdd3' : ph >= 2 ? '#c41e38' : '#a8172c';
-    const gum       = flash ? '#fecdd3' : '#9c2b38';
-    const tooth     = flash ? '#ffffff' : ph === 3 ? '#e6dfd0' : '#f3f6fb';
+    const outline  = '#05080f';
+    const mouthDeep = flash ? '#7f1d1d' : ph >= 2 ? '#33060d' : '#3c0810';
+    const mouthLit  = flash ? '#fecdd3' : ph >= 2 ? '#7d1224' : '#6b1020';
+    const gum       = flash ? '#fecdd3' : '#84303a';
+    const tooth     = flash ? '#ffffff' : ph === 3 ? '#e7e2d6' : '#f4f6f9';
     // EYES: ember-red at every phase — a dull coal in 1, a furnace in the apex.
     const eyeGlow   = flash ? 1 : ph === 1 ? 0.38 : ph === 2 ? 0.72 : 1;
     const woundGlow = ph >= 2 ? Math.min(1, 0.3 + injury * 0.7) : injury * 0.25;
@@ -3787,10 +3787,11 @@ class Megalodon {
       // gives the heavy-front / whippy-tail read.
       const g = u < 0.60
         ? (0.56 + 0.44 * Math.sin((u / 0.60) * Math.PI * 0.5))   // stalk -> peak
-        : (1.0 - 0.16 * ((u - 0.60) / 0.40));                    // peak -> deep snout
+        : (1.0 - 0.34 * Math.pow((u - 0.60) / 0.40, 1.4));       // peak -> conical snout
       const prof = 0.09 + 0.94 * Math.pow(g, 0.55);
-      // Blunt snout: only the very tip rounds off.
-      const noseTaper = u > 0.96 ? Math.max(0.9, 1 - (u - 0.96) * 2.5) : 1;
+      // Conical snout: the head narrows steadily to a blunt point instead of
+      // ending as a flat guillotine slab.
+      const noseTaper = u > 0.88 ? Math.max(0.7, 1 - (u - 0.88) * 2.2) : 1;
       const peduncle = u < 0.15 ? Math.max(0.34, u / 0.15) : 1;  // thin caudal stalk
       return HH * prof * noseTaper * peduncle;
     };
@@ -4090,7 +4091,7 @@ class Megalodon {
       }
       // Subtle hide mottling: a handful of stable speckles, not a scattergun.
       // Anything denser reads as noise at 24px tiles and costs fill rate.
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 8; i++) {
         const h1 = this._hash01(i * 1.37 + (this.scarSeed || 0));
         const h2 = this._hash01(i * 2.11 + (this.scarSeed || 0));
         const h3 = this._hash01(i * 3.07 + (this.scarSeed || 0));
@@ -4115,21 +4116,21 @@ class Megalodon {
         for (let i = 0; i <= 16; i++) wash.push(spineAt(1 - i / 16, -0.85));
         for (let i = 16; i >= 0; i--) wash.push(spineAt(1 - i / 16, 0.55));
         ctx.beginPath(); traceSmooth(ctx, wash); ctx.closePath(); ctx.fill();
-        const crackA = (ph === 3 ? 0.5 : 0.3) * (0.5 + woundGlow * 0.8);
-        const cracks = ph === 3 ? 9 : 5;
+        const crackA = (ph === 3 ? 0.32 : 0.15) * (0.4 + woundGlow * 0.6);
+        const cracks = ph === 3 ? 5 : 2;
         for (let i = 0; i < cracks; i++) {
           const s = i * 1.93 + (this.scarSeed || 0);
-          const u = 0.18 + this._hash01(s) * 0.74;
-          const p0 = spineAt(u, -0.55 + this._hash01(s * 1.7) * 1.35);
+          const u = 0.16 + this._hash01(s) * 0.54;   // flank only: never the face
+          const p0 = spineAt(u, -0.5 + this._hash01(s * 1.7) * 1.1);
           ctx.strokeStyle = 'rgba(239, 68, 68, ' + crackA.toFixed(2) + ')';
-          ctx.lineWidth = 1.6 + this._hash01(s * 2.7);
+          ctx.lineWidth = 1.5 + this._hash01(s * 2.7) * 0.8;
           ctx.beginPath();
           ctx.moveTo(p0.x, p0.y);
           let cx = p0.x, cy = p0.y;
-          for (let k = 0; k < 3; k++) {
-            const a = (this._hash01(s * 3.1 + k) - 0.5) * 2.4 + spineBend(u) * 2.2;
-            cx += Math.cos(a) * 9 + Math.cos(spineBend(u)) * 4;
-            cy += Math.sin(a) * 9 + 2;
+          for (let k = 0; k < 2; k++) {
+            const a = (this._hash01(s * 3.1 + k) - 0.5) * 2.0 + spineBend(u) * 2.2;
+            cx += Math.cos(a) * 7 + Math.cos(spineBend(u)) * 3;
+            cy += Math.sin(a) * 7 + 2;
             ctx.lineTo(cx, cy);
           }
           ctx.stroke();
@@ -4285,20 +4286,21 @@ class Megalodon {
       const open = Math.max(0.18, Math.min(1.4,
         (this.gillFlare || 0) * 0.55 + (this.surge || 0) * 0.3 - droop * 0.3));
       for (let g = 0; g < 5; g++) {
-        const u = 0.80 - g * 0.042;
+        const u = 0.775 - g * 0.038;
         const top = spineAt(u, -0.62);
-        const bot = spineAt(u - 0.005, 0.34);
-        const len = (bot.y - top.y) * (0.5 + open * 0.5);
-        ctx.strokeStyle = ph >= 2 ? 'rgba(90, 16, 28, 0.85)' : 'rgba(6, 10, 20, 0.78)';
+        const bot = spineAt(u - 0.006, 0.02);
+        const len = (bot.y - top.y) * (0.52 + open * 0.34);
+        // Five dark slits cut clean into the flank. Red only bleeds out of
+        // them once the blood frenzy takes the animal over.
+        ctx.strokeStyle = 'rgba(5, 8, 15, 0.85)';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(top.x - 2, top.y + 8);
-        ctx.quadraticCurveTo(top.x - 6, top.y + 8 + len * 0.5, top.x - 3, top.y + 8 + len);
+        ctx.moveTo(top.x - 2, top.y + 6);
+        ctx.quadraticCurveTo(top.x - 7, top.y + 6 + len * 0.5, top.x - 4, top.y + 6 + len);
         ctx.stroke();
-        // Phase 2+: the gills bleed light in the dark water.
         if (ph >= 2 && woundGlow > 0.2) {
-          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.18 + woundGlow * 0.3).toFixed(2) + ')';
-          ctx.lineWidth = 1.6;
+          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.10 + woundGlow * 0.16).toFixed(2) + ')';
+          ctx.lineWidth = 1.4;
           ctx.stroke();
         }
       }
@@ -4310,27 +4312,27 @@ class Megalodon {
     //    fish were removed because they read as noise at game scale.
     // ======================================================================
     {
-      const scars = 4 + Math.floor(injury * 4);      // 4 .. 8, more as it dies
+      const scars = 3 + Math.floor(injury * 3);      // 3 .. 6, more as it dies
       for (let s = 0; s < scars; s++) {
         const sSeed = s * 7.399 + (this.scarSeed || 0);
-        const u = 0.20 + this._hash01(sSeed) * 0.74;
-        // Upper flank only: scars never cross the pale belly or the face.
-        const p = spineAt(u, -0.85 + this._hash01(sSeed * 1.7) * 0.7);
-        const slen = 16 + this._hash01(sSeed * 2.3) * 26;
+        const u = 0.20 + this._hash01(sSeed) * 0.50;   // flank only: never the face
+        const p = spineAt(u, -0.78 + this._hash01(sSeed * 1.7) * 0.55);
+        const slen = 11 + this._hash01(sSeed * 2.3) * 15;
         // Slashes rake backwards along the body, following the spine.
-        const sang = 0.6 + this._hash01(sSeed * 3.1) * 0.5 + spineBend(u) * 0.4;
+        const sang = 0.5 + this._hash01(sSeed * 3.1) * 0.45 + spineBend(u) * 0.4;
         const p2 = { x: p.x + Math.cos(sang) * slen, y: p.y + Math.sin(sang) * slen };
-        ctx.strokeStyle = ph >= 2
-          ? 'rgba(190, 60, 76, ' + Math.min(0.9, 0.45 + injury * 0.4).toFixed(2) + ')'
-          : 'rgba(148, 163, 198, 0.62)';
-        ctx.lineWidth = 2.6 + this._hash01(sSeed * 5.1) * 1.6;
+        // Old wounds read pale silver; only the apex phase runs them red.
+        ctx.strokeStyle = ph === 3
+          ? 'rgba(178, 74, 86, ' + Math.min(0.7, 0.35 + injury * 0.3).toFixed(2) + ')'
+          : 'rgba(194, 208, 226, 0.5)';
+        ctx.lineWidth = 2.2 + this._hash01(sSeed * 5.1) * 1.2;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
         // Phase 3: the wounds weep light through the hide.
         if (ph === 3) {
-          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.22 + woundGlow * 0.4).toFixed(2) + ')';
+          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.18 + woundGlow * 0.3).toFixed(2) + ')';
           ctx.lineWidth = 1.4;
           ctx.beginPath();
           ctx.moveTo(p.x + 1, p.y + 1);
@@ -4347,26 +4349,23 @@ class Megalodon {
     const headSlope = Math.atan2(spineAt(0.98, 0).y - spineAt(0.86, 0).y,
       spineAt(0.98, 0).x - spineAt(0.86, 0).x);
     {
-      // Brow ridge: a heavy shadow above the eye, angriest in the apex phase.
-      const browA = spineAt(0.92, -0.62);
-      const browB = spineAt(0.70, -0.55);
-      const bb = spineAt(0.80, 0);
+      // Crown shade: a darker band over the top of the skull, parallel to the
+      // countershading, dropping just above the eye so the eye sits deep in
+      // the head. The old hard-edged brow slab read as a box glued on.
+      const crown = [];
+      for (let i = 0; i <= 8; i++) crown.push(spineAt(0.98 - i * 0.04, -1.0));
+      for (let i = 8; i >= 0; i--) crown.push(spineAt(0.98 - i * 0.04, -0.44));
       ctx.beginPath();
-      ctx.moveTo(browA.x, browA.y);
-      ctx.quadraticCurveTo(bb.x + 6, bb.y - bodyHalf(0.80) * (1.05 + 0.1 * eyeGlow), browB.x, browB.y);
-      ctx.quadraticCurveTo(bb.x + 2, bb.y - bodyHalf(0.80) * 0.55, browA.x + 12, browA.y + 8);
+      traceSmooth(ctx, crown);
       ctx.closePath();
-      ctx.fillStyle = hideTop;
+      ctx.fillStyle = 'rgba(5, 8, 15, 0.20)';
       ctx.fill();
-      ctx.strokeStyle = outline;
-      ctx.lineWidth = 3;
-      ctx.stroke();
 
-      // THE EYE: bead + iris + pupil + glint, with a nictitating blink. It
-      // sits just above the mouth line, a third of the way back from the
-      // snout — low and forward, the way a predator's eye is set.
-      const eye = spineAt(0.875, -0.34);
-      const eyeX = eye.x, eyeY = eye.y - 2;
+      // THE EYE: a small, deep-set bead. A predator's eye is a black lens
+      // under a shelf of skull, not a cartoon ball; the only heat is a thin
+      // iris rim that ignites as the phases escalate.
+      const eye = spineAt(0.87, -0.30);
+      const eyeX = eye.x, eyeY = eye.y - 1;
       // Where the eye looks: the player, converted to the nose-right frame.
       let lookX = 0, lookY = 0;
       const player = this.game && this.game.player;
@@ -4378,56 +4377,55 @@ class Megalodon {
         lookX = Math.max(-1, Math.min(1, dx / d)) * faceDir;
         lookY = Math.max(-1, Math.min(1, dy / d));
       }
-      if (eyeGlow > 0) {
-        // Ember bloom behind the eye; the pulse is the heartbeat of the fight.
-        ctx.fillStyle = 'rgba(239, 68, 68, ' + (0.14 + eyeGlow * 0.26).toFixed(2) + ')';
+      // Ember bloom behind the eye: phases 2+ only, the heartbeat of the fight.
+      if (eyeGlow > 0 && ph >= 2) {
+        ctx.fillStyle = 'rgba(239, 68, 68, ' + (0.10 + eyeGlow * 0.20).toFixed(2) + ')';
         ctx.beginPath();
-        ctx.arc(eyeX, eyeY, 13 + eyeGlow * 5 + Math.sin(this.animT * 6) * 1.5, 0, Math.PI * 2);
+        ctx.arc(eyeX, eyeY, 9 + eyeGlow * 3 + Math.sin(this.animT * 6) * 1.2, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Sclera: white when it flashes, a livid red neon the rest of the time.
-      ctx.fillStyle = flash ? '#ffffff' : eyeGlow > 0.6 ? '#fca5a5' : '#e2b3b3';
-      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 8.4, 7.2, 0, 0, Math.PI * 2); ctx.fill();
-      // Iris: deep blood-red, brightening with the phase.
-      const iris = ph === 1 ? '#7f1d1d' : ph === 2 ? '#b91c1c' : '#ef4444';
-      ctx.fillStyle = flash ? '#fecdd3' : iris;
-      ctx.beginPath(); ctx.ellipse(eyeX + lookX * 2, eyeY + lookY * 1.4, 5.8, 6.2, 0, 0, Math.PI * 2); ctx.fill();
-      // Pupil: a black vertical slit, the way a shark's eye actually reads.
-      ctx.fillStyle = '#0b0710';
-      ctx.beginPath(); ctx.ellipse(eyeX + lookX * 3, eyeY + lookY * 2, 1.7, 4.2, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(eyeX - 1.5 + lookX * 2, eyeY - 4, 2.4, 2.4);
-      // Socket ring: dark hide around the eye so it sits IN the head.
-      ctx.strokeStyle = outline;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 10.5, 8.8, 0, 0, Math.PI * 2); ctx.stroke();
+      // Socket: a patch of dark hide the eye sits sunk into.
+      ctx.fillStyle = flash ? '#ffffff' : 'rgba(5, 8, 15, 0.55)';
+      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 7.4, 6.4, 0, 0, Math.PI * 2); ctx.fill();
+      // Bead: the near-black eyeball itself.
+      ctx.fillStyle = flash ? '#ffffff' : '#0a0d14';
+      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 5.4, 4.8, 0, 0, Math.PI * 2); ctx.fill();
+      // Iris rim: amber at phase 1, blood-ember once the frenzy takes over.
+      const iris = ph === 1 ? '#9a6a33' : ph === 2 ? '#c2512a' : '#ef4444';
+      ctx.strokeStyle = flash ? '#fecdd3' : iris;
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      ctx.ellipse(eyeX + lookX * 1.2, eyeY + lookY * 1, 4.3, 3.8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // One hard glint, the only white in the eye.
+      ctx.fillStyle = '#eef3fa';
+      ctx.fillRect(eyeX - 1.6 + lookX * 1.5, eyeY - 3 + lookY, 2.2, 2.2);
       // Blink: the nictitating membrane sweeps down; exhaustion half-lids it.
       const lid = Math.max(this.blink || 0, exhausted ? 0.45 : 0);
       if (lid > 0.02) {
         ctx.fillStyle = hideMid;
         ctx.beginPath();
-        ctx.ellipse(eyeX, eyeY - 10 + lid * 12, 11, 10 * lid + 1.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(eyeX, eyeY - 8 + lid * 10, 8, 8 * lid + 1.5, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = outline;
         ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(eyeX - 10, eyeY - 8 + lid * 11); ctx.lineTo(eyeX + 10, eyeY - 8 + lid * 11); ctx.stroke();
-      }
-      // Angry crease over the eye; a second one opens in the apex phase.
-      ctx.strokeStyle = outline;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(eyeX - 15, eyeY - 12);
-      ctx.lineTo(eyeX + 10, eyeY - 8);
-      ctx.stroke();
-      if (ph === 3) {
         ctx.beginPath();
-        ctx.moveTo(eyeX - 12, eyeY - 17);
-        ctx.lineTo(eyeX + 8, eyeY - 14);
+        ctx.moveTo(eyeX - 8, eyeY - 6 + lid * 9);
+        ctx.lineTo(eyeX + 8, eyeY - 6 + lid * 9);
         ctx.stroke();
       }
+      // One short lid crease: angry, but not a scar across the face.
+      ctx.strokeStyle = 'rgba(5, 8, 15, 0.7)';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(eyeX - 11, eyeY - 8);
+      ctx.quadraticCurveTo(eyeX, eyeY - 11.5, eyeX + 8, eyeY - 7);
+      ctx.stroke();
       // Nostril slit near the snout tip.
-      ctx.fillStyle = 'rgba(6, 10, 20, 0.8)';
-      ctx.beginPath(); ctx.ellipse(spineAt(0.97, -0.35).x, spineAt(0.97, -0.35).y, 3, 2, 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(5, 8, 15, 0.8)';
+      ctx.beginPath();
+      ctx.ellipse(spineAt(0.955, -0.28).x, spineAt(0.955, -0.28).y, 3, 2, 0.3, 0, Math.PI * 2);
+      ctx.fill();
       // Ampullae of Lorenzini: the sensory pores over the snout — kept as an
       // even, paired row so it reads as anatomy instead of confetti.
       ctx.fillStyle = 'rgba(6, 10, 20, 0.3)';
@@ -4447,9 +4445,12 @@ class Megalodon {
     {
       // Mouth corner (hinge) sits behind the eye, low on the flank; the front
       // of the lip rides the belly outline of the snout.
-      const hinge = spineAt(0.585, 0.12);
-      const lipEnd = spineAt(0.985, 0.50);
-      const lipCtrl = { x: hinge.x + (lipEnd.x - hinge.x) * 0.52, y: hinge.y + (lipEnd.y - hinge.y) * 0.52 + 4 };
+      const hinge = spineAt(0.63, 0.18);
+      const lipEnd = spineAt(0.975, 0.66);
+      // The mouth is a slot UNDER the snout: the lip line sags down across the
+      // mid-face and rises toward the tip, riding the jaw's own curve. A
+      // straight line here is what made the head read as a crocodile gash.
+      const lipCtrl = { x: hinge.x + (lipEnd.x - hinge.x) * 0.5, y: hinge.y + (lipEnd.y - hinge.y) * 0.5 + 52 };
       const lipPt = (f) => this._quadAt(hinge, lipCtrl, lipEnd, f);
       const lipTangent = (f) => {
         const a = lipPt(Math.max(0, f - 0.03)), b = lipPt(Math.min(1, f + 0.03));
@@ -4459,7 +4460,7 @@ class Megalodon {
       };
       // Jaw angle: a resting snarl that unhinges to near-vertical. The sheet's
       // gape is enormous: the head throws open like a bear trap.
-      const ja = 0.10 + (this.jawOpen || 0) * 0.64;
+      const ja = 0.05 + (this.jawOpen || 0) * 0.69;
       const rot = (p, a) => {
         const c = Math.cos(a), s = Math.sin(a);
         const dx = p.x - hinge.x, dy = p.y - hinge.y;
@@ -4543,14 +4544,18 @@ class Megalodon {
       {
         const slab = [];
         for (let i = 0; i <= 8; i++) slab.push(jawPt(i / 8));
-        const jowl = (f) => 17 + open01 * 9 + Math.sin(f * Math.PI) * 6;
+        // Jaw depth tapers to the chin so the open silhouette reads as a jaw,
+        // not a rounded paddle.
+        const jowl = (f) => (16 + open01 * 7 + Math.sin(f * Math.PI) * 6) * (1 - 0.5 * f * f);
         for (let i = 8; i >= 0; i--) {
           const f = i / 8;
           const t = jawTangent(f);
           slab.push({ x: jawPt(f).x - t.y * jowl(f), y: jawPt(f).y + t.x * jowl(f) });
         }
         ctx.beginPath(); traceSmooth(ctx, slab); ctx.closePath();
-        ctx.fillStyle = hideMid;
+        // Open, the outer jaw is ventral surface: pale gray-blue like the
+        // belly. Shut, it blends back into the flank band.
+        ctx.fillStyle = open01 > 0.15 ? bellySh : hideLow;
         ctx.fill();
         ctx.strokeStyle = outline;
         ctx.lineWidth = 3.5;
@@ -4567,32 +4572,42 @@ class Megalodon {
         }
         ctx.stroke();
         // LOWER TEETH: they ride the top edge of the dropped jaw, pointing up
-        // into the gape so the two rows interleave when it snaps shut.
-        const lowerTeeth = 13;
-        for (let t = 0; t < lowerTeeth; t++) {
-          const f = 0.04 + (t / (lowerTeeth - 1)) * 0.94;
-          const base = jawPt(f);
-          const tg = jawTangent(f);
-          const tlen = (9 + Math.sin(f * Math.PI) * 19 + open01 * 5)
-            * (ph === 3 && t % 3 === 1 ? 0.45 : 1);   // apex: teeth snapped off
-          // direction: from the jaw line up into the gape = (-t.y, t.x) reversed
-          this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 4.4, tooth);
+        // into the gape so the two rows interleave when it snaps shut. Held
+        // back while the mouth is closed so the shut silhouette stays clean.
+        if (open01 > 0.02) {
+          const lowerTeeth = 12;
+          for (let t = 0; t < lowerTeeth; t++) {
+            const f = 0.05 + (t / (lowerTeeth - 1)) * 0.9;
+            const base = jawPt(f);
+            const tg = jawTangent(f);
+            const tlen = (8 + Math.sin(f * Math.PI) * 15 + open01 * 6)
+              * (ph === 3 && t % 3 === 1 ? 0.45 : 1);   // apex: teeth snapped off
+            this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 4.2, tooth);
+          }
         }
       }
 
-      // ---- UPPER TEETH: two staggered rows hanging from the upper lip. ----
+      // ---- TEETH: serrated triangles riding the jaw's own curve. The outer
+      //      row is always out; the recruiting row only surfaces as the gape
+      //      widens, so a shut mouth stays a clean overbite instead of a
+      //      mouthful of overlapping rows.
       {
-        for (let row = 0; row < 2; row++) {
-          const count = row === 0 ? 15 : 13;
-          const scale = row === 0 ? 1 : 0.74;
+        const rows = open01 > 0.3 ? 2 : 1;
+        const restScale = 0.5 + open01 * 0.5;   // short at rest, full length wide
+        for (let row = 0; row < rows; row++) {
+          const count = row === 0 ? 14 : 11;
+          const scale = row === 0 ? 1 : 0.68;
+          const f0 = row === 0 ? 0.03 : 0.13;
+          const span = row === 0 ? 0.94 : 0.8;
           for (let t = 0; t < count; t++) {
-            const f = 0.02 + (t / (count - 1)) * 0.96 + row * 0.05;
-            const base = lipPt(Math.min(1, f));
-            const tg = lipTangent(Math.min(1, f));
-            const tlen = (11 + Math.sin(f * Math.PI) * 25 + open01 * 6) * scale
-              * (ph === 3 && t % 3 === 2 ? 0.5 : 1);  // apex: teeth snapped off
-            // direction: from the lip down into the gape = (t.y, -t.x)
-            this._toothTri(ctx, base.x - tg.y * 1.5, base.y + tg.x * 1.5, -tg.y, tg.x, tlen, 4.8 * scale, tooth);
+            const f = Math.min(1, f0 + (t / (count - 1)) * span);
+            const base = lipPt(f);
+            const tg = lipTangent(f);
+            const tlen = (9 + Math.sin(f * Math.PI) * 16 + open01 * 7)
+              * scale * restScale
+              * (ph === 3 && t % 4 === 2 ? 0.4 : 1);   // apex: teeth snapped off
+            this._toothTri(ctx, base.x - tg.y * 1.5, base.y + tg.x * 1.5,
+              -tg.y, tg.x, tlen, 4.6 * scale, tooth);
           }
         }
         // Gum line along the upper jaw, just inside the lip.
@@ -4606,22 +4621,14 @@ class Megalodon {
           if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
         }
         ctx.stroke();
-      }
-
-      // ---- Closed-mouth resting snarl: front teeth always overhang the lip,
-      //      the way the sheet's shark never fully closes its mouth. --------
-      if (open01 < 0.5) {
-        ctx.strokeStyle = outline;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        traceSmooth(ctx, [closedY(0.06), closedY(0.4), closedY(0.75), closedY(0.98)]);
-        ctx.stroke();
-        for (let t = 0; t < 9; t++) {
-          const f = 0.16 + t * 0.095;
-          const base = lipPt(f);
-          const tg = lipTangent(f);
-          this._toothTri(ctx, base.x - tg.y * 2, base.y + tg.x * 2, -tg.y, tg.x,
-            8 + Math.sin(f * Math.PI) * 5, 3.4, tooth);
+        // Shut mouth: the jaw seam under the lip. The front row above already
+        // overhangs it, the way a great white's mouth never quite closes clean.
+        if (open01 < 0.04) {
+          ctx.strokeStyle = outline;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          traceSmooth(ctx, [closedY(0.06), closedY(0.4), closedY(0.75), closedY(0.98)]);
+          ctx.stroke();
         }
       }
       // Blood drip from the mouth corner: phase 3 is raw meat.
@@ -4656,7 +4663,7 @@ class Megalodon {
       }
       // Escaping breath when the jaws are wide.
       if ((this.jawOpen || 0) > 0.55) {
-        const hinge = spineAt(0.585, 0.12);
+        const hinge = spineAt(0.63, 0.18);
         for (let i = 0; i < 3; i++) {
           const t = (this.animT * 1.3 + i * 0.33) % 1;
           ctx.strokeStyle = 'rgba(224, 242, 254, ' + (0.55 * (1 - t)).toFixed(2) + ')';
@@ -4850,9 +4857,9 @@ class Megalodon {
     // deep blunt snout, thin caudal stalk.
     const g = u < 0.60
       ? (0.56 + 0.44 * Math.sin((u / 0.60) * Math.PI * 0.5))
-      : (1.0 - 0.16 * ((u - 0.60) / 0.40));
+      : (1.0 - 0.34 * Math.pow((u - 0.60) / 0.40, 1.4));
     const prof = 0.09 + 0.94 * Math.pow(g, 0.55);
-    const noseTaper = u > 0.96 ? Math.max(0.9, 1 - (u - 0.96) * 2.5) : 1;
+    const noseTaper = u > 0.88 ? Math.max(0.7, 1 - (u - 0.88) * 2.2) : 1;
     const peduncle = u < 0.15 ? Math.max(0.34, u / 0.15) : 1;
     return HH * prof * noseTaper * peduncle;
   }
