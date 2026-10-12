@@ -2,7 +2,10 @@
 # local scaffolding from this workspace and would only bloat/break the deploy.
 
 # Local-only builds and servers
-terraria.inlined.html
+# NOTE: terraria.inlined.html is intentionally NOT ignored anymore. It is the
+# self-contained single-file build (CSS + every game script inlined) that GitHub
+# Pages serves and that app.py embeds by URL, so it must be committed and
+# deployed like the other game files.
 qa-deployed-srcdoc.html
 qa-expected.html
 qa-inline-build.js
