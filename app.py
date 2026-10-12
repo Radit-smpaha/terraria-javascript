@@ -29,6 +29,18 @@ GAME_SCRIPTS = [
     "terraria.js",
 ]
 GITHUB_FALLBACK = "https://radit-smpaha.github.io/terraria-javascript/terraria.html"
+# One self-contained build (CSS + every game script inlined into a single HTML
+# file) is published to GitHub Pages as terraria.inlined.html and embedded here
+# by URL. WHY not inline the source into st.iframe directly like before: that
+# pushed ~1.5 MB of game code through Streamlit's component bridge on every
+# run, and once ocean.js grew with the Megalodon rig the payload tipped the
+# app into a permanent "in the oven" spinner that never cleared. A hosted URL
+# costs a few bytes over the channel. It is also a SINGLE file, so it cannot go
+# stale-per-file the way the multi-file terraria.html once did (Pages served an
+# old entities.js against a new terraria.js -> "Player is not defined").
+INLINED_URL = (
+    "https://radit-smpaha.github.io/terraria-javascript/terraria.inlined.html"
+)
 # The game fills 100vh of whatever frame it is given, so the frame has to be
 # sized to the WINDOW, not to a fixed pixel count. 850px was taller than a
 # laptop viewport, which put the bottom of the arena - the hotbar - below the
@@ -39,7 +51,7 @@ GAME_HEIGHT = 640
 
 st.set_page_config(
     page_title="Terracraft",
-    page_icon="🌲",
+    page_icon="ðŸŒ²",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -113,7 +125,7 @@ def build_inline_html() -> str | None:
             # A failed earlier deploy used a blanket backslash-escape here that
             # corrupted the JS. This build only touches "</script" (see verify
             # above); backslashes/regexes are passed through untouched.
-            # <script> tags carry onload/onerror probes now — allow attributes.
+            # <script> tags carry onload/onerror probes now â€” allow attributes.
             pattern = re.compile(
                 r'<script\s+src="%s(\?v=[^"]*)?"[^>]*>\s*</script>' % re.escape(name)
             )
@@ -159,7 +171,7 @@ def build_inline_html() -> str | None:
             # Inline <script> blocks never fire onload, so record per-file
             # proof of life right after each block. A failed block's probe
             # still runs (separate <script>) and reports e.g.
-            # "Player=undefined" — the boot overlay then names the exact file
+            # "Player=undefined" â€” the boot overlay then names the exact file
             # instead of a bare "Player is not defined (about:srcdoc)".
             probe = (
                 "\n<script>window.__terraNoteScript&&window.__terraNoteScript("
@@ -172,8 +184,6 @@ def build_inline_html() -> str | None:
         st.warning(f"Could not inline local game files ({exc}); using hosted build.")
         return None
 
-
-inline_html = build_inline_html()
 
 try:
     _debug = "debug" in st.query_params
@@ -188,14 +198,18 @@ if _debug:
             except Exception:
                 _sizes[_n] = -1
         st.write(_sizes)
-        st.write("inline chars:", len(inline_html) if inline_html else None)
+        # Only built under ?debug now: it inlines the whole game into one
+        # string (~1.5 MB) purely to prove the local files are self-consistent.
+        # The live embed no longer uses it (see below), so building it on every
+        # run was pure waste.
+        st.write("local inline chars:", len(build_inline_html() or ""))
 
-if inline_html:
-    # st.iframe replaces the deprecated components.html. It takes the raw HTML
-    # string directly and has no `scrolling` argument; a fixed pixel height is
-    # used because the game sizes itself to 100vh of the iframe, so
-    # height="content" would be circular.
-    st.iframe(inline_html, height=GAME_HEIGHT)
-else:
-    st.error("Local game files did not match terraria.html — falling back to hosted build.")
-    st.iframe(GITHUB_FALLBACK, height=GAME_HEIGHT)
+# Embed the hosted self-contained build by URL (see INLINED_URL above). A
+# hosted URL is a handful of bytes over Streamlit's component bridge; inlining
+# the ~1.5 MB source into st.iframe (the old approach) pushed the entire game
+# through that bridge on every run and, once ocean.js grew with the Megalodon
+# rig, tipped the app into a permanent "in the oven" spinner that never
+# cleared. Because INLINED_URL is a SINGLE document it also cannot go
+# stale-per-file the way terraria.html could (Pages once served an old
+# entities.js against a new terraria.js -> "Player is not defined").
+st.iframe(INLINED_URL, height=GAME_HEIGHT)
