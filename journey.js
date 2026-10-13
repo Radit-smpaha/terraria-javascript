@@ -369,4 +369,117 @@ if (typeof window !== 'undefined') {
   window.JOURNEY_RANKS = JOURNEY_RANKS;
 }
 
+// ============================================================================
+// BESTIARY — a discovery journal of everything the player has met.
+//
+// Kills and boss victories feed it through record()/recordBoss(). New entries
+// are announced like any other discovery, so filling the book is driven by
+// playing rather than by a checklist. Entries are plain data (no entity
+// references) so the book survives a save/load round trip unchanged.
+// ============================================================================
+
+// Lore per creature id: shown only once the entry is unlocked. `kind` groups
+// entries in the book; `zone` says where to find it. Bosses list their drops.
+const BESTIARY_LORE = {
+  slime: { name: 'Green Slime', icon: '🟢', kind: 'Surface', zone: 'Forests & plains at night', lore: 'Bounces, splits when cut, and is nobody\'s idea of a threat. Every hero\'s first victim.' },
+  zombie: { name: 'Zombie', icon: '🧟', kind: 'Surface', zone: 'Forests & plains at night', lore: 'Shambles toward whatever it hears. Slow enough to outwalk, stubborn enough to corner you.' },
+  skeleton: { name: 'Skeleton', icon: '💀', kind: 'Surface', zone: 'Caves & the surface at night', lore: 'Bone held together by the dungeon\'s old grudge. Throws what it can lift.' },
+  bat: { name: 'Cave Bat', icon: '🦇', kind: 'Cave', zone: 'Every cave', lore: 'Erratic, fast, and blind in exactly the way that makes it hard to lead.' },
+  demon: { name: 'Hellbound Demon', icon: '👹', kind: 'Underworld', zone: 'The Underworld', lore: 'It remembers being summoned and has never forgiven the summons.', drops: 'Hellstone, Obsidian, Demon Soul' },
+  shark: { name: 'Reef Shark', icon: '🦈', kind: 'Reef', zone: 'The western reef', lore: 'Patrols the reef in lazy circles right up until it doesn\'t.', drops: 'Coral Fragment, Manta' },
+  pirate: { name: 'Reef Pirate', icon: '🏴‍☠️', kind: 'Reef', zone: 'The western reef, mostly at night', lore: 'They came for the temple\'s pearls and stayed for the drowning.', drops: 'Coral Fragment' },
+  guardian: { name: 'Forest Guardian', icon: '👑', kind: 'Boss', zone: 'The night itself', lore: 'The forest answers the night with this. Its fall is the forest\'s permission to dig deeper.', drops: 'Guardian Trophy, ores, crystals' },
+  knight: { name: 'Cursed Knight', icon: '⚔️', kind: 'Boss', zone: 'The buried chapel', lore: 'Sworn to a ruin nobody else remembers. The oath outlived the kingdom and the knight.', drops: 'Cursed Edge, crystals, diamonds' },
+  kraken: { name: 'Megalodon', icon: '🦈', kind: 'Boss', zone: 'Beyond the Tide Gate, the ocean planet', lore: 'The last predator. It has outlived every sea it hunted in, and it knows it.', drops: 'Megalodon Trophy, ores, crystals' },
+  leviathan: { name: 'Abyssal Kraken', icon: '🐙', kind: 'Boss', zone: 'The ocean planet', lore: 'Older than the temple built to keep it out. Its eye is the only thing that bleeds properly.', drops: 'Kraken Trophy, Leviathan Trident, Tentacle Gun' },
+  dragon: { name: 'Ossuary Sovereign', icon: '🌌', kind: 'Boss', zone: 'The Ossuary', lore: 'A dragon folded into a grave, still keeping it.', drops: 'Dragon Trophy, Void Star Blade, Wyrmplate' }
+};
+const BESTIARY_FALLBACK = { name: 'Unknown Creature', icon: '❔', kind: 'Surface', zone: 'Somewhere out there', lore: 'You have met this thing. You do not yet know it.' };
+
+class Bestiary {
+  constructor() {
+    this.entries = {};
+  }
+
+  /** Record a monster kill; announces the first time each species is met. */
+  record(monster) {
+    if (!monster) return null;
+    const id = monster.kind || monster.type || monster.id || 'unknown';
+    const lore = BESTIARY_LORE[id];
+    const displayName = (lore && lore.name) || monster.displayName || monster.name || id;
+    let entry = this.entries[id];
+    if (!entry) {
+      entry = this.entries[id] = { kills: 0, firstAt: 0, elites: 0 };
+      this.game?.logDiscovery?.(`bestiary_${id}`, `📖 New bestiary entry — ${lore ? lore.icon + ' ' : ''}${displayName}`, lore && lore.kind === 'Boss' ? 400 : 40);
+    }
+    entry.kills += 1;
+    if (monster.isElite) entry.elites = (entry.elites || 0) + 1;
+    return entry;
+  }
+
+  /** Record a boss victory (the id is the boss kind, e.g. 'kraken'). */
+  recordBoss(kind) {
+    if (!kind) return null;
+    const lore = BESTIARY_LORE[kind];
+    if (!lore) return null;
+    if (!this.entries[kind]) {
+      this.entries[kind] = { kills: 0, firstAt: 0, elites: 0 };
+      this.game?.logDiscovery?.(`bestiary_${kind}`, `📖 Bestiary — ${lore.icon} ${lore.name}`, 400);
+    }
+    this.entries[kind].kills += 1;
+    return this.entries[kind];
+  }
+
+  get discovered() { return Object.keys(this.entries).length; }
+  get known() { return Object.keys(BESTIARY_LORE).length; }
+
+  /** Plain data for saving; the lore table is code, so it never serialises. */
+  serialize() { return JSON.stringify(this.entries); }
+  load(data) {
+    this.entries = {};
+    if (!data) return;
+    try {
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      if (parsed && typeof parsed === 'object') {
+        for (const id of Object.keys(parsed)) this.entries[id] = parsed[id];
+      }
+    } catch (e) { this.entries = {}; }
+  }
+
+  /** The book itself: grouped rows, locked entries shown as silhouettes. */
+  render() {
+    const order = ['Boss', 'Underworld', 'Reef', 'Cave', 'Surface'];
+    const rows = [];
+    for (const group of order) {
+      const known = Object.entries(BESTIARY_LORE).filter(([, l]) => l.kind === group);
+      if (!known.length) continue;
+      const cells = known.map(([id, lore]) => {
+        const entry = this.entries[id];
+        const kills = entry ? entry.kills : 0;
+        const elites = entry ? (entry.elites || 0) : 0;
+        if (!entry) {
+          return `<div class="bestiary-card locked">
+            <div class="bestiary-icon">❔</div>
+            <div class="bestiary-body"><b>Undiscovered</b>
+            <span class="bestiary-zone">${lore.zone}</span></div></div>`;
+        }
+        return `<div class="bestiary-card">
+          <div class="bestiary-icon">${lore.icon}</div>
+          <div class="bestiary-body"><b>${lore.name}</b>
+          <span class="bestiary-zone">${lore.zone}</span>
+          <span class="bestiary-lore">${lore.lore}</span>
+          ${lore.drops ? `<span class="bestiary-drops">Drops: ${lore.drops}</span>` : ''}
+          <span class="bestiary-kills">${kills} slain${elites ? ` · ${elites} elite` : ''}</span></div></div>`;
+      }).join('');
+      rows.push(`<h4 class="bestiary-group">${group === 'Boss' ? '👑 BOSSES' : group === 'Underworld' ? '🔥 UNDERWORLD' : group === 'Reef' ? '🌊 THE REEF' : group === 'Cave' ? '🕳️ CAVES' : '🌲 THE SURFACE'}</h4><div class="bestiary-grid">${cells}</div>`);
+    }
+    return `<div class="bestiary-progress">${this.discovered} / ${this.known} creatures recorded</div>${rows.join('')}`;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.Bestiary = Bestiary;
+  window.BESTIARY_LORE = BESTIARY_LORE;
+}
+
 

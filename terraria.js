@@ -278,6 +278,19 @@ const NEW_ITEMS = {
     id: 'guardian_trophy', name: 'Guardian Trophy', type: 'material',
     icon: '🏆', stackMax: 1
   },
+  // The Megalodon's trophy is a MOUNT, not an ingredient: it places as a lit
+  // wall decoration so killing the last predator leaves a permanent mark on
+  // the player's base (TILES.MEGALODON_TROPHY).
+  megalodon_trophy: {
+    id: 'megalodon_trophy', name: 'Megalodon Trophy', type: 'tile',
+    tile: TILES.MEGALODON_TROPHY, icon: '🦈', stackMax: 1
+  },
+  // Pet summon: a captured reef sprite that follows the player and reacts to
+  // discoveries. First Megalodon kill only, so it stays a keepsake.
+  reef_sprite: {
+    id: 'reef_sprite', name: 'Reef Sprite', type: 'pet', icon: '✨', stackMax: 1,
+    desc: 'A wisp of the deep reef. Use to summon or dismiss; it follows you everywhere and lights the dark.'
+  },
   // ---- Space dimension: the Void Rift and the Ossuary Sovereign ----
   // Beacon is consumed on use, so a second trip means another craft. That is
   // deliberate: it makes the rift an expedition you prepare for rather than a
@@ -1080,6 +1093,11 @@ class Game {
     this.npcs = typeof NPCManager !== 'undefined' ? new NPCManager(this) : null;
     // Persistent journey goals, explorer ranks, biome discoveries and streaks.
     this.journey = typeof JourneySystem !== 'undefined' ? new JourneySystem(this) : null;
+  // Bestiary: the discovery journal. Created next to the journey system it
+  // sits beside in the same book panel, and fed from the monster and boss
+  // death paths below.
+  this.bestiary = typeof Bestiary !== 'undefined' ? new Bestiary() : null;
+  if (this.bestiary) this.bestiary.game = this;
     // Multiplayer session (see multiplayer.js). 'none' until the player hosts
     // or joins from the title screen; every hook below is a no-op while idle.
     this.mp = typeof Multiplayer !== 'undefined' ? new Multiplayer(this) : null;
@@ -2340,9 +2358,10 @@ class Game {
     const worldX = this.input.mouseX + this.camera.x;
     const worldY = this.input.mouseY + this.camera.y;
     const petUse = held?.id === 'bone' && this.cerberus?.isNear(worldX, worldY);
-    // Blocks and consumables are "use" actions (place / drink / cast the rod);
-    // everything else is "swing" (mine, attack, interact, talk).
-    const isUse = (!!itemData && (itemData.type === 'tile' || itemData.type === 'consumable')) || petUse;
+    // Blocks, consumables and companions are "use" actions (place / drink /
+    // summon); everything else is "swing" (mine, attack, interact, talk).
+    const isUse = (!!itemData && (itemData.type === 'tile' || itemData.type === 'consumable' ||
+      itemData.type === 'pet')) || petUse;
     if (isUse) {
       // A canvas tap is a single action. Leaving mouseDown set makes the game
       // loop immediately run the left-click path too, which mines the tile
@@ -4659,6 +4678,9 @@ class Game {
     if (item.type === 'consumable') return 'consumables';
     if (item.type === 'ammo') return 'ammo';
     if (item.type === 'material') return 'materials';
+    // Companions are companions: not a tool, not a trophy, definitely not
+    // stone. They get their own creative tab so they are findable.
+    if (item.type === 'pet') return 'pets';
     return 'misc';
   }
 
@@ -4672,10 +4694,10 @@ class Game {
     // Category chips, built once from whatever categories actually exist.
     const chips = document.getElementById('creative-categories');
     if (chips && !chips.dataset.built) {
-      const order = ['all', 'blocks', 'weapons', 'tools', 'armor', 'consumables', 'ammo', 'materials', 'misc'];
+      const order = ['all', 'blocks', 'weapons', 'tools', 'armor', 'pets', 'consumables', 'ammo', 'materials', 'misc'];
       const labels = {
         all: 'ALL', blocks: 'BLOCKS', weapons: 'WEAPONS', tools: 'TOOLS',
-        armor: 'ARMOR', consumables: 'POTIONS', ammo: 'AMMO', materials: 'MATERIALS', misc: 'MISC'
+        armor: 'ARMOR', pets: 'COMPANIONS', consumables: 'POTIONS', ammo: 'AMMO', materials: 'MATERIALS', misc: 'MISC'
       };
       const present = new Set(Object.values(ITEMS).map(i => this.creativeCategoryOf(i)));
       chips.innerHTML = '';
@@ -5839,10 +5861,29 @@ class Game {
     if (this.discoveryLog.length > 24) this.discoveryLog.length = 24;
     this.showAnnouncement(label);
     this.feel.heal(0.22);
+    // The companion cheers for every new thing you find.
+    if (this.pet) this.pet.celebrate();
     if (points) this.showToast(`✨ Discovery logged: ${label} (+${points})`);
     else this.showToast(`✨ Discovery logged: ${label}`);
     this.journey?.noteDiscovery();
     return true;
+  }
+
+  /**
+   * Has this save ever felled this boss? Villager dialogue and the bestiary
+   * both ask, so the answer lives in one place. `kraken` is the Megalodon
+   * (its boss kind) and `leviathan` is the Abyssal Kraken proper — the ocean
+   * planet's boss books record one ocean victory, so both read as true after
+   * either beast is down.
+   */
+  isBossDefeated(kind) {
+    if (!kind) return false;
+    if (kind === 'kraken' || kind === 'leviathan') {
+      return this.leviathanSlain === true ||
+        !!(this._bossKinds && (this._bossKinds.kraken || this._bossKinds.leviathan));
+    }
+    if (kind === 'dragon') return this.dragonSlain === true;
+    return !!(this._bossKinds && this._bossKinds[kind]);
   }
 
   /** Render the journal modal. Recomputed on open — it is a static snapshot. */
@@ -5880,6 +5921,8 @@ class Game {
         ${journeyHTML}
         <h4>POINT BREAKDOWN</h4>
        <div class="journal-table">${breakdown || '<p class="journal-empty">Play a little and this fills up.</p>'}</div>
+       <h4>BESTIARY</h4>
+       <div class="bestiary-wrap">${this.bestiary ? this.bestiary.render() : ''}</div>
        <h4>DISCOVERY LOG</h4>
        <ul class="journal-log">${log}</ul>`;
   }
@@ -6811,6 +6854,22 @@ class Game {
         this.minimap.markDirty();
       } else {
         this.showToast('🌱 Plant an acorn on open ground with soil below.');
+      }
+      return;
+    }
+
+    // Pet summon / dismiss: toggles the companion where the player stands.
+    // Never consumes the item — it is a keepsake, not a charge.
+    if (itemData && itemData.type === 'pet') {
+      if (this.pet && this.pet.kind === held.id) {
+        this.pet = null;
+        this.showToast('✨ Your companion returns to the reef.');
+        this.sound?.playClick?.();
+      } else {
+        this.pet = new Pet(this.player.x, this.player.y, held.id);
+        this.showToast('✨ Your companion joins you!');
+        this.sound?.playPlace?.();
+        this.particles?.magicSparkle(this.player.x + this.player.width / 2, this.player.y, '#5eead4', 14);
       }
       return;
     }
@@ -8111,6 +8170,7 @@ this.player.dodgeTime = 0;
         const mpDropStart = this.drops.length;
         this.stats.kills += 1;
         this.journey?.recordActivity('hunt', m.x + m.width / 2, m.y);
+        if (this.bestiary) this.bestiary.record(m);
         if (this.npcs) this.npcs.onKill(m);
         if (m.isElite) this.stats.eliteKills += 1;
         // Terraria-style loot: coins and materials, better rolls for elites.
@@ -8180,6 +8240,7 @@ this.player.dodgeTime = 0;
       const defeatedKraken = this.boss.kind === 'kraken' || this.boss.kind === 'leviathan';
       this.stats.bossKills += 1;
       this.journey?.recordActivity('hunt', this.boss.x + this.boss.width / 2, this.boss.y);
+      if (this.bestiary) this.bestiary.recordBoss(this.boss.kind || 'forest');
       // Remember which bosses this world has ever felled — the journal scores
       // variety, so a second Guardian is worth less than a first Knight.
       this._bossKinds = this._bossKinds || {};
@@ -8221,10 +8282,22 @@ this.player.dodgeTime = 0;
         this.drops.push(new DropItem(this.boss.x + i * 10 - 40, this.boss.y, rewardIds[i % rewardIds.length],
           defeatedKraken ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
-      this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-        defeatedKraken ? 'kraken_trophy'
-          : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
-            : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+        this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
+          defeatedKraken ? 'kraken_trophy'
+            : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
+              : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+        // The Megalodon is its own trophy: a mount you place on the wall, so
+        // the last predator leaves a permanent mark on the player's base. It
+        // drops IN ADDITION to the Kraken Trophy, which the forge recipes
+        // still need — add a first-kill reef sprite so the win has a
+        // companion attached to it as well.
+        if (this.boss.kind === 'kraken' && this.boss instanceof Megalodon) {
+          this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
+          if (!this._megalodonSlainOnce) {
+            this._megalodonSlainOnce = true;
+            this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));
+          }
+        }
       if (defeatedKraken) {
         // Both weapons drop straight off the corpse: the trident for melee,
         // the Tentacle Gun for range. The forge recipes are rebuild backups.
@@ -8413,6 +8486,11 @@ this.player.dodgeTime = 0;
         const mpBoss2DropStart = this.drops.length;
         const knightWin = this.boss.kind === 'knight';
         this.stats.bossKills += 1;
+        if (this.bestiary) this.bestiary.recordBoss(this.boss.kind === 'kraken' ? 'kraken' : knightWin ? 'knight' : 'guardian');
+        // Remember the kill for villager reactions and the journal. The
+        // Megalodon books as 'kraken' (its boss kind in this block).
+        this._bossKinds = this._bossKinds || {};
+        this._bossKinds[this.boss.kind || 'forest'] = true;
         document.getElementById('boss-panel').classList.add('hidden');
         this.showAnnouncement(knightWin
           ? '⚔️ THE CURSED KNIGHT IS UNDONE!'
@@ -8433,6 +8511,15 @@ this.player.dodgeTime = 0;
         }
         this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
           knightWin ? 'cursed_edge' : 'guardian_trophy', 1));
+        // The Megalodon mounts its own trophy as well as the loot bag, and
+        // its FIRST win also gifts the reef sprite companion.
+        if (this.boss.kind === 'kraken') {
+          this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
+          if (!this._megalodonSlainOnce) {
+            this._megalodonSlainOnce = true;
+            this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));
+          }
+        }
 
         // Per-boss victory screen copy.
         const vTitle = document.querySelector('#victory-screen .victory-title');
@@ -8934,6 +9021,7 @@ this.player.dodgeTime = 0;
       critter.render(ctx, this.camera);
     }
     if (this.cerberus) this.cerberus.render(ctx, this.camera);
+    if (this.pet) this.pet.render(ctx, this.camera);
     // 4b. Quest-giving villagers
     if (this.npcs && !this.world.isInSpace() && !this.world.isInOcean()) this.npcs.render(ctx, this.camera);
 

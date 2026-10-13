@@ -1114,6 +1114,90 @@ kbd {
   font-style: italic;
 }
 
+/* ==========================================================================
+   BESTIARY — the creature journal inside the settlement journal
+   ========================================================================== */
+.bestiary-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bestiary-progress {
+  font-size: 14px;
+  color: #a5f3fc;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bestiary-group {
+  margin: 6px 0 4px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #cbd5f5;
+}
+
+.bestiary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.bestiary-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.85));
+}
+
+.bestiary-card.locked {
+  opacity: 0.55;
+  border-style: dashed;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.bestiary-icon {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(94, 234, 212, 0.35));
+}
+
+.bestiary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bestiary-body b {
+  font-size: 15px;
+  color: #f1f5f9;
+}
+
+.bestiary-zone {
+  font-size: 12px;
+  color: #7dd3fc;
+}
+
+.bestiary-lore {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+.bestiary-drops {
+  font-size: 12px;
+  color: #fcd34d;
+}
+
+.bestiary-kills {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 /* SHARED STASH â€” items that follow you between worlds */
 .shared-header {
   display: flex;
@@ -5568,6 +5652,10 @@ const TILES = {
   VINE: 94,
   MUSHROOM: 95,
   GLOWSHROOM: 96,
+  // ---- Trophy mounts ------------------------------------------------------
+  // Non-solid, light-emitting decoration the bosses drop so a victory has a
+  // place on the wall it was earned. Placed like any tile, mined back out.
+  MEGALODON_TROPHY: 97,
 };
 
 const TILE_PROPERTIES = {
@@ -5636,6 +5724,7 @@ const TILE_PROPERTIES = {
   , [TILES.VINE]: { solid: false, light: 0, color: '#15803d', name: 'Vine', drops: null }
   , [TILES.MUSHROOM]: { solid: false, light: 0, color: '#b91c1c', name: 'Cave Mushroom', drops: null }
   , [TILES.GLOWSHROOM]: { solid: false, light: 3, color: '#67e8f9', name: 'Glowshroom', drops: null }
+  , [TILES.MEGALODON_TROPHY]: { solid: false, light: 5, color: '#1e3a5f', name: 'Megalodon Trophy', drops: { id: 'megalodon_trophy', count: 1 } }
 };
 
 // The world is laid out as equal west→east bands, one per entry, in this order.
@@ -8728,7 +8817,7 @@ class World {
   isAnimatedTile(tile) {
     return tile === TILES.LAVA || tile === TILES.TORCH || tile === TILES.CAMPFIRE ||
       tile === TILES.LILY || tile === TILES.CRYSTAL || tile === TILES.LANTERN ||
-      tile === TILES.GLOWSHROOM;
+      tile === TILES.GLOWSHROOM || tile === TILES.MEGALODON_TROPHY;
   }
 
   // Background walls, painted into the static tile cache instead of the frame
@@ -9806,6 +9895,51 @@ class World {
         ctx.fillRect(sx + 13, sy + 11, 2, 2);
         break;
       }
+      case TILES.MEGALODON_TROPHY: {
+        // A mounted predator's head on a brass plaque: dark navy mask, a jaw
+        // of pale teeth, two milky eyes, and a lit rim so it reads as a
+        // keepsake rather than as a hazard. Mount plates face the wall, so the
+        // art is anchored to the TOP of the tile.
+        const t = Date.now() * 0.0009;
+        const glint = 0.5 + 0.5 * Math.sin(t + tx);
+        ctx.fillStyle = 'rgba(2, 6, 16, 0.35)';
+        ctx.fillRect(sx + 2, sy + 20, 20, 3);
+        // Plaque.
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(sx + 5, sy + 19, 14, 5);
+        ctx.fillStyle = '#b45309';
+        ctx.fillRect(sx + 6, sy + 20, 12, 3);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(sx + 7, sy + 21, 10, 1);
+        // Head mask: a heavy wedge narrowing to the snout.
+        ctx.fillStyle = '#1e3a5f';
+        ctx.fillRect(sx + 4, sy + 2, 16, 17);
+        ctx.fillRect(sx + 6, sy + 1, 12, 2);
+        ctx.fillStyle = '#2c5282';
+        ctx.fillRect(sx + 5, sy + 3, 14, 10);
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(sx + 6, sy + 3, 6, 4);
+        // Jaw + teeth.
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(sx + 6, sy + 12, 13, 6);
+        ctx.fillStyle = '#e2e8f0';
+        for (let i = 0; i < 6; i++) ctx.fillRect(sx + 6 + i * 2, sy + 12, 1, 2);
+        ctx.fillRect(sx + 6, sy + 15, 12, 1);
+        // Eyes: a lit ring around a dark pupil.
+        ctx.fillStyle = `rgba(248, 113, 113, ${(0.45 + glint * 0.4).toFixed(2)})`;
+        ctx.fillRect(sx + 7, sy + 6, 3, 3);
+        ctx.fillRect(sx + 14, sy + 6, 3, 3);
+        ctx.fillStyle = '#450a0a';
+        ctx.fillRect(sx + 8, sy + 7, 1, 2);
+        ctx.fillRect(sx + 15, sy + 7, 1, 2);
+        ctx.fillStyle = '#fecaca';
+        ctx.fillRect(sx + 7, sy + 6, 1, 1);
+        ctx.fillRect(sx + 14, sy + 6, 1, 1);
+        // Highlight along the lit brow.
+        ctx.fillStyle = 'rgba(191, 219, 254, 0.5)';
+        ctx.fillRect(sx + 7, sy + 2, 10, 1);
+        break;
+      }
 
       // ============================================================
       // BUILDING SET — ten blocks drawn flat and tileable, because their whole
@@ -10160,7 +10294,7 @@ class World {
         const tile = this.tiles[rowBase + x];
         if (tile !== TILES.TORCH && tile !== TILES.CAMPFIRE && tile !== TILES.LAVA &&
             tile !== TILES.CRYSTAL && tile !== TILES.WATER && tile !== TILES.LANTERN &&
-            tile !== TILES.GLOWSHROOM) continue;
+            tile !== TILES.GLOWSHROOM && tile !== TILES.MEGALODON_TROPHY) continue;
         if (tile === TILES.TORCH) {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
@@ -10189,6 +10323,12 @@ class World {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 14 - camera.y;
           this.carveLightCircle(lightCtx, sx, sy, 110, 0.5);
+        } else if (tile === TILES.MEGALODON_TROPHY) {
+          // A trophy mount holds a small keepsake glow: enough to find on the
+          // wall at night, not enough to light the room like a lamp.
+          const sx = x * TILE_SIZE + 12 - camera.x;
+          const sy = y * TILE_SIZE + 12 - camera.y;
+          this.carveLightCircle(lightCtx, sx, sy, 150, 0.6);
         } else {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
@@ -13411,6 +13551,111 @@ class Monster {
   }
 }
 
+/**
+ * Pet — a summoned companion that follows the player everywhere.
+ *
+ * Deliberately the simplest thing that can read as a friend: it orbits to a
+ * slow-moving "home" offset beside the player, drifts toward it with easing,
+ * bobs and spins on its own clock, and never interacts with combat, physics
+ * or collision. Its light comes from the glow pass (not a tile), so it works
+ * in caves and underwater too.
+ */
+class Pet {
+  constructor(x, y, kind = 'reef_sprite') {
+    this.x = x;
+    this.y = y;
+    this.kind = kind;
+    this.width = 18;
+    this.height = 18;
+    this.dead = false;                 // pets never die; toggled off on dismiss
+    this.bob = Math.random() * Math.PI * 2;
+    this.spin = 0;
+    this.orbit = Math.random() * Math.PI * 2;
+    this.homeX = x;
+    this.homeY = y;
+    this.face = 1;
+    this.happy = 0;                    // reacts to discoveries: a burst of sparkle
+    const skins = {
+      reef_sprite: { glow: 'rgba(94, 234, 212, 0.55)', body: '#5eead4', dark: '#0d9488', wing: '#ccfbf1', spark: '#a5f3fc' }
+    };
+    this.skin = skins[kind] || skins.reef_sprite;
+  }
+
+  /** Called by the game when a discovery fires: a little cheer. */
+  celebrate() { this.happy = 1.2; }
+
+  update(dt, player) {
+    this.bob += dt * 3.2;
+    this.spin += dt * 1.4;
+    this.orbit += dt * 0.6;
+    if (this.happy > 0) this.happy -= dt;
+    if (!player) return;
+    // The home slot drifts slowly around the player so the pet circles rather
+    // than glues itself to one pixel.
+    const wantX = player.x + player.width / 2 + Math.cos(this.orbit) * 34 + player.vx * 0.35;
+    const wantY = player.y + player.height / 2 - 22 + Math.sin(this.orbit * 0.8) * 10;
+    this.homeX += (wantX - this.homeX) * Math.min(1, dt * 2.2);
+    this.homeY += (wantY - this.homeY) * Math.min(1, dt * 2.2);
+    // Ease toward the home slot with a soft lag, so it trails the player.
+    const ease = Math.min(1, dt * 4.5);
+    this.x += (this.homeX - this.x) * ease;
+    this.y += (this.homeY - this.y) * ease;
+    if (Math.abs(this.homeX - this.x) > 2) this.face = this.homeX > this.x ? 1 : -1;
+    // Dismiss on a very long distance only (dimension hops): the pet finds you.
+    if (Math.hypot(this.x - player.x, this.y - player.y) > 700) {
+      this.x = player.x + player.width / 2;
+      this.y = player.y - 20;
+      this.homeX = this.x;
+      this.homeY = this.y;
+    }
+  }
+
+  render(ctx, camera) {
+    const sx = this.x - camera.x;
+    const sy = this.y - camera.y + Math.sin(this.bob) * 4;
+    if (sx < -40 || sy < -40 || sx > camera.viewportWidth + 40 || sy > camera.viewportHeight + 40) return;
+    const s = this.skin;
+    ctx.save();
+    // Aura halo, brighter when it cheers.
+    ctx.globalAlpha = 0.35 + (this.happy > 0 ? 0.35 : 0);
+    ctx.fillStyle = s.glow;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 14 + Math.sin(this.bob) * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Wings: two arcs that flap out of phase with the bob.
+    const flap = Math.sin(this.bob * 2.2) * 5;
+    ctx.fillStyle = s.wing;
+    ctx.beginPath();
+    ctx.ellipse(sx - 10 * this.face, sy - 6 + flap * 0.4, 7, 4, -0.5 * this.face, 0, Math.PI * 2);
+    ctx.ellipse(sx + 10 * this.face, sy - 6 - flap * 0.4, 7, 4, 0.5 * this.face, 0, Math.PI * 2);
+    ctx.fill();
+    // Body: a small orb, dark underside for volume.
+    ctx.fillStyle = s.dark;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = s.body;
+    ctx.beginPath();
+    ctx.arc(sx, sy - 1, 7, 0, Math.PI * 2);
+    ctx.fill();
+    // Core glint.
+    ctx.fillStyle = s.spark;
+    ctx.fillRect(sx - 2, sy - 4, 3, 3);
+    // A happy pet spins a sparkle ring.
+    if (this.happy > 0) {
+      ctx.globalAlpha = Math.min(1, this.happy);
+      ctx.fillStyle = '#fef9c3';
+      for (let i = 0; i < 4; i++) {
+        const a = this.spin * 3 + (i * Math.PI) / 2;
+        ctx.fillRect(sx + Math.cos(a) * 16 - 1, sy + Math.sin(a) * 16 - 1, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+}
+
 class Critter {
   constructor(x, y, type = 'sheep') {
     this.x = x;
@@ -15257,6 +15502,7 @@ window.Projectile = Projectile;
 window.Player = Player;
 window.Monster = Monster;
 window.Critter = Critter;
+window.Pet = Pet;
 // Movement tuning. Exported so the QA suite asserts the real numbers the game
 // runs on rather than a copy of the formula written into the test.
 window.TURN_COOLDOWN = TURN_COOLDOWN;
@@ -26334,6 +26580,20 @@ const NPC_DEFS = [
     // spawn cottage (spawnX +/- 6) so nobody ends up nose-to-wall.
     dx: -9,
     greeting: 'Welcome, traveller! The reef lies far west: find four glowing pearls and offer them at the Tide Temple podiums. Old sailors say a Void Rift Beacon can tear the sky open, and the dragon beyond remembers every wound.',
+    // Idle chatter: what they say when there is no quest to hand. Each line is
+    // a small window into the person, and they rotate so a villager you talk
+    // to every day does not repeat themselves like a signpost.
+    chatter: [
+      'I write everything down. Every step of yours is already history to somebody.',
+      'Four pearls, four podiums. The gate has waited a long time; it can wait an hour more.',
+      'When you have stood where the world ends, come back. The journal is never finished.'
+    ],
+    // Said once, the first time the player beats each boss.
+    reactions: {
+      kraken: 'The last predator is gone? …Then the sea is finally quiet. I should write this down properly.',
+      dragon: 'You stood in a dragon\'s grave and walked out. I have no words for it — I am writing it down.',
+      knight: 'The chapel is safe. He would have wanted that, I think. Eventually.'
+    },
     quests: [
       { type: 'kill', desc: 'Slay 5 monsters', target: 5, reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'kill', desc: 'Slay 10 monsters', target: 10, reward: [{ id: 'arrow', count: 30 }, { id: 'swiftness_potion', count: 1 }] },
@@ -26347,6 +26607,16 @@ const NPC_DEFS = [
     // Was +6, which is exactly the cottage's right-hand wall column.
     dx: 9,
     greeting: 'Ore, ore, ore! Dig deep and bring me the shiny stuff.',
+    chatter: [
+      'Every time you swing a pick you learn where the good stuff hides. That is the whole secret.',
+      'The old dungeon under the east? Full of it. Also full of things that resent visitors.',
+      'Copper, iron, gold, crystal — the mountain keeps a running tally, and it is generous.'
+    ],
+    reactions: {
+      kraken: 'A shark that big has swallowed whole reefs. Wonder what it had in its teeth…',
+      dragon: 'Meteor shards and dragonbone in one animal. That is a payday with wings.',
+      knight: 'Gold in that chapel. You just cleared out the security, friend.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'iron_ore', count: 10 }], desc: 'Bring 10 Iron Ore', reward: [{ id: 'ironskin_potion', count: 1 }, { id: 'apple', count: 3 }] },
       { type: 'collect', items: [{ id: 'gold_ore', count: 6 }], desc: 'Bring 6 Gold Ore', reward: [{ id: 'wrath_potion', count: 1 }, { id: 'torch', count: 20 }] },
@@ -26359,6 +26629,16 @@ const NPC_DEFS = [
     icon: '🧺',
     dx: 14,
     greeting: 'A camp is only as good as its supplies. Trade me some goods!',
+    chatter: [
+      'Build wide, build warm. A bed near a campfire is worth more than any weapon.',
+      'Bring back trophies. Put them on the wall. A home should remember what it survived.',
+      'Wool, wood, rope — the small things. The small things are what hold a camp together.'
+    ],
+    reactions: {
+      kraken: 'That trophy needs a wall of its own. Bring it home and I will help you hang it.',
+      dragon: 'You fought a god and came back with souvenirs. Put them where people can see them.',
+      knight: 'The chapel loot will keep this camp in candles for a year.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'wood', count: 20 }], desc: 'Bring 20 Wood', reward: [{ id: 'campfire', count: 1 }, { id: 'apple', count: 2 }] },
       { type: 'collect', items: [{ id: 'stone', count: 25 }], desc: 'Bring 25 Stone', reward: [{ id: 'miners_potion', count: 1 }, { id: 'bomb', count: 2 }] },
@@ -26377,6 +26657,16 @@ const NPC_DEFS = [
     icon: '🎣',
     dx: -16,
     greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. The Sacred Pearls are scattered across the world, and four podiums await inside the Tide Temple. Mind the pirates... and whatever sleeps beyond the gate.',
+    chatter: [
+      'Forty years I watched that coast. One winter the sea just kept coming and never went back.',
+      'The temple builders left the gate for a reason. Nobody wrote down which reason.',
+      'You breathe easy down there, do you? Good. The deep does not forgive the careless.'
+    ],
+    reactions: {
+      kraken: 'Last predator, they called it. Every old salt knew that name and none of them laughed.',
+      dragon: 'Beyond the gate there is a sky with a grave in it. And you came back. Sit down, have something to drink.',
+      knight: 'Drowned bell for a drowned chapel. He was keeping an oath nobody left alive to release.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'fish_clownfish', count: 3 }], desc: 'Bring 3 Reef Clownfish', reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'collect', items: [{ id: 'coral_fragment', count: 8 }], desc: 'Bring 8 Coral Fragments', reward: [{ id: 'swiftness_potion', count: 1 }, { id: 'apple', count: 2 }] },
@@ -26389,6 +26679,16 @@ const NPC_DEFS = [
     icon: '🔭',
     dx: 21,
     greeting: 'Count the stars at night and one of them is a door. Craft a Void Rift Beacon — demon souls, hellstone, crystal and gold — then right-click it under open sky. The sky tears, the Ossuary waits, and the Sovereign beyond remembers every wound you give it. Go armored.',
+    chatter: [
+      'I was a mapmaker once. I mapped my way out of every country I ever made a map of.',
+      'The stars here do not sit where they should. Something heavy is leaning on the sky.',
+      'You carry fire and iron and that is the whole reason the sky lets you in.'
+    ],
+    reactions: {
+      kraken: 'A door in the deep, and you used it. There are other doors.',
+      dragon: 'The Sovereign was a wound the world kept. It is closed now.',
+      knight: 'The chapel bell stopped. I can hear the stars again.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'crystal', count: 5 }], desc: 'Bring 5 Cave Crystals', reward: [{ id: 'mana_crystal', count: 1 }] },
       { type: 'kill', desc: 'Slay 8 monsters', target: 8, reward: [{ id: 'healing_potion', count: 2 }, { id: 'arrow', count: 20 }] }
@@ -26400,6 +26700,15 @@ const NPC_DEFS = [
     icon: '🐚',
     reefPearlIndex: 0,
     greeting: 'I watch the reef from this shore. Bring me 8 Wood and I will share where a Sacred Pearl sleeps.',
+    chatter: [
+      'The tide keeps its own time. Learn it and the reef gives you everything.',
+      'Pearls do not glow for everyone. It noticed you, apparently.'
+    ],
+    reactions: {
+      kraken: 'The gate is open and the predator beyond it is gone. The reef can rest.',
+      dragon: 'Whatever the pearls were for — this was further. Well done.',
+      knight: 'The sea does not care for chapels. It does care for courage.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'wood', count: 8 }], desc: 'Bring 8 Wood', reward: [{ id: 'healing_potion', count: 1 }] }
     ]
@@ -26410,6 +26719,15 @@ const NPC_DEFS = [
     icon: '🧣',
     reefPearlIndex: 1,
     greeting: 'I tracked a blue glow beneath the snow. Bring me 4 Wool and I will mark the spot.',
+    chatter: [
+      'Snow keeps a record. Everything that crosses it leaves a line, and I read lines.',
+      'Do not stand still in the pines. The cold likes a still target.'
+    ],
+    reactions: {
+      kraken: 'You went under the ice-cold water and came back. I have tracked braver; not many.',
+      dragon: 'The sky burned and you stood in it. Unbelievable. Write it down somewhere.',
+      knight: 'Old stone under the snow. It remembers knights; the snow remembers everything else.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'wool', count: 4 }], desc: 'Bring 4 Wool', reward: [{ id: 'torch', count: 16 }] }
     ]
@@ -26420,6 +26738,15 @@ const NPC_DEFS = [
     icon: '🌞',
     reefPearlIndex: 2,
     greeting: 'A pearl glimmers somewhere in the warm grasslands. Prove your courage by slaying 3 monsters, and I will reveal its trail.',
+    chatter: [
+      'The grasslands are the friendliest ground in the world. That is why nothing dangerous ever leaves them.',
+      'Run east until the wind smells of salt. That is where I grew up.'
+    ],
+    reactions: {
+      kraken: 'Three monsters! You killed three — and then the sea itself. I like the way you count.',
+      dragon: 'Everyone in the grasslands will hear about this. Everyone.',
+      knight: 'You were not afraid of the dark. The dark noticed.'
+    },
     quests: [
       { type: 'kill', desc: 'Slay 3 monsters', target: 3, reward: [{ id: 'healing_potion', count: 1 }] }
     ]
@@ -26430,6 +26757,15 @@ const NPC_DEFS = [
     icon: '🪷',
     reefPearlIndex: 3,
     greeting: 'Something sacred is buried in the marsh. Bring me 12 Stone and I will tell you where.',
+    chatter: [
+      'The marsh keeps what it is given. It gave me a pearl and I have been grateful ever since.',
+      'Walk the reeds slowly. Everything down there is patient, and so am I.'
+    ],
+    reactions: {
+      kraken: 'The marsh felt that. The water went still for a whole minute. Respect.',
+      dragon: 'You carry a light now. Even the reeds bow a little.',
+      knight: 'The stone remembers the oath. Thank you for ending it.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'stone', count: 12 }], desc: 'Bring 12 Stone', reward: [{ id: 'miners_potion', count: 1 }] }
     ]
@@ -26574,6 +26910,24 @@ class NPCManager {
     if (npc.clueUnlocked && Number.isInteger(npc.def.reefPearlIndex)) {
       const pearl = this.game.world.reefPearls[npc.def.reefPearlIndex];
       greeting = `Favor done! The Sacred Pearl is at world tile X ${pearl.x}, Y ${pearl.y}. Look for its glow.`;
+    }
+    // A boss this villager has a reaction to, never yet said out loud: the
+    // reaction replaces the greeting once, so a victory is a moment between
+    // the player and the camp rather than a line they can miss.
+    if (!npc.reacted) {
+      const reactions = npc.def.reactions || {};
+      const beaten = Object.keys(reactions)
+        .filter(kind => this.game.isBossDefeated && this.game.isBossDefeated(kind));
+      if (beaten.length) {
+        greeting = reactions[beaten[0]];
+        npc.reacted = true;
+      }
+    }
+    // With no quest pending, they chat: idle colour instead of a signpost.
+    const hasQuest = npc.state === 'offer' || npc.state === 'active' || npc.state === 'ready';
+    if (!hasQuest && npc.def.chatter && npc.def.chatter.length) {
+      const lines = npc.def.chatter;
+      greeting = lines[(npc.chatterIndex = ((npc.chatterIndex || 0) + 1)) % lines.length];
     }
     let html = `<span class="q-name">${greeting}</span>`;
 
@@ -27342,6 +27696,119 @@ if (typeof window !== 'undefined') {
   window.JourneySystem = JourneySystem;
   window.JOURNEY_STAGES = JOURNEY_STAGES;
   window.JOURNEY_RANKS = JOURNEY_RANKS;
+}
+
+// ============================================================================
+// BESTIARY — a discovery journal of everything the player has met.
+//
+// Kills and boss victories feed it through record()/recordBoss(). New entries
+// are announced like any other discovery, so filling the book is driven by
+// playing rather than by a checklist. Entries are plain data (no entity
+// references) so the book survives a save/load round trip unchanged.
+// ============================================================================
+
+// Lore per creature id: shown only once the entry is unlocked. `kind` groups
+// entries in the book; `zone` says where to find it. Bosses list their drops.
+const BESTIARY_LORE = {
+  slime: { name: 'Green Slime', icon: '🟢', kind: 'Surface', zone: 'Forests & plains at night', lore: 'Bounces, splits when cut, and is nobody\'s idea of a threat. Every hero\'s first victim.' },
+  zombie: { name: 'Zombie', icon: '🧟', kind: 'Surface', zone: 'Forests & plains at night', lore: 'Shambles toward whatever it hears. Slow enough to outwalk, stubborn enough to corner you.' },
+  skeleton: { name: 'Skeleton', icon: '💀', kind: 'Surface', zone: 'Caves & the surface at night', lore: 'Bone held together by the dungeon\'s old grudge. Throws what it can lift.' },
+  bat: { name: 'Cave Bat', icon: '🦇', kind: 'Cave', zone: 'Every cave', lore: 'Erratic, fast, and blind in exactly the way that makes it hard to lead.' },
+  demon: { name: 'Hellbound Demon', icon: '👹', kind: 'Underworld', zone: 'The Underworld', lore: 'It remembers being summoned and has never forgiven the summons.', drops: 'Hellstone, Obsidian, Demon Soul' },
+  shark: { name: 'Reef Shark', icon: '🦈', kind: 'Reef', zone: 'The western reef', lore: 'Patrols the reef in lazy circles right up until it doesn\'t.', drops: 'Coral Fragment, Manta' },
+  pirate: { name: 'Reef Pirate', icon: '🏴‍☠️', kind: 'Reef', zone: 'The western reef, mostly at night', lore: 'They came for the temple\'s pearls and stayed for the drowning.', drops: 'Coral Fragment' },
+  guardian: { name: 'Forest Guardian', icon: '👑', kind: 'Boss', zone: 'The night itself', lore: 'The forest answers the night with this. Its fall is the forest\'s permission to dig deeper.', drops: 'Guardian Trophy, ores, crystals' },
+  knight: { name: 'Cursed Knight', icon: '⚔️', kind: 'Boss', zone: 'The buried chapel', lore: 'Sworn to a ruin nobody else remembers. The oath outlived the kingdom and the knight.', drops: 'Cursed Edge, crystals, diamonds' },
+  kraken: { name: 'Megalodon', icon: '🦈', kind: 'Boss', zone: 'Beyond the Tide Gate, the ocean planet', lore: 'The last predator. It has outlived every sea it hunted in, and it knows it.', drops: 'Megalodon Trophy, ores, crystals' },
+  leviathan: { name: 'Abyssal Kraken', icon: '🐙', kind: 'Boss', zone: 'The ocean planet', lore: 'Older than the temple built to keep it out. Its eye is the only thing that bleeds properly.', drops: 'Kraken Trophy, Leviathan Trident, Tentacle Gun' },
+  dragon: { name: 'Ossuary Sovereign', icon: '🌌', kind: 'Boss', zone: 'The Ossuary', lore: 'A dragon folded into a grave, still keeping it.', drops: 'Dragon Trophy, Void Star Blade, Wyrmplate' }
+};
+const BESTIARY_FALLBACK = { name: 'Unknown Creature', icon: '❔', kind: 'Surface', zone: 'Somewhere out there', lore: 'You have met this thing. You do not yet know it.' };
+
+class Bestiary {
+  constructor() {
+    this.entries = {};
+  }
+
+  /** Record a monster kill; announces the first time each species is met. */
+  record(monster) {
+    if (!monster) return null;
+    const id = monster.kind || monster.type || monster.id || 'unknown';
+    const lore = BESTIARY_LORE[id];
+    const displayName = (lore && lore.name) || monster.displayName || monster.name || id;
+    let entry = this.entries[id];
+    if (!entry) {
+      entry = this.entries[id] = { kills: 0, firstAt: 0, elites: 0 };
+      this.game?.logDiscovery?.(`bestiary_${id}`, `📖 New bestiary entry — ${lore ? lore.icon + ' ' : ''}${displayName}`, lore && lore.kind === 'Boss' ? 400 : 40);
+    }
+    entry.kills += 1;
+    if (monster.isElite) entry.elites = (entry.elites || 0) + 1;
+    return entry;
+  }
+
+  /** Record a boss victory (the id is the boss kind, e.g. 'kraken'). */
+  recordBoss(kind) {
+    if (!kind) return null;
+    const lore = BESTIARY_LORE[kind];
+    if (!lore) return null;
+    if (!this.entries[kind]) {
+      this.entries[kind] = { kills: 0, firstAt: 0, elites: 0 };
+      this.game?.logDiscovery?.(`bestiary_${kind}`, `📖 Bestiary — ${lore.icon} ${lore.name}`, 400);
+    }
+    this.entries[kind].kills += 1;
+    return this.entries[kind];
+  }
+
+  get discovered() { return Object.keys(this.entries).length; }
+  get known() { return Object.keys(BESTIARY_LORE).length; }
+
+  /** Plain data for saving; the lore table is code, so it never serialises. */
+  serialize() { return JSON.stringify(this.entries); }
+  load(data) {
+    this.entries = {};
+    if (!data) return;
+    try {
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      if (parsed && typeof parsed === 'object') {
+        for (const id of Object.keys(parsed)) this.entries[id] = parsed[id];
+      }
+    } catch (e) { this.entries = {}; }
+  }
+
+  /** The book itself: grouped rows, locked entries shown as silhouettes. */
+  render() {
+    const order = ['Boss', 'Underworld', 'Reef', 'Cave', 'Surface'];
+    const rows = [];
+    for (const group of order) {
+      const known = Object.entries(BESTIARY_LORE).filter(([, l]) => l.kind === group);
+      if (!known.length) continue;
+      const cells = known.map(([id, lore]) => {
+        const entry = this.entries[id];
+        const kills = entry ? entry.kills : 0;
+        const elites = entry ? (entry.elites || 0) : 0;
+        if (!entry) {
+          return `<div class="bestiary-card locked">
+            <div class="bestiary-icon">❔</div>
+            <div class="bestiary-body"><b>Undiscovered</b>
+            <span class="bestiary-zone">${lore.zone}</span></div></div>`;
+        }
+        return `<div class="bestiary-card">
+          <div class="bestiary-icon">${lore.icon}</div>
+          <div class="bestiary-body"><b>${lore.name}</b>
+          <span class="bestiary-zone">${lore.zone}</span>
+          <span class="bestiary-lore">${lore.lore}</span>
+          ${lore.drops ? `<span class="bestiary-drops">Drops: ${lore.drops}</span>` : ''}
+          <span class="bestiary-kills">${kills} slain${elites ? ` · ${elites} elite` : ''}</span></div></div>`;
+      }).join('');
+      rows.push(`<h4 class="bestiary-group">${group === 'Boss' ? '👑 BOSSES' : group === 'Underworld' ? '🔥 UNDERWORLD' : group === 'Reef' ? '🌊 THE REEF' : group === 'Cave' ? '🕳️ CAVES' : '🌲 THE SURFACE'}</h4><div class="bestiary-grid">${cells}</div>`);
+    }
+    return `<div class="bestiary-progress">${this.discovered} / ${this.known} creatures recorded</div>${rows.join('')}`;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.Bestiary = Bestiary;
+  window.BESTIARY_LORE = BESTIARY_LORE;
 }
 
 
@@ -29437,6 +29904,19 @@ const NEW_ITEMS = {
     id: 'guardian_trophy', name: 'Guardian Trophy', type: 'material',
     icon: '🏆', stackMax: 1
   },
+  // The Megalodon's trophy is a MOUNT, not an ingredient: it places as a lit
+  // wall decoration so killing the last predator leaves a permanent mark on
+  // the player's base (TILES.MEGALODON_TROPHY).
+  megalodon_trophy: {
+    id: 'megalodon_trophy', name: 'Megalodon Trophy', type: 'tile',
+    tile: TILES.MEGALODON_TROPHY, icon: '🦈', stackMax: 1
+  },
+  // Pet summon: a captured reef sprite that follows the player and reacts to
+  // discoveries. First Megalodon kill only, so it stays a keepsake.
+  reef_sprite: {
+    id: 'reef_sprite', name: 'Reef Sprite', type: 'pet', icon: '✨', stackMax: 1,
+    desc: 'A wisp of the deep reef. Use to summon or dismiss; it follows you everywhere and lights the dark.'
+  },
   // ---- Space dimension: the Void Rift and the Ossuary Sovereign ----
   // Beacon is consumed on use, so a second trip means another craft. That is
   // deliberate: it makes the rift an expedition you prepare for rather than a
@@ -30239,6 +30719,11 @@ class Game {
     this.npcs = typeof NPCManager !== 'undefined' ? new NPCManager(this) : null;
     // Persistent journey goals, explorer ranks, biome discoveries and streaks.
     this.journey = typeof JourneySystem !== 'undefined' ? new JourneySystem(this) : null;
+  // Bestiary: the discovery journal. Created next to the journey system it
+  // sits beside in the same book panel, and fed from the monster and boss
+  // death paths below.
+  this.bestiary = typeof Bestiary !== 'undefined' ? new Bestiary() : null;
+  if (this.bestiary) this.bestiary.game = this;
     // Multiplayer session (see multiplayer.js). 'none' until the player hosts
     // or joins from the title screen; every hook below is a no-op while idle.
     this.mp = typeof Multiplayer !== 'undefined' ? new Multiplayer(this) : null;
@@ -31499,9 +31984,10 @@ class Game {
     const worldX = this.input.mouseX + this.camera.x;
     const worldY = this.input.mouseY + this.camera.y;
     const petUse = held?.id === 'bone' && this.cerberus?.isNear(worldX, worldY);
-    // Blocks and consumables are "use" actions (place / drink / cast the rod);
-    // everything else is "swing" (mine, attack, interact, talk).
-    const isUse = (!!itemData && (itemData.type === 'tile' || itemData.type === 'consumable')) || petUse;
+    // Blocks, consumables and companions are "use" actions (place / drink /
+    // summon); everything else is "swing" (mine, attack, interact, talk).
+    const isUse = (!!itemData && (itemData.type === 'tile' || itemData.type === 'consumable' ||
+      itemData.type === 'pet')) || petUse;
     if (isUse) {
       // A canvas tap is a single action. Leaving mouseDown set makes the game
       // loop immediately run the left-click path too, which mines the tile
@@ -33818,6 +34304,9 @@ class Game {
     if (item.type === 'consumable') return 'consumables';
     if (item.type === 'ammo') return 'ammo';
     if (item.type === 'material') return 'materials';
+    // Companions are companions: not a tool, not a trophy, definitely not
+    // stone. They get their own creative tab so they are findable.
+    if (item.type === 'pet') return 'pets';
     return 'misc';
   }
 
@@ -33831,10 +34320,10 @@ class Game {
     // Category chips, built once from whatever categories actually exist.
     const chips = document.getElementById('creative-categories');
     if (chips && !chips.dataset.built) {
-      const order = ['all', 'blocks', 'weapons', 'tools', 'armor', 'consumables', 'ammo', 'materials', 'misc'];
+      const order = ['all', 'blocks', 'weapons', 'tools', 'armor', 'pets', 'consumables', 'ammo', 'materials', 'misc'];
       const labels = {
         all: 'ALL', blocks: 'BLOCKS', weapons: 'WEAPONS', tools: 'TOOLS',
-        armor: 'ARMOR', consumables: 'POTIONS', ammo: 'AMMO', materials: 'MATERIALS', misc: 'MISC'
+        armor: 'ARMOR', pets: 'COMPANIONS', consumables: 'POTIONS', ammo: 'AMMO', materials: 'MATERIALS', misc: 'MISC'
       };
       const present = new Set(Object.values(ITEMS).map(i => this.creativeCategoryOf(i)));
       chips.innerHTML = '';
@@ -34998,10 +35487,29 @@ class Game {
     if (this.discoveryLog.length > 24) this.discoveryLog.length = 24;
     this.showAnnouncement(label);
     this.feel.heal(0.22);
+    // The companion cheers for every new thing you find.
+    if (this.pet) this.pet.celebrate();
     if (points) this.showToast(`✨ Discovery logged: ${label} (+${points})`);
     else this.showToast(`✨ Discovery logged: ${label}`);
     this.journey?.noteDiscovery();
     return true;
+  }
+
+  /**
+   * Has this save ever felled this boss? Villager dialogue and the bestiary
+   * both ask, so the answer lives in one place. `kraken` is the Megalodon
+   * (its boss kind) and `leviathan` is the Abyssal Kraken proper — the ocean
+   * planet's boss books record one ocean victory, so both read as true after
+   * either beast is down.
+   */
+  isBossDefeated(kind) {
+    if (!kind) return false;
+    if (kind === 'kraken' || kind === 'leviathan') {
+      return this.leviathanSlain === true ||
+        !!(this._bossKinds && (this._bossKinds.kraken || this._bossKinds.leviathan));
+    }
+    if (kind === 'dragon') return this.dragonSlain === true;
+    return !!(this._bossKinds && this._bossKinds[kind]);
   }
 
   /** Render the journal modal. Recomputed on open — it is a static snapshot. */
@@ -35039,6 +35547,8 @@ class Game {
         ${journeyHTML}
         <h4>POINT BREAKDOWN</h4>
        <div class="journal-table">${breakdown || '<p class="journal-empty">Play a little and this fills up.</p>'}</div>
+       <h4>BESTIARY</h4>
+       <div class="bestiary-wrap">${this.bestiary ? this.bestiary.render() : ''}</div>
        <h4>DISCOVERY LOG</h4>
        <ul class="journal-log">${log}</ul>`;
   }
@@ -35970,6 +36480,22 @@ class Game {
         this.minimap.markDirty();
       } else {
         this.showToast('🌱 Plant an acorn on open ground with soil below.');
+      }
+      return;
+    }
+
+    // Pet summon / dismiss: toggles the companion where the player stands.
+    // Never consumes the item — it is a keepsake, not a charge.
+    if (itemData && itemData.type === 'pet') {
+      if (this.pet && this.pet.kind === held.id) {
+        this.pet = null;
+        this.showToast('✨ Your companion returns to the reef.');
+        this.sound?.playClick?.();
+      } else {
+        this.pet = new Pet(this.player.x, this.player.y, held.id);
+        this.showToast('✨ Your companion joins you!');
+        this.sound?.playPlace?.();
+        this.particles?.magicSparkle(this.player.x + this.player.width / 2, this.player.y, '#5eead4', 14);
       }
       return;
     }
@@ -37270,6 +37796,7 @@ this.player.dodgeTime = 0;
         const mpDropStart = this.drops.length;
         this.stats.kills += 1;
         this.journey?.recordActivity('hunt', m.x + m.width / 2, m.y);
+        if (this.bestiary) this.bestiary.record(m);
         if (this.npcs) this.npcs.onKill(m);
         if (m.isElite) this.stats.eliteKills += 1;
         // Terraria-style loot: coins and materials, better rolls for elites.
@@ -37339,6 +37866,7 @@ this.player.dodgeTime = 0;
       const defeatedKraken = this.boss.kind === 'kraken' || this.boss.kind === 'leviathan';
       this.stats.bossKills += 1;
       this.journey?.recordActivity('hunt', this.boss.x + this.boss.width / 2, this.boss.y);
+      if (this.bestiary) this.bestiary.recordBoss(this.boss.kind || 'forest');
       // Remember which bosses this world has ever felled — the journal scores
       // variety, so a second Guardian is worth less than a first Knight.
       this._bossKinds = this._bossKinds || {};
@@ -37380,10 +37908,22 @@ this.player.dodgeTime = 0;
         this.drops.push(new DropItem(this.boss.x + i * 10 - 40, this.boss.y, rewardIds[i % rewardIds.length],
           defeatedKraken ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
-      this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-        defeatedKraken ? 'kraken_trophy'
-          : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
-            : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+        this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
+          defeatedKraken ? 'kraken_trophy'
+            : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
+              : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
+        // The Megalodon is its own trophy: a mount you place on the wall, so
+        // the last predator leaves a permanent mark on the player's base. It
+        // drops IN ADDITION to the Kraken Trophy, which the forge recipes
+        // still need — add a first-kill reef sprite so the win has a
+        // companion attached to it as well.
+        if (this.boss.kind === 'kraken' && this.boss instanceof Megalodon) {
+          this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
+          if (!this._megalodonSlainOnce) {
+            this._megalodonSlainOnce = true;
+            this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));
+          }
+        }
       if (defeatedKraken) {
         // Both weapons drop straight off the corpse: the trident for melee,
         // the Tentacle Gun for range. The forge recipes are rebuild backups.
@@ -37572,6 +38112,11 @@ this.player.dodgeTime = 0;
         const mpBoss2DropStart = this.drops.length;
         const knightWin = this.boss.kind === 'knight';
         this.stats.bossKills += 1;
+        if (this.bestiary) this.bestiary.recordBoss(this.boss.kind === 'kraken' ? 'kraken' : knightWin ? 'knight' : 'guardian');
+        // Remember the kill for villager reactions and the journal. The
+        // Megalodon books as 'kraken' (its boss kind in this block).
+        this._bossKinds = this._bossKinds || {};
+        this._bossKinds[this.boss.kind || 'forest'] = true;
         document.getElementById('boss-panel').classList.add('hidden');
         this.showAnnouncement(knightWin
           ? '⚔️ THE CURSED KNIGHT IS UNDONE!'
@@ -37592,6 +38137,15 @@ this.player.dodgeTime = 0;
         }
         this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
           knightWin ? 'cursed_edge' : 'guardian_trophy', 1));
+        // The Megalodon mounts its own trophy as well as the loot bag, and
+        // its FIRST win also gifts the reef sprite companion.
+        if (this.boss.kind === 'kraken') {
+          this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
+          if (!this._megalodonSlainOnce) {
+            this._megalodonSlainOnce = true;
+            this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));
+          }
+        }
 
         // Per-boss victory screen copy.
         const vTitle = document.querySelector('#victory-screen .victory-title');
@@ -38093,6 +38647,7 @@ this.player.dodgeTime = 0;
       critter.render(ctx, this.camera);
     }
     if (this.cerberus) this.cerberus.render(ctx, this.camera);
+    if (this.pet) this.pet.render(ctx, this.camera);
     // 4b. Quest-giving villagers
     if (this.npcs && !this.world.isInSpace() && !this.world.isInOcean()) this.npcs.render(ctx, this.camera);
 
