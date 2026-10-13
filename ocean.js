@@ -1627,12 +1627,12 @@ World.prototype.generateOceanPlanet = function() {
       const px = Math.round(cx + Math.cos(angle) * (pitR + 1.5));
       const py = Math.round(seaY + 28);
       if (px < 8 || px >= this.width - 8 || py < 0 || py >= this.height - 8) continue;
-      // Pillar base on the floor
-      for (let dy = 0; dy < 3; dy++) {
-        if (this.getTile(px, py - dy) === TILES.AIR) {
-          this.setTile(px, py - dy, TILES.STONE);
-        }
-      }
+      // COSMETIC ONLY. These pillars used to ALSO stamp solid STONE collision
+      // tiles upward from the swim floor (py-dy at seaY+28 — the exact depth the
+      // Megalodon circles at), so the player's arrows/melee hit invisible stone
+      // in mid-water and could never damage the boss. The visual pillar is drawn
+      // from this `pillars` array in renderColosseum(), so it survives untouched;
+      // we simply no longer put blocking geometry in the swim volume.
       pillars.push({ x: px, y: py - 3 });
     }
 
@@ -1642,11 +1642,8 @@ World.prototype.generateOceanPlanet = function() {
       const px = Math.round(cx + Math.cos(angle) * (r + 4));
       const py = Math.round(seaY + 28 + Math.sin(angle) * 2);
       if (px < 8 || px >= this.width - 8 || py < 0 || py >= this.height - 8) continue;
-      for (let dy = 0; dy < 3; dy++) {
-        if (this.getTile(px, py - dy) === TILES.AIR) {
-          this.setTile(px, py - dy, TILES.STONE);
-        }
-      }
+      // COSMETIC ONLY — see the arena pillars above: no solid collision tiles in
+      // the swim volume, or the player's shots hit invisible stone around the boss.
       pillars.push({ x: px, y: py - 3 });
     }
 
@@ -3641,11 +3638,11 @@ class Megalodon {
         if (dist <= p.radius && dAng <= 1.15) {
           this.game.damagePlayer(Math.round((105 + ph * 26) * dmgMul), ccx,
             'The Megalodon’s tail sweep sent you flying!', true, ccy);
-          // Knockback: a real shove away from the tail.
-          if (player.vx !== undefined) {
-            player.vx += (dx / (dist || 1)) * 14;
-            player.vy += (dy / (dist || 1)) * 8 - 4;
-          }
+          // Knockback is ALREADY applied by damagePlayer (the `true` flag above,
+          // sourced at ccx/ccy). Adding a second manual vx/vy shove here
+          // double-knocked the player back every sweep, which — on a skill this
+          // common — launched the player across the arena and made it impossible
+          // to stay close enough to land hits. Keep the in-system knockback only.
           this.frenzy = Math.min(6, this.frenzy + 1);
           this.frenzyT = 6;
         }
@@ -5493,7 +5490,12 @@ class Megalodon {
     const loop = [this._spineAt(1.0, -0.55, st)];
     for (let i = 0; i <= STEPS; i++) loop.push(this._spineAt(1 - i / STEPS, -1.0, st));
     loop.push(this._spineAt(0.0, -0.12, st));
-    for (let i = 0; i <= STEPS; i++) loop.push(this._spineAt(1 - i / STEPS, 1.0, st));
+    // BELLY must run tail→nose (i/STEPS), the reverse of the back ridge above.
+    // It used to reuse `1 - i/STEPS` (nose→tail), so after the tail tip the path
+    // teleported to the nose-bottom and slashed back across the whole body —
+    // three long self-intersecting diagonals that broke the silhouette into a
+    // disconnected top/bottom. Running it the correct way closes one clean loop.
+    for (let i = 0; i <= STEPS; i++) loop.push(this._spineAt(i / STEPS, 1.0, st));
     loop.push(this._spineAt(1.0, 0.5, st));
     c.beginPath();
     this._traceSmooth(c, loop);

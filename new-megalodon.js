@@ -1209,11 +1209,11 @@ class Megalodon {
         if (dist <= p.radius && dAng <= 1.15) {
           this.game.damagePlayer(Math.round((105 + ph * 26) * dmgMul), ccx,
             'The Megalodon’s tail sweep sent you flying!', true, ccy);
-          // Knockback: a real shove away from the tail.
-          if (player.vx !== undefined) {
-            player.vx += (dx / (dist || 1)) * 14;
-            player.vy += (dy / (dist || 1)) * 8 - 4;
-          }
+          // Knockback is ALREADY applied by damagePlayer (the `true` flag above,
+          // sourced at ccx/ccy). Adding a second manual vx/vy shove here
+          // double-knocked the player back every sweep, which — on a skill this
+          // common — launched the player across the arena and made it impossible
+          // to stay close enough to land hits. Keep the in-system knockback only.
           this.frenzy = Math.min(6, this.frenzy + 1);
           this.frenzyT = 6;
         }
@@ -3061,7 +3061,12 @@ class Megalodon {
     const loop = [this._spineAt(1.0, -0.55, st)];
     for (let i = 0; i <= STEPS; i++) loop.push(this._spineAt(1 - i / STEPS, -1.0, st));
     loop.push(this._spineAt(0.0, -0.12, st));
-    for (let i = 0; i <= STEPS; i++) loop.push(this._spineAt(1 - i / STEPS, 1.0, st));
+    // BELLY must run tail→nose (i/STEPS), the reverse of the back ridge above.
+    // It used to reuse `1 - i/STEPS` (nose→tail), so after the tail tip the path
+    // teleported to the nose-bottom and slashed back across the whole body —
+    // three long self-intersecting diagonals that broke the silhouette into a
+    // disconnected top/bottom. Running it the correct way closes one clean loop.
+    for (let i = 0; i <= STEPS; i++) loop.push(this._spineAt(i / STEPS, 1.0, st));
     loop.push(this._spineAt(1.0, 0.5, st));
     c.beginPath();
     this._traceSmooth(c, loop);
