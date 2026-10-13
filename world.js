@@ -103,6 +103,10 @@ const TILES = {
   VINE: 94,
   MUSHROOM: 95,
   GLOWSHROOM: 96,
+  // ---- Trophy mounts ------------------------------------------------------
+  // Non-solid, light-emitting decoration the bosses drop so a victory has a
+  // place on the wall it was earned. Placed like any tile, mined back out.
+  MEGALODON_TROPHY: 97,
 };
 
 const TILE_PROPERTIES = {
@@ -171,6 +175,7 @@ const TILE_PROPERTIES = {
   , [TILES.VINE]: { solid: false, light: 0, color: '#15803d', name: 'Vine', drops: null }
   , [TILES.MUSHROOM]: { solid: false, light: 0, color: '#b91c1c', name: 'Cave Mushroom', drops: null }
   , [TILES.GLOWSHROOM]: { solid: false, light: 3, color: '#67e8f9', name: 'Glowshroom', drops: null }
+  , [TILES.MEGALODON_TROPHY]: { solid: false, light: 5, color: '#1e3a5f', name: 'Megalodon Trophy', drops: { id: 'megalodon_trophy', count: 1 } }
 };
 
 // The world is laid out as equal west→east bands, one per entry, in this order.
@@ -3263,7 +3268,7 @@ class World {
   isAnimatedTile(tile) {
     return tile === TILES.LAVA || tile === TILES.TORCH || tile === TILES.CAMPFIRE ||
       tile === TILES.LILY || tile === TILES.CRYSTAL || tile === TILES.LANTERN ||
-      tile === TILES.GLOWSHROOM;
+      tile === TILES.GLOWSHROOM || tile === TILES.MEGALODON_TROPHY;
   }
 
   // Background walls, painted into the static tile cache instead of the frame
@@ -4341,6 +4346,51 @@ class World {
         ctx.fillRect(sx + 13, sy + 11, 2, 2);
         break;
       }
+      case TILES.MEGALODON_TROPHY: {
+        // A mounted predator's head on a brass plaque: dark navy mask, a jaw
+        // of pale teeth, two milky eyes, and a lit rim so it reads as a
+        // keepsake rather than as a hazard. Mount plates face the wall, so the
+        // art is anchored to the TOP of the tile.
+        const t = Date.now() * 0.0009;
+        const glint = 0.5 + 0.5 * Math.sin(t + tx);
+        ctx.fillStyle = 'rgba(2, 6, 16, 0.35)';
+        ctx.fillRect(sx + 2, sy + 20, 20, 3);
+        // Plaque.
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(sx + 5, sy + 19, 14, 5);
+        ctx.fillStyle = '#b45309';
+        ctx.fillRect(sx + 6, sy + 20, 12, 3);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(sx + 7, sy + 21, 10, 1);
+        // Head mask: a heavy wedge narrowing to the snout.
+        ctx.fillStyle = '#1e3a5f';
+        ctx.fillRect(sx + 4, sy + 2, 16, 17);
+        ctx.fillRect(sx + 6, sy + 1, 12, 2);
+        ctx.fillStyle = '#2c5282';
+        ctx.fillRect(sx + 5, sy + 3, 14, 10);
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(sx + 6, sy + 3, 6, 4);
+        // Jaw + teeth.
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(sx + 6, sy + 12, 13, 6);
+        ctx.fillStyle = '#e2e8f0';
+        for (let i = 0; i < 6; i++) ctx.fillRect(sx + 6 + i * 2, sy + 12, 1, 2);
+        ctx.fillRect(sx + 6, sy + 15, 12, 1);
+        // Eyes: a lit ring around a dark pupil.
+        ctx.fillStyle = `rgba(248, 113, 113, ${(0.45 + glint * 0.4).toFixed(2)})`;
+        ctx.fillRect(sx + 7, sy + 6, 3, 3);
+        ctx.fillRect(sx + 14, sy + 6, 3, 3);
+        ctx.fillStyle = '#450a0a';
+        ctx.fillRect(sx + 8, sy + 7, 1, 2);
+        ctx.fillRect(sx + 15, sy + 7, 1, 2);
+        ctx.fillStyle = '#fecaca';
+        ctx.fillRect(sx + 7, sy + 6, 1, 1);
+        ctx.fillRect(sx + 14, sy + 6, 1, 1);
+        // Highlight along the lit brow.
+        ctx.fillStyle = 'rgba(191, 219, 254, 0.5)';
+        ctx.fillRect(sx + 7, sy + 2, 10, 1);
+        break;
+      }
 
       // ============================================================
       // BUILDING SET — ten blocks drawn flat and tileable, because their whole
@@ -4695,7 +4745,7 @@ class World {
         const tile = this.tiles[rowBase + x];
         if (tile !== TILES.TORCH && tile !== TILES.CAMPFIRE && tile !== TILES.LAVA &&
             tile !== TILES.CRYSTAL && tile !== TILES.WATER && tile !== TILES.LANTERN &&
-            tile !== TILES.GLOWSHROOM) continue;
+            tile !== TILES.GLOWSHROOM && tile !== TILES.MEGALODON_TROPHY) continue;
         if (tile === TILES.TORCH) {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
@@ -4724,6 +4774,12 @@ class World {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 14 - camera.y;
           this.carveLightCircle(lightCtx, sx, sy, 110, 0.5);
+        } else if (tile === TILES.MEGALODON_TROPHY) {
+          // A trophy mount holds a small keepsake glow: enough to find on the
+          // wall at night, not enough to light the room like a lamp.
+          const sx = x * TILE_SIZE + 12 - camera.x;
+          const sy = y * TILE_SIZE + 12 - camera.y;
+          this.carveLightCircle(lightCtx, sx, sy, 150, 0.6);
         } else {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;

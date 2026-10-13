@@ -2354,6 +2354,111 @@ class Monster {
   }
 }
 
+/**
+ * Pet — a summoned companion that follows the player everywhere.
+ *
+ * Deliberately the simplest thing that can read as a friend: it orbits to a
+ * slow-moving "home" offset beside the player, drifts toward it with easing,
+ * bobs and spins on its own clock, and never interacts with combat, physics
+ * or collision. Its light comes from the glow pass (not a tile), so it works
+ * in caves and underwater too.
+ */
+class Pet {
+  constructor(x, y, kind = 'reef_sprite') {
+    this.x = x;
+    this.y = y;
+    this.kind = kind;
+    this.width = 18;
+    this.height = 18;
+    this.dead = false;                 // pets never die; toggled off on dismiss
+    this.bob = Math.random() * Math.PI * 2;
+    this.spin = 0;
+    this.orbit = Math.random() * Math.PI * 2;
+    this.homeX = x;
+    this.homeY = y;
+    this.face = 1;
+    this.happy = 0;                    // reacts to discoveries: a burst of sparkle
+    const skins = {
+      reef_sprite: { glow: 'rgba(94, 234, 212, 0.55)', body: '#5eead4', dark: '#0d9488', wing: '#ccfbf1', spark: '#a5f3fc' }
+    };
+    this.skin = skins[kind] || skins.reef_sprite;
+  }
+
+  /** Called by the game when a discovery fires: a little cheer. */
+  celebrate() { this.happy = 1.2; }
+
+  update(dt, player) {
+    this.bob += dt * 3.2;
+    this.spin += dt * 1.4;
+    this.orbit += dt * 0.6;
+    if (this.happy > 0) this.happy -= dt;
+    if (!player) return;
+    // The home slot drifts slowly around the player so the pet circles rather
+    // than glues itself to one pixel.
+    const wantX = player.x + player.width / 2 + Math.cos(this.orbit) * 34 + player.vx * 0.35;
+    const wantY = player.y + player.height / 2 - 22 + Math.sin(this.orbit * 0.8) * 10;
+    this.homeX += (wantX - this.homeX) * Math.min(1, dt * 2.2);
+    this.homeY += (wantY - this.homeY) * Math.min(1, dt * 2.2);
+    // Ease toward the home slot with a soft lag, so it trails the player.
+    const ease = Math.min(1, dt * 4.5);
+    this.x += (this.homeX - this.x) * ease;
+    this.y += (this.homeY - this.y) * ease;
+    if (Math.abs(this.homeX - this.x) > 2) this.face = this.homeX > this.x ? 1 : -1;
+    // Dismiss on a very long distance only (dimension hops): the pet finds you.
+    if (Math.hypot(this.x - player.x, this.y - player.y) > 700) {
+      this.x = player.x + player.width / 2;
+      this.y = player.y - 20;
+      this.homeX = this.x;
+      this.homeY = this.y;
+    }
+  }
+
+  render(ctx, camera) {
+    const sx = this.x - camera.x;
+    const sy = this.y - camera.y + Math.sin(this.bob) * 4;
+    if (sx < -40 || sy < -40 || sx > camera.viewportWidth + 40 || sy > camera.viewportHeight + 40) return;
+    const s = this.skin;
+    ctx.save();
+    // Aura halo, brighter when it cheers.
+    ctx.globalAlpha = 0.35 + (this.happy > 0 ? 0.35 : 0);
+    ctx.fillStyle = s.glow;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 14 + Math.sin(this.bob) * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Wings: two arcs that flap out of phase with the bob.
+    const flap = Math.sin(this.bob * 2.2) * 5;
+    ctx.fillStyle = s.wing;
+    ctx.beginPath();
+    ctx.ellipse(sx - 10 * this.face, sy - 6 + flap * 0.4, 7, 4, -0.5 * this.face, 0, Math.PI * 2);
+    ctx.ellipse(sx + 10 * this.face, sy - 6 - flap * 0.4, 7, 4, 0.5 * this.face, 0, Math.PI * 2);
+    ctx.fill();
+    // Body: a small orb, dark underside for volume.
+    ctx.fillStyle = s.dark;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = s.body;
+    ctx.beginPath();
+    ctx.arc(sx, sy - 1, 7, 0, Math.PI * 2);
+    ctx.fill();
+    // Core glint.
+    ctx.fillStyle = s.spark;
+    ctx.fillRect(sx - 2, sy - 4, 3, 3);
+    // A happy pet spins a sparkle ring.
+    if (this.happy > 0) {
+      ctx.globalAlpha = Math.min(1, this.happy);
+      ctx.fillStyle = '#fef9c3';
+      for (let i = 0; i < 4; i++) {
+        const a = this.spin * 3 + (i * Math.PI) / 2;
+        ctx.fillRect(sx + Math.cos(a) * 16 - 1, sy + Math.sin(a) * 16 - 1, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+}
+
 class Critter {
   constructor(x, y, type = 'sheep') {
     this.x = x;
@@ -4200,6 +4305,7 @@ window.Projectile = Projectile;
 window.Player = Player;
 window.Monster = Monster;
 window.Critter = Critter;
+window.Pet = Pet;
 // Movement tuning. Exported so the QA suite asserts the real numbers the game
 // runs on rather than a copy of the formula written into the test.
 window.TURN_COOLDOWN = TURN_COOLDOWN;

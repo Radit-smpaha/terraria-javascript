@@ -14,6 +14,20 @@ const NPC_DEFS = [
     // spawn cottage (spawnX +/- 6) so nobody ends up nose-to-wall.
     dx: -9,
     greeting: 'Welcome, traveller! The reef lies far west: find four glowing pearls and offer them at the Tide Temple podiums. Old sailors say a Void Rift Beacon can tear the sky open, and the dragon beyond remembers every wound.',
+    // Idle chatter: what they say when there is no quest to hand. Each line is
+    // a small window into the person, and they rotate so a villager you talk
+    // to every day does not repeat themselves like a signpost.
+    chatter: [
+      'I write everything down. Every step of yours is already history to somebody.',
+      'Four pearls, four podiums. The gate has waited a long time; it can wait an hour more.',
+      'When you have stood where the world ends, come back. The journal is never finished.'
+    ],
+    // Said once, the first time the player beats each boss.
+    reactions: {
+      kraken: 'The last predator is gone? …Then the sea is finally quiet. I should write this down properly.',
+      dragon: 'You stood in a dragon\'s grave and walked out. I have no words for it — I am writing it down.',
+      knight: 'The chapel is safe. He would have wanted that, I think. Eventually.'
+    },
     quests: [
       { type: 'kill', desc: 'Slay 5 monsters', target: 5, reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'kill', desc: 'Slay 10 monsters', target: 10, reward: [{ id: 'arrow', count: 30 }, { id: 'swiftness_potion', count: 1 }] },
@@ -27,6 +41,16 @@ const NPC_DEFS = [
     // Was +6, which is exactly the cottage's right-hand wall column.
     dx: 9,
     greeting: 'Ore, ore, ore! Dig deep and bring me the shiny stuff.',
+    chatter: [
+      'Every time you swing a pick you learn where the good stuff hides. That is the whole secret.',
+      'The old dungeon under the east? Full of it. Also full of things that resent visitors.',
+      'Copper, iron, gold, crystal — the mountain keeps a running tally, and it is generous.'
+    ],
+    reactions: {
+      kraken: 'A shark that big has swallowed whole reefs. Wonder what it had in its teeth…',
+      dragon: 'Meteor shards and dragonbone in one animal. That is a payday with wings.',
+      knight: 'Gold in that chapel. You just cleared out the security, friend.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'iron_ore', count: 10 }], desc: 'Bring 10 Iron Ore', reward: [{ id: 'ironskin_potion', count: 1 }, { id: 'apple', count: 3 }] },
       { type: 'collect', items: [{ id: 'gold_ore', count: 6 }], desc: 'Bring 6 Gold Ore', reward: [{ id: 'wrath_potion', count: 1 }, { id: 'torch', count: 20 }] },
@@ -39,6 +63,16 @@ const NPC_DEFS = [
     icon: '🧺',
     dx: 14,
     greeting: 'A camp is only as good as its supplies. Trade me some goods!',
+    chatter: [
+      'Build wide, build warm. A bed near a campfire is worth more than any weapon.',
+      'Bring back trophies. Put them on the wall. A home should remember what it survived.',
+      'Wool, wood, rope — the small things. The small things are what hold a camp together.'
+    ],
+    reactions: {
+      kraken: 'That trophy needs a wall of its own. Bring it home and I will help you hang it.',
+      dragon: 'You fought a god and came back with souvenirs. Put them where people can see them.',
+      knight: 'The chapel loot will keep this camp in candles for a year.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'wood', count: 20 }], desc: 'Bring 20 Wood', reward: [{ id: 'campfire', count: 1 }, { id: 'apple', count: 2 }] },
       { type: 'collect', items: [{ id: 'stone', count: 25 }], desc: 'Bring 25 Stone', reward: [{ id: 'miners_potion', count: 1 }, { id: 'bomb', count: 2 }] },
@@ -57,6 +91,16 @@ const NPC_DEFS = [
     icon: '🎣',
     dx: -16,
     greeting: 'The reef? It drowned the whole west edge of the world. Dive it with craft — a Reef Diver Set and swim fins, or you get eight seconds of air. The Sacred Pearls are scattered across the world, and four podiums await inside the Tide Temple. Mind the pirates... and whatever sleeps beyond the gate.',
+    chatter: [
+      'Forty years I watched that coast. One winter the sea just kept coming and never went back.',
+      'The temple builders left the gate for a reason. Nobody wrote down which reason.',
+      'You breathe easy down there, do you? Good. The deep does not forgive the careless.'
+    ],
+    reactions: {
+      kraken: 'Last predator, they called it. Every old salt knew that name and none of them laughed.',
+      dragon: 'Beyond the gate there is a sky with a grave in it. And you came back. Sit down, have something to drink.',
+      knight: 'Drowned bell for a drowned chapel. He was keeping an oath nobody left alive to release.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'fish_clownfish', count: 3 }], desc: 'Bring 3 Reef Clownfish', reward: [{ id: 'healing_potion', count: 2 }] },
       { type: 'collect', items: [{ id: 'coral_fragment', count: 8 }], desc: 'Bring 8 Coral Fragments', reward: [{ id: 'swiftness_potion', count: 1 }, { id: 'apple', count: 2 }] },
@@ -69,6 +113,16 @@ const NPC_DEFS = [
     icon: '🔭',
     dx: 21,
     greeting: 'Count the stars at night and one of them is a door. Craft a Void Rift Beacon — demon souls, hellstone, crystal and gold — then right-click it under open sky. The sky tears, the Ossuary waits, and the Sovereign beyond remembers every wound you give it. Go armored.',
+    chatter: [
+      'I was a mapmaker once. I mapped my way out of every country I ever made a map of.',
+      'The stars here do not sit where they should. Something heavy is leaning on the sky.',
+      'You carry fire and iron and that is the whole reason the sky lets you in.'
+    ],
+    reactions: {
+      kraken: 'A door in the deep, and you used it. There are other doors.',
+      dragon: 'The Sovereign was a wound the world kept. It is closed now.',
+      knight: 'The chapel bell stopped. I can hear the stars again.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'crystal', count: 5 }], desc: 'Bring 5 Cave Crystals', reward: [{ id: 'mana_crystal', count: 1 }] },
       { type: 'kill', desc: 'Slay 8 monsters', target: 8, reward: [{ id: 'healing_potion', count: 2 }, { id: 'arrow', count: 20 }] }
@@ -80,6 +134,15 @@ const NPC_DEFS = [
     icon: '🐚',
     reefPearlIndex: 0,
     greeting: 'I watch the reef from this shore. Bring me 8 Wood and I will share where a Sacred Pearl sleeps.',
+    chatter: [
+      'The tide keeps its own time. Learn it and the reef gives you everything.',
+      'Pearls do not glow for everyone. It noticed you, apparently.'
+    ],
+    reactions: {
+      kraken: 'The gate is open and the predator beyond it is gone. The reef can rest.',
+      dragon: 'Whatever the pearls were for — this was further. Well done.',
+      knight: 'The sea does not care for chapels. It does care for courage.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'wood', count: 8 }], desc: 'Bring 8 Wood', reward: [{ id: 'healing_potion', count: 1 }] }
     ]
@@ -90,6 +153,15 @@ const NPC_DEFS = [
     icon: '🧣',
     reefPearlIndex: 1,
     greeting: 'I tracked a blue glow beneath the snow. Bring me 4 Wool and I will mark the spot.',
+    chatter: [
+      'Snow keeps a record. Everything that crosses it leaves a line, and I read lines.',
+      'Do not stand still in the pines. The cold likes a still target.'
+    ],
+    reactions: {
+      kraken: 'You went under the ice-cold water and came back. I have tracked braver; not many.',
+      dragon: 'The sky burned and you stood in it. Unbelievable. Write it down somewhere.',
+      knight: 'Old stone under the snow. It remembers knights; the snow remembers everything else.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'wool', count: 4 }], desc: 'Bring 4 Wool', reward: [{ id: 'torch', count: 16 }] }
     ]
@@ -100,6 +172,15 @@ const NPC_DEFS = [
     icon: '🌞',
     reefPearlIndex: 2,
     greeting: 'A pearl glimmers somewhere in the warm grasslands. Prove your courage by slaying 3 monsters, and I will reveal its trail.',
+    chatter: [
+      'The grasslands are the friendliest ground in the world. That is why nothing dangerous ever leaves them.',
+      'Run east until the wind smells of salt. That is where I grew up.'
+    ],
+    reactions: {
+      kraken: 'Three monsters! You killed three — and then the sea itself. I like the way you count.',
+      dragon: 'Everyone in the grasslands will hear about this. Everyone.',
+      knight: 'You were not afraid of the dark. The dark noticed.'
+    },
     quests: [
       { type: 'kill', desc: 'Slay 3 monsters', target: 3, reward: [{ id: 'healing_potion', count: 1 }] }
     ]
@@ -110,6 +191,15 @@ const NPC_DEFS = [
     icon: '🪷',
     reefPearlIndex: 3,
     greeting: 'Something sacred is buried in the marsh. Bring me 12 Stone and I will tell you where.',
+    chatter: [
+      'The marsh keeps what it is given. It gave me a pearl and I have been grateful ever since.',
+      'Walk the reeds slowly. Everything down there is patient, and so am I.'
+    ],
+    reactions: {
+      kraken: 'The marsh felt that. The water went still for a whole minute. Respect.',
+      dragon: 'You carry a light now. Even the reeds bow a little.',
+      knight: 'The stone remembers the oath. Thank you for ending it.'
+    },
     quests: [
       { type: 'collect', items: [{ id: 'stone', count: 12 }], desc: 'Bring 12 Stone', reward: [{ id: 'miners_potion', count: 1 }] }
     ]
@@ -254,6 +344,24 @@ class NPCManager {
     if (npc.clueUnlocked && Number.isInteger(npc.def.reefPearlIndex)) {
       const pearl = this.game.world.reefPearls[npc.def.reefPearlIndex];
       greeting = `Favor done! The Sacred Pearl is at world tile X ${pearl.x}, Y ${pearl.y}. Look for its glow.`;
+    }
+    // A boss this villager has a reaction to, never yet said out loud: the
+    // reaction replaces the greeting once, so a victory is a moment between
+    // the player and the camp rather than a line they can miss.
+    if (!npc.reacted) {
+      const reactions = npc.def.reactions || {};
+      const beaten = Object.keys(reactions)
+        .filter(kind => this.game.isBossDefeated && this.game.isBossDefeated(kind));
+      if (beaten.length) {
+        greeting = reactions[beaten[0]];
+        npc.reacted = true;
+      }
+    }
+    // With no quest pending, they chat: idle colour instead of a signpost.
+    const hasQuest = npc.state === 'offer' || npc.state === 'active' || npc.state === 'ready';
+    if (!hasQuest && npc.def.chatter && npc.def.chatter.length) {
+      const lines = npc.def.chatter;
+      greeting = lines[(npc.chatterIndex = ((npc.chatterIndex || 0) + 1)) % lines.length];
     }
     let html = `<span class="q-name">${greeting}</span>`;
 

@@ -1105,6 +1105,90 @@ kbd {
   font-style: italic;
 }
 
+/* ==========================================================================
+   BESTIARY — the creature journal inside the settlement journal
+   ========================================================================== */
+.bestiary-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bestiary-progress {
+  font-size: 14px;
+  color: #a5f3fc;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bestiary-group {
+  margin: 6px 0 4px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #cbd5f5;
+}
+
+.bestiary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.bestiary-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.85));
+}
+
+.bestiary-card.locked {
+  opacity: 0.55;
+  border-style: dashed;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.bestiary-icon {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(94, 234, 212, 0.35));
+}
+
+.bestiary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bestiary-body b {
+  font-size: 15px;
+  color: #f1f5f9;
+}
+
+.bestiary-zone {
+  font-size: 12px;
+  color: #7dd3fc;
+}
+
+.bestiary-lore {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+.bestiary-drops {
+  font-size: 12px;
+  color: #fcd34d;
+}
+
+.bestiary-kills {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 /* SHARED STASH â€” items that follow you between worlds */
 .shared-header {
   display: flex;
