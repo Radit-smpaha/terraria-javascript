@@ -105,6 +105,8 @@ class Megalodon {
     this.scarSeed = Math.random() * 1000;
     this.wakeT = 0;
     this.trail = [];          // charge afterimages: spine snapshots
+    this.fx = [];             // live pooled VFX (rings, collapses, bursts, wakes)
+    this._fxPool = [];        // recycled records: no per-frame allocation
     this.droop = 0;           // 0 alert .. 1 exhausted-and-sagging
     this.jawV = 0;            // jaw spring velocity
     /** Death timer: seconds since hp hit zero, drives the death clip. */
@@ -357,8 +359,191 @@ class Megalodon {
             : spd < 60 ? 'idle' : spd > 620 ? 'fast_swim' : 'swim';
   }
 
+  /**
+   * ---- VFX detail level, read from the game's OWN quality dial. -----------
+   * `game.particleScale` already folds the quality mode (auto/high/balanced/
+   * low) together with the effects setting (full/reduced/minimal), and the
+   * particle system consumes the same number. The boss VFX reads it too, so
+   * there is exactly one source of truth and LOW genuinely draws less while
+   * every telegraph keeps its full silhouette.
+   * Returns 0.25 .. 1.
+   */
+  _fxDetail() {
+    const g = this.game;
+    let d = (g && Number.isFinite(g.particleScale)) ? g.particleScale : 1;
+    if (g && g.quality && g.quality.lowQuality) d = Math.min(d, 0.4);
+    return Math.max(0.25, Math.min(1, d));
+  }
+
+  /** World-space point of the mouth: where suction and bites should converge. */
+  _mouthWorld() {
+    const face = this.flipSmooth == null ? (this.faceDir || 1) : this.flipSmooth;
+    const f = face >= 0 ? 1 : -1;
+    return {
+      x: this.x + this.width * 0.5 + f * this.width * 0.34,
+      y: this.y + this.height * 0.5 + (this.bob || 0) * 0.5
+    };
+  }
+
+  // ==========================================================================
+  // POOLED BOSS VFX — the EXECUTION + AFTERMATH half of every skill.
+  //
+  // A telegraph says "this is coming"; these say "it happened". They are a
+  // fixed array of recycled records (no per-frame allocation, no new canvas,
+  // no gradients): a slot is taken from the pool, advanced, and returned when
+  // its life runs out. All of them are drawn in WORLD space and culled against
+  // the camera, so a boss off-screen costs nothing.
+  //
+  // Nothing in here can touch damage: they are pure presentation, driven by
+  // the same events that already fire in resolvePending().
+  // ==========================================================================
+  _fxSpawn(kind, x, y, o = {}) {
+    const rec = this._fxPool.length ? this._fxPool.pop()
+      : { kind: '', x: 0, y: 0, t: 0, life: 1, r0: 0, r1: 0, ang: 0, spin: 0, wide: 1 };
+    rec.kind = kind; rec.x = x; rec.y = y;
+    rec.t = 0; rec.life = o.life || 0.45;
+    rec.r0 = o.r0 || 0; rec.r1 = o.r1 || 120;
+    rec.ang = o.ang || 0; rec.spin = o.spin || 0;
+    rec.wide = o.wide == null ? 1 : o.wide;
+    // Bounded: a long chain must never grow the live list without limit.
+    if (this.fx.length < 24) this.fx.push(rec); else this._fxPool.push(rec);
+    return rec;
+  }
+
+  _fxUpdate(dt) {
+    const fx = this.fx;
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const f = fx[i];
+      f.t += dt;
+      if (f.spin) f.ang += f.spin * dt;
+      if (f.t >= f.life) {
+        fx.splice(i, 1);
+        if (this._fxPool.length < 24) this._fxPool.push(f);
+      }
+    }
+  }
+
+  /** Is this world point inside the camera view (with a margin)? */
+  _fxOnScreen(x, y, camera, w, h, pad = 220) {
+    return x + pad > camera.x && x - pad < camera.x + w
+      && y + pad > camera.y && y - pad < camera.y + h;
+  }
+
+  _fxDraw(ctx, camera) {
+    const fx = this.fx;
+    if (!fx.length) return;
+    const W = this.game && this.game.canvas ? this.game.canvas.width : 960;
+    const H = this.game && this.game.canvas ? this.game.canvas.height : 540;
+    const q = this._fxDetail();
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (let i = 0; i < fx.length; i++) {
+      const f = fx[i];
+      if (!this._fxOnScreen(f.x, f.y, camera, W, H)) continue;
+      const k = Math.max(0, Math.min(1, f.t / f.life));   // 0 -> 1
+      const sx = f.x - camera.x, sy = f.y - camera.y;
+      // Ease: fast out, slow settle — every FX uses one curve family.
+      const e = 1 - Math.pow(1 - k, 2.4);
+      if (f.kind === 'ring') {
+        // ---- expanding pressure ring: thin, crisp, no fill ---------------
+        const r = f.r0 + (f.r1 - f.r0) * e;
+        ctx.strokeStyle = 'rgba(125, 211, 252, ' + (0.5 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = Math.max(1, 3.4 * (1 - k * 0.55));
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+        // a second, tighter foam ring slightly behind: two lines, not a disc
+        if (q > 0.5) {
+          const r2 = r * 0.72;
+          ctx.strokeStyle = 'rgba(224, 242, 254, ' + (0.32 * (1 - k)).toFixed(3) + ')';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath(); ctx.arc(sx, sy, r2, 0, Math.PI * 2); ctx.stroke();
+        }
+        // radial ticks that fade as the ring passes them
+        const ticks = q > 0.7 ? 10 : 6;
+        ctx.strokeStyle = 'rgba(186, 230, 253, ' + (0.4 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 2;
+        for (let t = 0; t < ticks; t++) {
+          const a = (t / ticks) * Math.PI * 2 + f.ang;
+          const l = 8 + 16 * (1 - k);
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r);
+          ctx.lineTo(sx + Math.cos(a) * (r + l), sy + Math.sin(a) * (r + l));
+          ctx.stroke();
+        }
+      } else if (f.kind === 'arc') {
+        // ---- a widening sweep (tail sweep): an arc ring, not a wedge -----
+        const r = f.r0 + (f.r1 - f.r0) * e;
+        const half = f.wide * (1 - 0.25 * k);
+        ctx.strokeStyle = 'rgba(186, 230, 253, ' + (0.55 * (1 - k * 0.7)).toFixed(3) + ')';
+        ctx.lineWidth = Math.max(1.5, 5 * (1 - k * 0.5));
+        ctx.beginPath(); ctx.arc(sx, sy, r, f.ang - half, f.ang + half); ctx.stroke();
+        ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.5 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx, sy, r * 0.94, f.ang - half * 0.9, f.ang + half * 0.9); ctx.stroke();
+      } else if (f.kind === 'collapse') {
+        // ---- the bite closing: everything snaps INWARD -------------------
+        const r = f.r1 * (1 - e * 0.82);
+        ctx.strokeStyle = 'rgba(224, 242, 254, ' + (0.7 * (1 - k * 0.85)).toFixed(3) + ')';
+        ctx.lineWidth = Math.max(1, 4 * (1 - k));
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+        // inward streaks: same spiral family as the telegraph
+        const arms = q > 0.6 ? 7 : 4;
+        ctx.strokeStyle = 'rgba(125, 211, 252, ' + (0.45 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 1.8;
+        for (let s = 0; s < arms; s++) {
+          const a = (s / arms) * Math.PI * 2 + f.ang + e * 2.2;
+          const r0 = r * 1.25, r1 = r * 0.32;
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0);
+          ctx.quadraticCurveTo(
+            sx + Math.cos(a + 0.5) * r * 0.9, sy + Math.sin(a + 0.5) * r * 0.9,
+            sx + Math.cos(a + 0.9) * r1, sy + Math.sin(a + 0.9) * r1);
+          ctx.stroke();
+        }
+      } else if (f.kind === 'burst') {
+        // ---- compact impact: a tight star + a spike ring, no screen flash
+        const r = f.r0 + (f.r1 - f.r0) * (1 - Math.pow(1 - k, 3));
+        const spikes = q > 0.7 ? 9 : 6;
+        ctx.strokeStyle = 'rgba(224, 242, 254, ' + (0.85 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = Math.max(1.2, 3.2 * (1 - k));
+        for (let s = 0; s < spikes; s++) {
+          const a = (s / spikes) * Math.PI * 2 + f.ang;
+          const l = r * (0.7 + 0.3 * Math.sin(s * 2.3));
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(a) * r * 0.3, sy + Math.sin(a) * r * 0.3);
+          ctx.lineTo(sx + Math.cos(a) * l, sy + Math.sin(a) * l);
+          ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.75 * Math.pow(1 - k, 2)).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(sx, sy, r * 0.26 * (1 - k * 0.5), 0, Math.PI * 2); ctx.fill();
+      } else if (f.kind === 'wake') {
+        // ---- tapered wake behind a charge: drawn along its own path ------
+        const len = f.r1 * e, wide = f.r0 * (1 - k * 0.8) * f.wide;
+        const c = Math.cos(f.ang), s = Math.sin(f.ang);
+        ctx.fillStyle = 'rgba(148, 210, 245, ' + (0.16 * (1 - k)).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx - c * len - s * wide * 0.5, sy - s * len + c * wide * 0.5);
+        ctx.lineTo(sx - c * len * 1.15, sy - s * len * 1.15);
+        ctx.lineTo(sx - c * len + s * wide * 0.5, sy - s * len - c * wide * 0.5);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(224, 242, 254, ' + (0.45 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sx - c * len - s * wide * 0.5, sy - s * len + c * wide * 0.5);
+        ctx.lineTo(sx - c * len * 1.1, sy - s * len * 1.1);
+        ctx.lineTo(sx - c * len + s * wide * 0.5, sy - s * len - c * wide * 0.5);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   update(dt, target, projectiles, sound, particles) {
     this.animT += dt;
+    // Pooled VFX tick: the execution + aftermath of every skill. Pure
+    // presentation, and free when nothing is alive.
+    this._fxUpdate(dt);
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     this.skillGlow = Math.max(0, this.skillGlow - dt * 2);
     this.phaseFlash = Math.max(0, this.phaseFlash - dt * 1.2);
@@ -491,8 +676,22 @@ class Megalodon {
         this.y += d.vy * dt;
         this.faceDir = d.vx >= 0 ? 1 : -1;
         this.pitch = Math.max(-0.5, Math.min(0.5, d.vy / 1400));
-        // Water spray off the flanks while it charges.
-        if (particles && Math.random() < 0.55) {
+        // ---- EXECUTION: a tapered wake that follows the ACTUAL trajectory.
+        // One record per step interval, aimed along the live velocity, so the
+        // wake curves with the charge instead of being a fixed polygon.
+        this._wakeT = (this._wakeT || 0) - dt;
+        if (this._wakeT <= 0) {
+          this._wakeT = 0.045;
+          this._fxSpawn('wake', this.x + this.width * 0.5, this.y + this.height * 0.5, {
+            r0: this.height * (0.3 + (this.surge || 0) * 0.16),
+            r1: 150 + Math.hypot(d.vx, d.vy) * 0.16,
+            ang: Math.atan2(d.vy, d.vx),
+            life: 0.34, spin: 0
+          });
+        }
+        // Flank spray, scaled by the game's own effects dial.
+        const spray = this._fxDetail();
+        if (particles && Math.random() < 0.55 * spray) {
           particles.addParticle(this.x + this.width * 0.5 - this.faceDir * this.width * 0.3,
             this.y + this.height * 0.5,
             -d.vx * 0.05 + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3,
@@ -504,6 +703,11 @@ class Megalodon {
         if (!d.hit && d.t > d.dur * 0.4 && this.jawOpen > 0.45
           && target && this.overlapsPlayer(target)) {
           d.hit = true;
+          // EXECUTION: the impact is a compact burst at the contact point, not
+          // a screen-wide flash.
+          const mouth = this._mouthWorld();
+          this._fxSpawn('burst', mouth.x, mouth.y,
+            { r0: 24, r1: 96, life: 0.3, ang: Math.random() * 6.28 });
           this.game.damagePlayer(Math.round(d.dmg), this.x + this.width / 2,
             'The Megalodon’s jaws closed around you!', true, this.y + this.height / 2);
           this.frenzy = Math.min(6, this.frenzy + 1);
@@ -517,6 +721,10 @@ class Megalodon {
           // Recovery window: the charge has weight, so it coasts and swings
           // wide instead of snapping straight back into the hunting circle.
           this.recoverT = 0.55 + this.phase * 0.12;
+          // AFTERMATH: a pressure ring where the charge stopped, drifting out
+          // over the water instead of vanishing on one frame.
+          this._fxSpawn('ring', this.x + this.width * 0.5, this.y + this.height * 0.5,
+            { r0: 60, r1: 210 + this.phase * 40, life: 0.5, ang: Math.random() * 6.28 });
           // The charge ends in a hard turn back toward the hunt.
           this.circleDir *= -1;
         }
@@ -942,6 +1150,8 @@ class Megalodon {
     const power = 1 + (ph - 1) * 0.55;
     const ccx = this.x + this.width * 0.5;
     const ccy = this.y + this.height * 0.5;
+    const mouth = this._mouthWorld();
+    const q = this._fxDetail();
 
     if (p.type === 'predator_dash') {
       // The charge: lock onto where you WERE and go.
@@ -953,6 +1163,9 @@ class Megalodon {
       this.startDash(Math.cos(a) * (1250 + ph * 130) * power,
         Math.sin(a) * (1250 + ph * 130) * power,
         0.75, (100 + ph * 26) * dmgMul, 'dash');
+      // EXECUTION: a burst at the jaws the instant it commits. No screen flash.
+      this._fxSpawn('burst', mouth.x, mouth.y,
+        { r0: 22, r1: 86, life: 0.3, ang: a });
       this.skillFX(particles, ccx, ccy, 'charge', {});
       if (sound) sound.playBossRoar();
     } else if (p.type === 'crushing_bite') {
@@ -964,7 +1177,12 @@ class Megalodon {
       this.jawTarget = 1;
       this.startDash(Math.cos(a) * 820 * power, Math.sin(a) * 820 * power,
         0.42, (150 + ph * 34) * dmgMul, 'bite');
-      this.skillFX(particles, ccx + Math.cos(a) * 120, ccy + Math.sin(a) * 60, 'bite', {});
+      // EXECUTION + AFTERMATH: a compact burst at the jaws, then a pressure
+      // ring that stays where the lunge began.
+      this._fxSpawn('burst', mouth.x, mouth.y,
+        { r0: 18, r1: 82, life: 0.28, ang: a });
+      this._fxSpawn('ring', ccx, ccy, { r0: 70, r1: 200 * power, life: 0.45 });
+      this.skillFX(particles, ccx, ccy, 'bite', {});
       this.skillImpact('bite', 0.6);
       if (player && Math.hypot(ppx - (ccx + Math.cos(a) * 130), ppy - ccy) <= p.radius) {
         this.game.damagePlayer(Math.round((130 + ph * 30) * dmgMul), ccx,
@@ -976,6 +1194,11 @@ class Megalodon {
       if (sound) sound.playHit();
     } else if (p.type === 'tail_sweep') {
       // The caudal fin scythes a wide arc. Anyone inside gets hurled back.
+      // EXECUTION: a widening arc ring that matches the gameplay arc exactly.
+      this._fxSpawn('arc', ccx, ccy, {
+        r0: (p.radius || 220) * 0.4, r1: (p.radius || 220),
+        wide: 1.15, ang: p.angle || 0, life: 0.4
+      });
       this.skillFX(particles, ccx, ccy, 'sweep', { radius: p.radius, angle: p.angle });
       this.skillImpact('sweep', 0.5);
       if (player) {
@@ -1000,12 +1223,18 @@ class Megalodon {
 
       // The call that opens the hunting circle / the extinction chain:
       // a roar, a shockwave of bubbles, and the beast commits.
+      this._fxSpawn('ring', ccx, ccy,
+        { r0: 120, r1: 330 + ph * 60, life: 0.55 });
       this.skillFX(particles, ccx, ccy, 'call', {});
       if (sound) sound.playBossRoar();
       if (this.game && this.game.feel) this.game.feel.shake(0.4);
     } else if (p.type === 'sharknado') {
       // It tucks and spins for the duration; update() drags you inward.
       this.tornadoT = 2.3;
+      // The vortex closes on itself the moment it forms.
+      this._fxSpawn('collapse', ccx, ccy, {
+        r0: 40, r1: (p.radius || 260), life: 0.5, ang: Math.random() * 6.28
+      });
       this.skillFX(particles, ccx, ccy, 'spin', { radius: p.radius });
       this.skillImpact('spin', 0.55);
       if (sound) sound.playBossLaser();
@@ -1013,12 +1242,15 @@ class Megalodon {
       // A fan of razor teeth spat at where you stood.
       this.jawTarget = 1;
       this.fireTeeth(p.target ? p.target : { x: ppx, y: ppy });
+      this._fxSpawn('burst', mouth.x, mouth.y, { r0: 14, r1: 70, life: 0.26 });
       this.skillFX(particles, p.x, p.y, 'teeth', {});
       if (sound) sound.playHit();
       this.recoilV += 5;
     } else if (p.type === 'depth_warning') {
       // The eruption itself fires from update()'s depthDive timer; the
       // warning marker just pays off its show here.
+      this._fxSpawn('ring', p.x, p.y,
+        { r0: 20, r1: (p.radius || 130), life: 0.5, wide: 0.6 });
       this.skillFX(particles, p.x, p.y, 'rumble', { radius: p.radius });
       if (sound) sound.playBossLaser();
     } else if (p.type === 'apex_execution') {
@@ -1041,6 +1273,14 @@ class Megalodon {
       const a = Math.atan2(ty, tx);
       this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
       this.startDash(Math.cos(a) * 700, Math.sin(a) * 700, 0.4, (200 + ph * 44) * dmgMul, 'maw');
+      // RELEASE: the vortex snaps inward and then the pressure ring snaps
+      // out. Two crisp records, not a field of translucent circles. The
+      // collapse radius is the suction radius the telegraph advertised, so
+      // what the player dodged is what they see close.
+      this._fxSpawn('collapse', ccx, ccy, { r0: 60, r1: p.radius || 420, life: 0.32 });
+      this._fxSpawn('burst', mouth.x, mouth.y, { r0: 26, r1: 110, life: 0.3, ang: a });
+      this._fxSpawn('ring', ccx, ccy,
+        { r0: 90, r1: 260 + ph * 60, life: 0.55, ang: a });
       this.skillFX(particles, ccx, ccy, 'maw', {});
       this.skillImpact('maw', 0.85);
       if (player && Math.hypot(ppx - ccx, ppy - ccy) <= p.radius) {
@@ -1053,6 +1293,9 @@ class Megalodon {
       // The final bite of the Extinction Hunt chain.
       this.jawTarget = 1;
       this.recoilV += 10;
+      // A compact, high-impact bite: burst + ring, both at the jaws.
+      this._fxSpawn('burst', mouth.x, mouth.y, { r0: 30, r1: 130, life: 0.32 });
+      this._fxSpawn('ring', ccx, ccy, { r0: 120, r1: 300 + ph * 60, life: 0.5 });
       this.skillFX(particles, ccx, ccy, 'bite', { radius: p.radius });
       this.skillImpact('bite', 0.9);
       if (player && Math.hypot(ppx - ccx, ppy - ccy) <= p.radius) {
@@ -1100,6 +1343,11 @@ class Megalodon {
    */
   skillFX(particles, x, y, chord, opts = {}) {
     if (!particles) return;
+    // Particle counts scale with the game's own effects dial, so LOW quality
+    // spends fewer particles while the vector VFX (rings/bursts/wakes) still
+    // carry the whole read.
+    const q = this._fxDetail();
+    const n = (base) => Math.max(2, Math.round(base * q));
     const ph = this.phase;
     const power = 1 + (ph - 1) * 0.55;
     const radius = (opts.radius || 90) * power;
@@ -1107,18 +1355,18 @@ class Megalodon {
     const wet = chord === 'charge' || chord === 'spin' || chord === 'rumble';
     const tint = wet ? '#7dd3fc' : chord === 'teeth' ? '#e2e8f0' : '#f87171';
     // Core flash.
-    for (let i = 0; i < 4 + ph * 2; i++) {
+    for (let i = 0; i < n(4 + ph * 2); i++) {
       particles.addParticle(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20,
         (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6,
         i % 2 ? tint : 'rgba(255, 255, 255, 0.8)',
         3 + Math.random() * 3, 0.4, 0, true);
     }
     // Racing ring of spray.
-    const rings = 1 + (ph > 2 ? 1 : 0);
+    const rings = 1 + (ph > 2 && q > 0.6 ? 1 : 0);
     for (let r = 0; r < rings; r++) {
-      const n = 10 + ph * 4;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + r * 0.3;
+      const c = n(10 + ph * 4);
+      for (let i = 0; i < c; i++) {
+        const a = (i / c) * Math.PI * 2 + r * 0.3;
         particles.addParticle(x + Math.cos(a) * radius * 0.3,
           y + Math.sin(a) * radius * 0.3,
           Math.cos(a) * (4 + ph * 2), Math.sin(a) * (4 + ph * 2),
@@ -1126,12 +1374,12 @@ class Megalodon {
       }
     }
     // Arcing spray.
-    for (let i = 0; i < 6 + ph * 3; i++) {
+    for (let i = 0; i < n(6 + ph * 3); i++) {
       particles.addParticle(x, y,
         (Math.random() - 0.5) * 12, -Math.random() * 8 - 2,
         'rgba(186, 230, 253, 0.7)', 2.6, 0.7, 0.14, true);
     }
-    particles.magicSparkle(x, y, tint, 5 + ph * 3);
+    if (q > 0.5) particles.magicSparkle(x, y, tint, Math.round(n(5 + ph * 3)));
     // The heavier the hit, the harder the screen flinches.
     if (chord === 'maw' || chord === 'apex' || chord === 'bite') {
       this.skillImpact(chord, 0.7);
@@ -1152,9 +1400,41 @@ class Megalodon {
     if (typeof feel.shake === 'function') feel.shake(baseShake);
   }
 
+  /**
+   * The telegraph layer: ANTICIPATION. One consistent visual language across
+   * every skill, all drawn in WORLD space (the canvas is already translated),
+   * and every one of them read from the same `k` (0 -> 1 through the windup).
+   *
+   * Shape language (see the pack README's style guide):
+   *   charges    -> a narrow TAPERED lane plus a contracting reticle
+   *   bites      -> a toothed jaw arc that closes; compact core, no big disc
+   *   suction    -> spiral flow lines converging on the mouth, thin boundary
+   *   radial     -> clean rings with fading ticks
+   *   eruptions  -> a squashed ellipse with rising chevrons
+   * Colour: cyan/foam for water motion, crimson ONLY for the danger boundary.
+   *
+   * Detail (arm counts, bubble counts) is scaled by _fxDetail(), so LOW quality
+   * still draws every full silhouette with fewer elements.
+   */
   renderTelegraph(ctx, camera) {
     const p = this.pending;
     const lane = this.apexLane;
+    // ---- Camera cull: an off-screen telegraph must cost nothing. The
+    // destinations are checked (with the radius as padding) so a large radial
+    // telegraph is still culled when it is entirely outside the view.
+    const vw = (ctx && ctx.canvas && ctx.canvas.width) ? ctx.canvas.width : 960;
+    const vh = (ctx && ctx.canvas && ctx.canvas.height) ? ctx.canvas.height : 540;
+    const vis = (x, y, pad) => x + pad > camera.x && x - pad < camera.x + vw
+      && y + pad > camera.y && y - pad < camera.y + vh;
+    const anyVisible = (p && vis(p.x, p.y, (p.radius || 200) + 260))
+      || (lane && vis((lane.x0 + lane.x1) * 0.5, (lane.y0 + lane.y1) * 0.5,
+        Math.abs(lane.x1 - lane.x0) * 0.5 + 300));
+    if (!anyVisible) return;
+    const q = this._fxDetail();
+    const FOAM = '186, 230, 253';      // water / foam
+    const CYAN = '125, 211, 252';      // deep water motion
+    const PALE = '224, 242, 254';      // sharp highlights
+    const RED = '248, 113, 113';       // danger only
     ctx.save();
     const pulse = 0.5 + Math.sin(this.animT * 22) * 0.25;
     // ---- Apex execution warning lane: painted even while it is vanished ----
@@ -1162,31 +1442,50 @@ class Megalodon {
       const lx0 = lane.x0 - camera.x, ly0 = lane.y0 - camera.y;
       const lx1 = lane.x1 - camera.x, ly1 = lane.y1 - camera.y;
       const fade = Math.min(1, lane.t);
-      ctx.globalAlpha = 0.25 + 0.35 * fade;
-      ctx.fillStyle = 'rgba(248, 113, 113, 0.4)';
       const nx = -(ly1 - ly0), ny = (lx1 - lx0);
       const nl = Math.hypot(nx, ny) || 1;
       const halfW = 62;
+      const k = Math.max(0, Math.min(1, 1 - lane.t));
+      // A tapered lane (narrow at the muzzle, wide at the far end) reads as
+      // travel direction; a constant-width bar does not.
+      ctx.fillStyle = 'rgba(' + RED + ', ' + (0.06 + 0.12 * fade).toFixed(3) + ')';
       ctx.beginPath();
-      ctx.moveTo(lx0 + (nx / nl) * halfW, ly0 + (ny / nl) * halfW);
+      ctx.moveTo(lx0 + (nx / nl) * halfW * 0.35, ly0 + (ny / nl) * halfW * 0.35);
       ctx.lineTo(lx1 + (nx / nl) * halfW, ly1 + (ny / nl) * halfW);
       ctx.lineTo(lx1 - (nx / nl) * halfW, ly1 - (ny / nl) * halfW);
-      ctx.lineTo(lx0 - (nx / nl) * halfW, ly0 - (ny / nl) * halfW);
-      ctx.closePath();
-      ctx.fill();
-      // Chevron arrows racing along the lane in the charge direction.
-      ctx.globalAlpha = 0.5 + 0.4 * pulse;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 3;
+      ctx.lineTo(lx0 - (nx / nl) * halfW * 0.35, ly0 - (ny / nl) * halfW * 0.35);
+      ctx.closePath(); ctx.fill();
+      // Two clean edges (no fill banding): bright inner, red outer.
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(' + RED + ', ' + (0.45 + 0.4 * fade).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.moveTo(lx0 + (nx / nl) * halfW * 0.35, ly0 + (ny / nl) * halfW * 0.35);
+      ctx.lineTo(lx1 + (nx / nl) * halfW, ly1 + (ny / nl) * halfW);
+      ctx.moveTo(lx0 - (nx / nl) * halfW * 0.35, ly0 - (ny / nl) * halfW * 0.35);
+      ctx.lineTo(lx1 - (nx / nl) * halfW, ly1 - (ny / nl) * halfW);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.25 + 0.35 * k).toFixed(3) + ')';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(lx0 + (nx / nl) * halfW * 0.35, ly0 + (ny / nl) * halfW * 0.35);
+      ctx.lineTo(lx1 + (nx / nl) * halfW, ly1 + (ny / nl) * halfW);
+      ctx.moveTo(lx0 - (nx / nl) * halfW * 0.35, ly0 - (ny / nl) * halfW * 0.35);
+      ctx.lineTo(lx1 - (nx / nl) * halfW, ly1 - (ny / nl) * halfW);
+      ctx.stroke();
+      // Chevrons racing FORWARD only: the direction you cannot stand in.
       const dir = lane.x1 >= lane.x0 ? 1 : -1;
-      for (let i = 0; i < 6; i++) {
-        const f = ((this.animT * 1.4 + i / 6) % 1);
+      const chevs = q > 0.6 ? 6 : 4;
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.45 + 0.4 * pulse).toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < chevs; i++) {
+        const f = ((this.animT * 1.6 + i / chevs) % 1);
         const cxp = lx0 + (lx1 - lx0) * f;
         const cyp = ly0 + (ly1 - ly0) * f;
+        const grow = 8 + f * 10;
         ctx.beginPath();
-        ctx.moveTo(cxp - dir * 14, cyp - 9);
-        ctx.lineTo(cxp + dir * 2, cyp);
-        ctx.lineTo(cxp - dir * 14, cyp + 9);
+        ctx.moveTo(cxp - dir * grow, cyp - grow * 0.8);
+        ctx.lineTo(cxp + dir * 3, cyp);
+        ctx.lineTo(cxp - dir * grow, cyp + grow * 0.8);
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
@@ -1194,109 +1493,255 @@ class Megalodon {
     if (!p) { ctx.restore(); return; }
     const sx = p.x - camera.x;
     const sy = p.y - camera.y;
-    const k = 1 - Math.max(0, p.timer) / p.total; // 0 → 1 as it winds up
+    const k = 1 - Math.max(0, p.timer) / p.total; // 0 -> 1 as it winds up
 
+    // ---- CHARGES: predator dash + apex execution ---------------------------
     if (p.type === 'predator_dash' || p.type === 'apex_execution') {
-      // A charge lane: a bright bar from the beast to the target, tightening.
       const tx = (p.target ? p.target.x : p.x) - camera.x;
       const ty = (p.target ? p.target.y : p.y) - camera.y;
-      ctx.setLineDash([16, 10]);
-      ctx.lineWidth = 4 + k * 4;
-      ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.5 + pulse * 0.45).toFixed(3) + ')';
+      const mouth = this._mouthWorld();
+      const ox = mouth.x - camera.x, oy = mouth.y - camera.y;
+      // The lane runs from the MOUTH to the target, not boss-centre to target,
+      // so the indicator starts where the attack actually comes from.
+      const vx = tx - ox, vy = ty - oy;
+      const len = Math.hypot(vx, vy) || 1;
+      const ux = vx / len, uy = vy / len;
+      const nx = -uy, ny = ux;
+      // Taper: wide at the shark (it leaves a wide wake), narrow at the target.
+      const w0 = 26 + 26 * k, w1 = 9 + 5 * k;
+      ctx.fillStyle = 'rgba(' + RED + ', ' + (0.05 + 0.1 * k).toFixed(3) + ')';
       ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(tx, ty);
+      ctx.moveTo(ox + nx * w0, oy + ny * w0);
+      ctx.lineTo(tx + nx * w1, ty + ny * w1);
+      ctx.lineTo(tx - nx * w1, ty - ny * w1);
+      ctx.lineTo(ox - nx * w0, oy - ny * w0);
+      ctx.closePath(); ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.3 + 0.4 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.moveTo(ox + nx * w0, oy + ny * w0);
+      ctx.lineTo(tx + nx * w1, ty + ny * w1);
+      ctx.moveTo(ox - nx * w0, oy - ny * w0);
+      ctx.lineTo(tx - nx * w1, ty - ny * w1);
       ctx.stroke();
-      ctx.setLineDash([]);
-      // Target reticle: contracts as the charge launches.
-      const ringR = 34 * (1 - k) + 8;
+      ctx.strokeStyle = 'rgba(' + RED + ', ' + (0.5 + 0.4 * pulse).toFixed(3) + ')';
       ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(tx + nx * w1, ty + ny * w1);
+      ctx.lineTo(tx - nx * w1, ty - ny * w1);
+      ctx.stroke();
+      // Flow streaks inside the lane, running forward: the projected path.
+      const streaks = q > 0.6 ? 7 : 4;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < streaks; i++) {
+        const f0 = ((this.animT * 1.5 + i / streaks) % 1);
+        const f1 = f0 + 0.14;
+        const jit = ((i % 3) - 1) * 6 * (w0 / 40);
+        ctx.strokeStyle = 'rgba(' + FOAM + ', ' + (0.42 * (1 - f0 * 0.6)).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.moveTo(ox + vx * f0 + nx * jit, oy + vy * f0 + ny * jit);
+        ctx.lineTo(ox + vx * f1 + nx * jit * 1.4, oy + vy * f1 + ny * jit * 1.4);
+        ctx.stroke();
+      }
+      // Target reticle: contracts as the charge launches, so it reads as
+      // "closing" rather than a static circle. Four corner ticks, no disc.
+      const ringR = 40 * (1 - k) + 9;
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(' + RED + ', ' + (0.55 + 0.35 * k).toFixed(3) + ')';
+      for (let c = 0; c < 4; c++) {
+        const a = c * Math.PI / 2 + Math.PI / 4 + k * 0.5;
+        ctx.beginPath();
+        ctx.arc(tx, ty, ringR, a, a + Math.PI / 3.4);
+        ctx.stroke();
+      }
       ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.35 + 0.45 * k).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(tx, ty, ringR, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 2;
       for (let c = 0; c < 4; c++) {
         const a = c * Math.PI / 2 + this.animT * 2;
         ctx.beginPath();
-        ctx.moveTo(tx + Math.cos(a) * (ringR + 8), ty + Math.sin(a) * (ringR + 8));
-        ctx.lineTo(tx + Math.cos(a) * (ringR + 20), ty + Math.sin(a) * (ringR + 20));
+        ctx.moveTo(tx + Math.cos(a) * (ringR + 6), ty + Math.sin(a) * (ringR + 6));
+        ctx.lineTo(tx + Math.cos(a) * (ringR + 16), ty + Math.sin(a) * (ringR + 16));
         ctx.stroke();
       }
-    } else if (p.type === 'crushing_bite' || p.type === 'devouring_maw' ||
-               p.type === 'extinction_bite') {
-
-
-      // A gape: two arcs closing like jaws over the danger zone.
-      const r = p.radius || 160;
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.55 + pulse * 0.4).toFixed(3) + ')';
-      const gap = (1 - k) * 0.9;
-      // Upper jaw arc and lower jaw arc, closing as k approaches 1.
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, Math.PI + gap, Math.PI * 2 - gap, false);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, gap, Math.PI - gap, false);
-      ctx.stroke();
-      // Warning teeth marks around the rim.
-      ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.5 * k).toFixed(3) + ')';
-      for (let t = 0; t < 10; t++) {
-        const a = (t / 10) * Math.PI * 2;
-        const tr = r * (0.85 + 0.15 * Math.sin(this.animT * 18 + t));
+      // Wind-up: water pulled back the way it came from, in front of the mouth.
+      ctx.strokeStyle = 'rgba(' + CYAN + ', ' + (0.35 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const off = (i - 1) * 12;
         ctx.beginPath();
-        ctx.moveTo(sx + Math.cos(a - 0.06) * tr, sy + Math.sin(a - 0.06) * tr);
-        ctx.lineTo(sx + Math.cos(a) * (tr - 14 * k - 4), sy + Math.sin(a) * (tr - 14 * k - 4));
-        ctx.lineTo(sx + Math.cos(a + 0.06) * tr, sy + Math.sin(a + 0.06) * tr);
+        ctx.moveTo(ox - ux * (18 + 12 * k) + nx * off, oy - uy * (18 + 12 * k) + ny * off);
+        ctx.lineTo(ox - ux * (52 + 30 * k) + nx * off * 1.6, oy - uy * (52 + 30 * k) + ny * off * 1.6);
+        ctx.stroke();
+      }
+    }
+    // ---- BITES: crushing bite + the extinction finisher --------------------
+    else if (p.type === 'crushing_bite' || p.type === 'extinction_bite') {
+      // Two toothed jaw arcs closing like the real maw. The radius is the
+      // damage radius, so the visual boundary IS the hitbox boundary.
+      const r = p.radius || 160;
+      const gap = (1 - k) * 1.05;
+      // Teeth: evenly spaced along each arc, sized to the closing gap. No
+      // random placement, no floating triangles.
+      const teeth = q > 0.6 ? 11 : 7;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(' + RED + ', ' + (0.5 + pulse * 0.4).toFixed(3) + ')';
+      for (let t = 0; t < teeth; t++) {
+        const a = Math.PI + gap + (t / (teeth - 1)) * (Math.PI - gap * 2);
+        const tl = 10 + 12 * k;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a - 0.07) * r, sy + Math.sin(a - 0.07) * r);
+        ctx.lineTo(sx + Math.cos(a) * (r - tl), sy + Math.sin(a) * (r - tl));
+        ctx.lineTo(sx + Math.cos(a + 0.07) * r, sy + Math.sin(a + 0.07) * r);
         ctx.closePath();
-        ctx.fill();
+        ctx.stroke();
       }
-      // Boiling core swelling toward the bite.
-      ctx.fillStyle = 'rgba(127, 29, 29, ' + (0.16 + 0.3 * k).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(sx, sy, r * (0.3 + 0.55 * k), 0, Math.PI * 2); ctx.fill();
-      if (p.type === 'devouring_maw') {
-        // Inward streaklines: the suction, drawn before the bite lands.
-        ctx.strokeStyle = 'rgba(186, 230, 253, ' + (0.25 + 0.4 * (1 - k)).toFixed(3) + ')';
-        ctx.lineWidth = 2;
-        for (let s = 0; s < 10; s++) {
-          const a = (s / 10) * Math.PI * 2 + this.animT * 0.8;
-          const r0 = r * 1.25, r1 = r * (0.35 + 0.5 * (1 - k));
-          ctx.beginPath();
-          ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0);
-          ctx.lineTo(sx + Math.cos(a) * r1, sy + Math.sin(a) * r1);
-          ctx.stroke();
+      for (let t = 0; t < teeth; t++) {
+        const a = gap + (t / (teeth - 1)) * (Math.PI - gap * 2);
+        const tl = 10 + 12 * k;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a - 0.07) * r, sy + Math.sin(a - 0.07) * r);
+        ctx.lineTo(sx + Math.cos(a) * (r - tl), sy + Math.sin(a) * (r - tl));
+        ctx.lineTo(sx + Math.cos(a + 0.07) * r, sy + Math.sin(a + 0.07) * r);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      // A thin boundary ring: the true damage edge, nothing filled in.
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.3 + 0.4 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+      // Inward streaklines: the water the jaws are about to displace.
+      const arms = q > 0.6 ? 9 : 5;
+      ctx.strokeStyle = 'rgba(' + CYAN + ', ' + (0.4 * (1 - k * 0.5)).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let s = 0; s < arms; s++) {
+        const a = (s / arms) * Math.PI * 2 + this.animT * 0.9;
+        const r0 = r * 1.18, r1 = r * (0.2 + 0.35 * (1 - k));
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0);
+        ctx.quadraticCurveTo(sx + Math.cos(a + 0.6) * r * 0.85, sy + Math.sin(a + 0.6) * r * 0.85,
+          sx + Math.cos(a + 1.1) * r1, sy + Math.sin(a + 1.1) * r1);
+        ctx.stroke();
+      }
+      // A COMPACT core: only the very middle tightens, never a full-field disc.
+      const coreR = 14 + 26 * k;
+      ctx.fillStyle = 'rgba(' + RED + ', ' + (0.06 + 0.14 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, coreR, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.45 + 0.4 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, coreR, 0, Math.PI * 2); ctx.stroke();
+    }
+    // ---- SUCTION: the Abyssal Maw -----------------------------------------
+    else if (p.type === 'devouring_maw') {
+      // What this attack actually is: the game pulls the player toward
+      // p.x/p.y (the boss centre, radius 420*power) at 430*power px/s, then
+      // one enormous bite. So the art is a vortex converging on the mouth --
+      // NOT a translucent circle over the shark.
+      const r = p.radius || 420;                 // exactly what the bite checks
+      const mouth = this._mouthWorld();
+      const mx = mouth.x - camera.x, my = mouth.y - camera.y;
+      // Spiral flow lines from the boundary toward the jaws. The arms are
+      // logarithmic spirals so they read as rotation AND as inflow.
+      const spin = this.animT * (1.5 + k * 5.0);
+      const arms = q > 0.7 ? 7 : q > 0.45 ? 5 : 3;
+      ctx.lineWidth = 2.2;
+      for (let a0 = 0; a0 < arms; a0++) {
+        const base = spin + (a0 / arms) * Math.PI * 2;
+        ctx.strokeStyle = 'rgba(' + CYAN + ', ' + (0.16 + 0.3 * k).toFixed(3) + ')';
+        ctx.beginPath();
+        for (let s = 0; s <= 12; s++) {
+          const f = s / 12;                       // 0 outer -> 1 throat
+          const rr = r * (1 - f * 0.86);
+          const a = base + f * 2.15 * (a0 % 2 ? 1 : -1);
+          const px2 = mx + Math.cos(a) * rr;
+          const py2 = my + Math.sin(a) * rr * 0.72;
+          if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
         }
+        ctx.stroke();
+        // A travelling mote on each arm: flow speed that visibly accelerates
+        // inward, matching the pull.
+        const f0 = ((this.animT * (0.55 + k * 0.9) + a0 / arms) % 1);
+        const rr = r * (1 - f0 * 0.86);
+        const a = base + f0 * 2.15 * (a0 % 2 ? 1 : -1);
+        const mxx = mx + Math.cos(a) * rr, myy = my + Math.sin(a) * rr * 0.72;
+        ctx.fillStyle = 'rgba(' + PALE + ', ' + (0.55 * (1 - f0 * 0.5)).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(mxx, myy, 1.8 + 2.4 * f0, 0, Math.PI * 2); ctx.fill();
       }
-    } else if (p.type === 'tail_sweep') {
-      // A sweeping wedge that closes in the swing direction.
-      const r = p.radius || 220;
+      // The danger boundary: ONE thin broken ring at the EXACT damage radius,
+      // centred on the boss centre that resolvePending() actually checks
+      // (p.x/p.y), so the line a player dodges is the line that hits. It
+      // replaces the filled disc entirely.
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = 'rgba(' + RED + ', ' + (0.4 + 0.45 * k).toFixed(3) + ')';
+      for (let seg = 0; seg < 3; seg++) {
+        const a0 = spin * 0.4 + seg * (Math.PI * 2 / 3);
+        const gap = 0.5 + 0.22 * Math.sin(this.animT * 9 + seg * 2.1);
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, a0, a0 + Math.PI * 2 / 3 - gap);
+        ctx.stroke();
+      }
+      // Concentric pressure arcs *inside* the ring: depth, not a red wash.
+      const rings = q > 0.6 ? 3 : 2;
+      for (let i = 1; i <= rings; i++) {
+        const rr = r * (1 - i * 0.2) * (0.94 + 0.06 * Math.sin(this.animT * 5 + i));
+        ctx.strokeStyle = 'rgba(' + CYAN + ', ' + (0.1 + 0.08 * i).toFixed(3) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(sx, sy, rr, 0, Math.PI * 2); ctx.stroke();
+      }
+      // The throat: a tight ring at the jaws that tightens as it commits. This
+      // is the only place that reads as "hot", and it sits ON the mouth.
+      const throat = 26 + 46 * k;
+      ctx.fillStyle = 'rgba(' + RED + ', ' + (0.05 + 0.1 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(mx, my, throat, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.4 + 0.45 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(mx, my, throat, 0, Math.PI * 2); ctx.stroke();
+      // A few deliberate bubbles on the current, not a particle cloud.
+      const bubbles = q > 0.6 ? 6 : 3;
+      for (let b = 0; b < bubbles; b++) {
+        const f0 = ((this.animT * (0.7 + k) + b / bubbles) % 1);
+        const a = this.animT * 1.2 + b * 2.4;
+        const rr = r * (1 - f0);
+        ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.45 * (1 - f0)).toFixed(3) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(mx + Math.cos(a) * rr, my + Math.sin(a) * rr * 0.72,
+          2 + 5 * f0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    // ---- TAIL SWEEP: a widening arc, cyan with a crimson leading edge -----
+    else if (p.type === 'tail_sweep') {
+      const r = (p.radius || 220);
       const ang = p.angle || 0;
-      ctx.fillStyle = 'rgba(251, 146, 60, ' + (0.12 + 0.22 * k).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.arc(sx, sy, r * (0.5 + 0.5 * k), ang - 1.15, ang + 1.15);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.45 + 0.4 * k).toFixed(3) + ')';
+      const half = 1.15;
+      const rr = r * (0.45 + 0.55 * k);
+      // Trailing foam band (thin), then the bright leading edge.
+      ctx.strokeStyle = 'rgba(' + FOAM + ', ' + (0.3 + 0.35 * k).toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(sx, sy, rr * 0.9, ang - half, ang + half); ctx.stroke();
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.45 + 0.45 * k).toFixed(3) + ')';
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.arc(sx, sy, r * (0.5 + 0.5 * k), ang - 1.15, ang + 1.15);
+      ctx.arc(sx, sy, rr, ang + half * (1 - k) * 0.6, ang + half * (1 - k) * 0.6 + half * 0.8 * (0.4 + k));
       ctx.stroke();
       // The fin itself, cocked back and about to whip through.
-      const fx = sx - Math.cos(ang) * r * 0.8;
-      const fy = sy - Math.sin(ang) * r * 0.8;
-      ctx.fillStyle = 'rgba(226, 232, 240, ' + (0.35 + 0.4 * (1 - k)).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.ellipse(fx, fy, 26, 12, ang, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (p.type === 'sharknado') {
-
-      // A spinning vortex of streaklines around the boss.
-      const r = (p.radius || 260) * (0.6 + 0.4 * k);
+      const fx = sx - Math.cos(ang) * r * 0.82;
+      const fy = sy - Math.sin(ang) * r * 0.82;
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.4 + 0.4 * (1 - k)).toFixed(3) + ')';
       ctx.lineWidth = 3;
-      for (let arm = 0; arm < 5; arm++) {
-        ctx.strokeStyle = 'rgba(125, 211, 252, ' + (0.3 + 0.4 * k).toFixed(3) + ')';
+      ctx.beginPath(); ctx.ellipse(fx, fy, 28, 13, ang, -0.6, 0.6); ctx.stroke();
+    }
+    // ---- SHARKNADO: a cyan vortex, rim in foam (no red wash) ---------------
+    else if (p.type === 'sharknado') {
+      const r = (p.radius || 260) * (0.55 + 0.45 * k);
+      const arms = q > 0.6 ? 5 : 3;
+      ctx.lineWidth = 3;
+      for (let arm = 0; arm < arms; arm++) {
+        ctx.strokeStyle = 'rgba(' + CYAN + ', ' + (0.26 + 0.4 * k).toFixed(3) + ')';
         ctx.beginPath();
         for (let s = 0; s <= 14; s++) {
           const f = s / 14;
-          const a = this.animT * 7 + arm * (Math.PI * 2 / 5) + f * 2.4;
+          const a = this.animT * 7 + arm * (Math.PI * 2 / arms) + f * 2.4;
           const rr = r * (1 - f * 0.85);
           const px2 = sx + Math.cos(a) * rr;
           const py2 = sy + Math.sin(a) * rr * 0.55;
@@ -1304,58 +1749,97 @@ class Megalodon {
         }
         ctx.stroke();
       }
-      ctx.setLineDash([8, 8]);
-      ctx.strokeStyle = 'rgba(244, 63, 94, ' + (0.4 + pulse * 0.4).toFixed(3) + ')';
-      ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-    } else if (p.type === 'tooth_barrage') {
-      // Spark lines converging on the gape, then the volley fires.
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.3 + 0.5 * k).toFixed(3) + ')';
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 + this.animT;
-        const r0 = 60 + 50 * (1 - k);
+      // Rim: a broken ring of ticks rather than a dashed circle.
+      const ticks = q > 0.6 ? 16 : 9;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.35 + 0.45 * k).toFixed(3) + ')';
+      for (let t = 0; t < ticks; t++) {
+        const a = (t / ticks) * Math.PI * 2 + this.animT * 1.2;
         ctx.beginPath();
-        ctx.moveTo(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0 * 0.6);
-        ctx.lineTo(sx + Math.cos(a) * 14, sy + Math.sin(a) * 8);
+        ctx.arc(sx, sy, r, a, a + 0.18);
         ctx.stroke();
       }
-    } else if (p.type === 'depth_warning') {
-      // An eruption marker below the player: ring + rising chevrons.
-      ctx.setLineDash([10, 7]);
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.4 + 0.45 * k).toFixed(3) + ')';
-      ctx.beginPath();
-      ctx.ellipse(sx, sy, p.radius || 120, (p.radius || 120) * 0.4, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(125, 211, 252, ' + (0.2 + 0.4 * k).toFixed(3) + ')';
-      for (let c = 0; c < 4; c++) {
-        const rise = ((this.animT * 140 + c * 46) % 180);
+    }
+    // ---- TOOTH BARRAGE: converging chevrons into the gape ------------------
+    else if (p.type === 'tooth_barrage') {
+      const mouth = this._mouthWorld();
+      const ox = mouth.x - camera.x, oy = mouth.y - camera.y;
+      const n = q > 0.6 ? 8 : 5;
+      ctx.lineWidth = 2.2;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + this.animT;
+        const r0 = 70 + 60 * (1 - k);
+        const r1 = 16;
+        const cxp = ox + Math.cos(a) * r0, cyp = oy + Math.sin(a) * r0 * 0.6;
+        const txx = ox + Math.cos(a) * r1, tyy = oy + Math.sin(a) * r1 * 0.6;
+        // Chevron pointing INWARD so the direction is unambiguous.
+        const ux = txx - cxp, uy = tyy - cyp;
+        const ul = Math.hypot(ux, uy) || 1;
+        ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.3 + 0.5 * k).toFixed(3) + ')';
         ctx.beginPath();
-        ctx.moveTo(sx - 12, sy - rise);
-        ctx.lineTo(sx + 12, sy - rise);
-        ctx.lineTo(sx, sy - rise - 16);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(cxp - ux / ul * 14 - uy / ul * 6, cyp - uy / ul * 14 + ux / ul * 6);
+        ctx.lineTo(txx, tyy);
+        ctx.lineTo(cxp - ux / ul * 14 + uy / ul * 6, cyp - uy / ul * 14 - ux / ul * 6);
+        ctx.stroke();
       }
-    } else if (p.type === 'hunt_call') {
-      // A roar ring: a hard bright circle snapping inward.
-      const r = (p.radius || 120) * (1.7 - 0.7 * k);
-      ctx.setLineDash([14, 9]);
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.5 + pulse * 0.5).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      // Emanating shockwave ticks.
-      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.2 + 0.4 * k).toFixed(3) + ')';
+      // A compact throat marker where the volley leaves.
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.4 + 0.4 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(ox, oy, 14 + 12 * k, 0, Math.PI * 2); ctx.stroke();
+    }
+    // ---- DEPTH WARNING: a squashed eruption ellipse -----------------------
+    else if (p.type === 'depth_warning') {
+      const r = p.radius || 120;
+      const ry = r * 0.42;
+      // Ticks around the ellipse: radial, evenly spaced, no dashes.
+      const ticks = q > 0.6 ? 14 : 8;
       ctx.lineWidth = 3;
-      for (let s = 0; s < 8; s++) {
-        const a = (s / 8) * Math.PI * 2;
+      ctx.strokeStyle = 'rgba(253, 224, 71, ' + (0.35 + 0.5 * k).toFixed(3) + ')';
+      for (let t = 0; t < ticks; t++) {
+        const a = (t / ticks) * Math.PI * 2;
+        const l = 6 + 12 * k;
         ctx.beginPath();
-        ctx.moveTo(sx + Math.cos(a) * (r + 6), sy + Math.sin(a) * (r + 6));
-        ctx.lineTo(sx + Math.cos(a) * (r + 16 + 8 * k), sy + Math.sin(a) * (r + 16 + 8 * k));
+        ctx.moveTo(sx + Math.cos(a) * (r - l), sy + Math.sin(a) * (ry - l * 0.6));
+        ctx.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * ry);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.4 + 0.4 * k).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(sx, sy, r, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      // Rising chevrons: the column of water that is about to erupt.
+      const chevs = q > 0.6 ? 4 : 3;
+      ctx.fillStyle = 'rgba(' + CYAN + ', ' + (0.2 + 0.45 * k).toFixed(3) + ')';
+      for (let c = 0; c < chevs; c++) {
+        const rise = ((this.animT * 150 + c * 52) % 200);
+        const alpha = 1 - rise / 200;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(sx - 13, sy - rise);
+        ctx.lineTo(sx + 13, sy - rise);
+        ctx.lineTo(sx, sy - rise - 18);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // ---- HUNT CALL: a snap ring that contracts ----------------------------
+    else if (p.type === 'hunt_call') {
+      const r = (p.radius || 140) * (1.7 - 0.75 * k);
+      ctx.strokeStyle = 'rgba(' + RED + ', ' + (0.45 + pulse * 0.45).toFixed(3) + ')';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+      // Shrinking second ring inside it: the roar tightening.
+      ctx.strokeStyle = 'rgba(' + PALE + ', ' + (0.3 * (1 - k)).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(sx, sy, r * 0.62, 0, Math.PI * 2); ctx.stroke();
+      const ticks = q > 0.6 ? 10 : 6;
+      ctx.strokeStyle = 'rgba(' + FOAM + ', ' + (0.25 + 0.45 * k).toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      for (let s = 0; s < ticks; s++) {
+        const a = (s / ticks) * Math.PI * 2 + this.animT * 1.5;
+        const l = 10 + 14 * k;
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a) * (r + 4), sy + Math.sin(a) * (r + 4));
+        ctx.lineTo(sx + Math.cos(a) * (r + 4 + l), sy + Math.sin(a) * (r + 4 + l));
         ctx.stroke();
       }
     }
@@ -1477,15 +1961,19 @@ class Megalodon {
     const bodyHalf = (u) => {
       // ---- The silhouette of a real macropredator, expressed in u (0 = caudal
       // peduncle, 1 = snout): girth peaks just BEHIND the head, the head
-      // itself stays deep and blunt, and the tail is a thin stalk. Sampling a
-      // piecewise curve (rather than one sine that peaks mid-body) is what
-      // gives the heavy-front / whippy-tail read.
+      // itself is deep but TAPERS to a pointed snout, and the tail is a thin
+      // stalk. Sampling a piecewise curve (rather than one sine that peaks
+      // mid-body) is what gives the heavy-front / whippy-tail read.
       const g = u < 0.60
         ? (0.56 + 0.44 * Math.sin((u / 0.60) * Math.PI * 0.5))   // stalk -> peak
-        : (1.0 - 0.16 * ((u - 0.60) / 0.40));                    // peak -> deep snout
+        : (1.0 - 0.16 * ((u - 0.60) / 0.40));                    // peak -> deep head
       const prof = 0.09 + 0.94 * Math.pow(g, 0.55);
-      // Blunt snout: only the very tip rounds off.
-      const noseTaper = u > 0.96 ? Math.max(0.9, 1 - (u - 0.96) * 2.5) : 1;
+      // NATURAL SNOUT: a long, even taper over the last 20% of the body so
+      // the tip comes to a point instead of a blunt box. The head stays deep
+      // right up to the taper; only the last few percent narrow.
+      const noseTaper = u > 0.80
+        ? Math.max(0.30, Math.sqrt(1 - Math.pow((u - 0.80) / 0.20, 1.35)))
+        : 1;
       const peduncle = u < 0.15 ? Math.max(0.34, u / 0.15) : 1;  // thin caudal stalk
       return HH * prof * noseTaper * peduncle;
     };
@@ -1672,13 +2160,16 @@ class Megalodon {
       const upperRoot = { x: 34, y: -13 };
       const upperTip = { x: -70, y: -126 };
       const fork = { x: -15, y: -24 };
-      const lowerRoot = { x: -17, y: 20 };
       const lowerTip = { x: -60, y: 82 };
       const upper = [upperRoot]
         .concat(raggedEdge(upperRoot, upperTip, 5, 15 + tearAmp * 17, 11.3))
         .concat(raggedEdge(upperTip, fork, 3, 10 + tearAmp * 13, 21.7));
-      const lower = [lowerRoot]
-        .concat(raggedEdge(lowerRoot, lowerTip, 4, 13 + tearAmp * 16, 41.9))
+      // The lower lobe continues FROM the fork, straight out to its own tip.
+      // Routing it through a `lowerRoot` at (-17, 20) instead filled the notch
+      // with a 44px vertical wedge, which read as two lumps instead of one
+      // crescent with a real V cut in it.
+      const lower = [fork]
+        .concat(raggedEdge(fork, lowerTip, 4, 13 + tearAmp * 16, 41.9))
         .concat(raggedEdge(lowerTip, { x: -32, y: 46 }, 2, 9 + tearAmp * 9, 51.3))
         .concat([{ x: 2, y: 22 }, { x: 32, y: 16 }]);
       // Droop + dash stretch the tail: fatigue sags it, a charge snaps it straight.
@@ -1805,7 +2296,7 @@ class Megalodon {
       // BLOOD FRENZY + APEX: the hide is cracked open and glowing from inside.
       // Phase 2 gets a hot wash under the skin; phase 3 adds bleeding cracks.
       if (ph >= 2) {
-        ctx.fillStyle = 'rgba(127, 29, 29, ' + (ph === 3 ? 0.22 : 0.13).toFixed(2) + ')';
+        // Internal light, not a tint over the animal: a low, flank-only wash.\r\n      ctx.fillStyle = 'rgba(127, 29, 29, ' + (ph === 3 ? 0.10 : 0.05).toFixed(2) + ')';
         const wash = [];
         for (let i = 0; i <= 16; i++) wash.push(spineAt(1 - i / 16, -0.85));
         for (let i = 16; i >= 0; i--) wash.push(spineAt(1 - i / 16, 0.55));
@@ -2238,7 +2729,9 @@ class Megalodon {
       {
         const slab = [];
         for (let i = 0; i <= 8; i++) slab.push(jawPt(i / 8));
-        const jowl = (f) => 17 + open01 * 9 + Math.sin(f * Math.PI) * 6;
+        // Jaw depth: a slab, not a block. Slim enough that the lower jaw reads
+        // as anatomy attached to the head rather than a floating triangle.
+        const jowl = (f) => 13 + open01 * 8 + Math.sin(f * Math.PI) * 7;
         for (let i = 8; i >= 0; i--) {
           const f = i / 8;
           const t = jawTangent(f);
@@ -2396,15 +2889,11 @@ class Megalodon {
       ctx.arc(0, 0, HW * (1.1 - ff * 0.5) + 30, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // Wound glow: phase 2+ bleeds light out of the cracked hide.
-    if (ph >= 2 && this.skillGlow > 0 && !vanished) {
-      ctx.globalAlpha = Math.min(0.22, this.skillGlow * 0.16);
-      ctx.fillStyle = '#f87171';
-      ctx.beginPath();
-      ctx.ellipse(0, 0, HW * 1.0, HH * 1.45, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = vanished ? 0.16 : exhausted ? 0.94 : 1;
-    }
+    // (A whole-body "glow" ellipse used to be drawn here. It was a fake bloom
+    // one translucent blob wide across the entire animal, which is exactly the
+    // "red circle over the shark" this VFX pass removed. Phase 2/3 now read
+    // their heat through the rim keyline and the bleeding cracks below, both
+    // of which survive with every post-processing effect disabled.)
     // Phase 2+ rim light: a crimson keyline running the whole silhouette, so
     // the frenzy phases read as the same animal lit from inside.
     if (ph >= 2 && !vanished) {
@@ -2448,6 +2937,9 @@ class Megalodon {
       ctx.fill();
     }
     if (this.stainPools.length) ctx.globalAlpha = 1;
+    // Pooled skill VFX last: pressure rings, collapses, bursts and wakes are
+    // foreground water, so they sit over the animal and the stains.
+    this._fxDraw(ctx, camera);
   }
 
 // ==========================================================================
@@ -2542,12 +3034,14 @@ class Megalodon {
   _bodyHalfAt(u) {
     const HH = this.height * 0.5;
     // MUST mirror the render's bodyHalf: peak girth just behind the head,
-    // deep blunt snout, thin caudal stalk.
+    // a long even snout taper, thin caudal stalk.
     const g = u < 0.60
       ? (0.56 + 0.44 * Math.sin((u / 0.60) * Math.PI * 0.5))
       : (1.0 - 0.16 * ((u - 0.60) / 0.40));
     const prof = 0.09 + 0.94 * Math.pow(g, 0.55);
-    const noseTaper = u > 0.96 ? Math.max(0.9, 1 - (u - 0.96) * 2.5) : 1;
+    const noseTaper = u > 0.80
+      ? Math.max(0.30, Math.sqrt(1 - Math.pow((u - 0.80) / 0.20, 1.35)))
+      : 1;
     const peduncle = u < 0.15 ? Math.max(0.34, u / 0.15) : 1;
     return HH * prof * noseTaper * peduncle;
   }

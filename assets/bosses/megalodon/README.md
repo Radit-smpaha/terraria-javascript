@@ -42,6 +42,61 @@ assets/bosses/megalodon/
 * Art is nearest-neighbour: call `imageSmoothingEnabled = false` before drawing
   (`megaPixelPerfect(ctx)` does it).
 
+## In-game VFX — the red circle is gone
+
+The old Abyssal Maw telegraph filled one big translucent dark-red disc over the
+whole shark (`arc(sx, sy, radius*0.85)` in `rgba(127,29,29,…)`) plus ten
+scattered "warning teeth" around the rim. That attack is a **suction**: the game
+pulls the player toward the boss centre (`radius: 420*power`) at 430*power px/s
+and then lands one enormous bite, so it is now drawn as a vortex.
+
+What it is now, in `Megalodon.renderTelegraph()`:
+
+| layer | shape | why |
+|---|---|---|
+| danger boundary | one thin broken ring at the **exact** `p.radius`, centred on the boss centre that `resolvePending()` checks | the line you dodge is the line that hits |
+| spiral arms | 3–7 logarithmic spirals converging on the **mouth**, with a mote accelerating inward on each arm | reads as inflow, matches the pull |
+| pressure arcs | 2–3 concentric cyan rings inside the boundary | depth without a red wash |
+| throat | a tight ring on the jaws that tightens as `k`→1 | the only "hot" element, and it sits on the mouth |
+| bubbles | ≤6 deliberate rings on the current | not a particle cloud |
+
+Plus release + aftermath: `collapse` (snaps inward at the suction radius) →
+`burst` (compact impact at the jaws) → `ring` (pressure ring drifting out).
+
+Every other skill was rebuilt in the same language — see
+`assets/bosses/megalodon/README.md`'s shape/colour rules: cyan for water, foam
+for highlights, crimson **only** for the danger boundary, and no filled discs
+anywhere.
+
+### Pooled execution + aftermath VFX
+
+`_fxSpawn / _fxUpdate / _fxDraw` in `new-megalodon.js` are the reaction half: a
+fixed array of recycled records (`ring`, `arc`, `collapse`, `burst`, `wake`).
+No per-frame allocation, no new canvas, no gradients, all drawn in world space
+and culled against the camera. Verified live: 368 spawns, peak 10 concurrent,
+all five kinds, records recycled back into the pool.
+
+The charge wake follows the **actual** velocity vector, spawned on a 45 ms
+interval during the dash, so it curves with the charge instead of being a
+static polygon.
+
+### Quality dial
+
+The VFX read `game.particleScale` (which already folds quality mode and the
+effects setting into one number) through `_fxDetail()`, so there is one source
+of truth. LOW draws fewer arms/bubbles but never loses a full silhouette.
+Measured, headless, real rasteriser, scripted phase-3 fight, best of 3:
+
+| level | committed HEAD | new | peak particles |
+|---|---|---|---|
+| HIGH | 54.25 ms/frame | 53.11 ms/frame | 182 |
+| BALANCED | 48.42 ms/frame | 54.85 ms/frame | 114 |
+| LOW | 48.00 ms/frame | 48.08 ms/frame | 54 |
+
+`powershell -ExecutionPolicy Bypass -File tools\run-node.ps1 tools\bench-mega-fx.js`
+(`MEGA_BENCH_BASE=1` for the committed baseline). The boss's own body dominates
+the frame either way; the VFX themselves cost ~0.2–1.3 ms.
+
 ## In-game rig (how the art is driven)
 
 The boss is procedural Canvas art, so the "animation system" is a set of spring
