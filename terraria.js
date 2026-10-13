@@ -1228,6 +1228,7 @@ class Game {
     this.initTouchControls();
     this.loadControlScheme();
     this.particles.initAmbientLeaves(this.world.pixelWidth, this.world.pixelHeight);
+    this.particles.initAmbientMotes(this.world.pixelWidth, this.world.pixelHeight);
 
     this.loadGame(true);
 
@@ -1407,28 +1408,53 @@ class Game {
 
     const drawTree = (x, ground, scale, leafA, leafB, trunk) => {
       const ts = scale;
+      // Deterministic per-tree variation from x, so the backdrop never repeats
+      // the same silhouette twice yet stays perfectly stable frame to frame.
+      const r = Math.abs(Math.sin(Math.round(x) * 12.9898) * 43758.5453) % 1;
+      const tall = r < 0.4;                    // tall and narrow, or broad and short
+      const h = (tall ? 31 : 24) + r * 7;      // trunk height above the ground
       // Trunk: bark body with a light grain streak and a knotted, flared base —
       // cut timber, not a painted pole. Three bands read as trunk volume.
       const trunkHi = mixRGB(trunk, [232, 204, 166], 0.38);
       const trunkShade = mixRGB(trunk, [0, 0, 0], 0.28);
+      const lean = tall ? 0 : Math.round((r - 0.5) * 4);   // broad crowns lean a little
       context.fillStyle = trunk;
-      context.fillRect(x - 3 * ts, ground - 25 * ts, 6 * ts, 26 * ts);
+      context.fillRect(x - 3 * ts + lean, ground - h * ts, 6 * ts, (h + 1) * ts);
       context.fillStyle = css(trunkHi);
-      context.fillRect(x - 1 * ts, ground - 24 * ts, 2 * ts, 21 * ts);          // light streak
+      context.fillRect(x - 1 * ts + lean, ground - (h - 1) * ts, 2 * ts, (h - 3) * ts);
       context.fillStyle = css(trunkShade);
-      context.fillRect(x - 3 * ts, ground - 25 * ts, 6 * ts, 3 * ts);            // root overhang
-      context.fillRect(x - 3 * ts, ground - 6 * ts, 6 * ts, 4 * ts);           // knotted base
-      // Canopy: three overlapping, stepped lobes (the classic terraria tree
-      // shape) plus a couple of leaf clumps for pixel texture.
+      context.fillRect(x - 3 * ts + lean, ground - h * ts, 6 * ts, 3 * ts);
+      context.fillRect(x - 3 * ts + lean, ground - 6 * ts, 6 * ts, 4 * ts);
+      // One or two branches where the trunk hands off to the canopy.
+      context.fillStyle = trunk;
+      const bx = x + lean;
+      context.fillRect(bx - (tall ? 9 : 12) * ts, ground - h * ts - 1, 5 * ts, 2 * ts);
+      context.fillRect(bx + (tall ? 4 : 7) * ts, ground - h * ts - 2, 5 * ts, 2 * ts);
+      // Canopy: three overlapping, stepped lobes with a per-tree jitter on
+      // every width, offset and height, so no two background trees match.
+      const top = ground - (h + (tall ? 9 : 8)) * ts;
+      const j = (r * 100) % 5;
+      const j2 = (r * 57) % 5;
+      const wTop = (tall ? 17 : 22) + j;
+      const wMid = (tall ? 24 : 30) + j2;
+      const wBase = (tall ? 29 : 36) + j;
+      const yOff = (r * 31) % 3;
+      const cx = x + lean;
       context.fillStyle = leafA;
-      const top = ground - 26 * ts;
-      context.fillRect(x - 12 * ts, top - 4 * ts, 24 * ts, 12 * ts);            // top cap
-      context.fillRect(x - 17 * ts, top + 6 * ts, 34 * ts, 12 * ts);            // mid
-      context.fillRect(x - 20 * ts, top + 17 * ts, 40 * ts, 10 * ts);           // wide base
+      context.fillRect(cx - wTop * ts, top, wTop * 2 * ts, (10 + yOff) * ts);            // top cap
+      context.fillRect(cx - wMid * ts, top + (6 + yOff) * ts, wMid * 2 * ts, 12 * ts);   // mid
+      context.fillRect(cx - wBase * ts, top + (15 + yOff) * ts, wBase * 2 * ts, 10 * ts); // wide base
+      // Underside shadow band along the bottom of each lobe: cheap depth that
+      // stops the canopy reading as flat stickers on the sky.
+      context.fillStyle = css(mixRGB(leafA, [0, 0, 0], 0.28));
+      context.fillRect(cx - wMid * ts, top + (15 + yOff) * ts - 1, wMid * 2 * ts, 2 * ts);
+      context.fillRect(cx - wBase * ts, top + (23 + yOff) * ts - 1, wBase * 2 * ts, 2 * ts);
+      // Leaf clumps in the second tone, hashed per tree, for pixel texture.
       context.fillStyle = leafB;
-      context.fillRect(x - 9 * ts, top - 2 * ts, 6 * ts, 4 * ts);               // clump
-      context.fillRect(x + 7 * ts, top + 8 * ts, 5 * ts, 5 * ts);
-      context.fillRect(x - 15 * ts, top + 18 * ts, 6 * ts, 4 * ts);
+      context.fillRect(cx - 8 * ts, top + 2 * ts, 6 * ts, 4 * ts);
+      context.fillRect(cx + 6 * ts + j, top + 7 * ts, 5 * ts, 5 * ts);
+      context.fillRect(cx - 13 * ts - j2, top + 17 * ts, 6 * ts, 4 * ts);
+      if (r > 0.5) context.fillRect(cx + 3 * ts, top + 12 * ts, 5 * ts, 4 * ts);
     };
 
     const mountains = [
@@ -3260,6 +3286,7 @@ class Game {
       this.particleScale = this.effectScale() * (this.quality.lowQuality ? 0.5 : 1);
       this.particles.setDensity(this.particleScale);
       this.particles.initAmbientLeaves(this.world.pixelWidth, this.world.pixelHeight);
+    this.particles.initAmbientMotes(this.world.pixelWidth, this.world.pixelHeight);
       this.saveSettings();
       this.showToast(`✨ Effects density: ${event.target.value}`);
     });

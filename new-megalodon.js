@@ -221,6 +221,50 @@ class Megalodon {
       Math.abs(player.y + player.height / 2 - cy) < (player.height + this.height * 0.66) / 2;
   }
 
+  /**
+   * Move the target (the player) by a suction/current displacement WITHOUT
+   * ever embedding them inside solid rock or dragging them out of the map.
+   *
+   * The Megalodon's vortex (SHARKNADO), devouring-maw suction and the phase-2
+   * turbulent currents all used to write target.x/target.y directly. Those raw
+   * writes bypassed the physics solver entirely, so the pull shoved the player
+   * straight through the arena's stone benches, the reef walls and the world
+   * border: embedded in blocks with no way to move, or outside the map where
+   * the camera could never follow. This helper applies the same displacement,
+   * but only into positions the player's AABB can actually occupy — the
+   * blocked axis is dropped instead of tunneling through it, which reads as
+   * the current losing its grip on you against the rock rather than a bug.
+   */
+  _pullTarget(target, dx, dy) {
+    if (!target || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    const world = this.game && this.game.world;
+    if (!world) return;
+    const T = TILE_SIZE;
+    const free = (x, y) => {
+      // Map bounds: the player can never be pulled outside the world.
+      if (x < 0 || y < 0) return false;
+      if (x + target.width > world.pixelWidth || y + target.height > world.pixelHeight) return false;
+      const x0 = Math.floor(x / T), x1 = Math.floor((x + target.width - 1) / T);
+      const y0 = Math.floor(y / T), y1 = Math.floor((y + target.height - 1) / T);
+      for (let ty = y0; ty <= y1; ty++) {
+        for (let tx = x0; tx <= x1; tx++) {
+          if (world.isSolid(tx, ty)) return false;
+        }
+      }
+      return true;
+    };
+    if (free(target.x + dx, target.y + dy)) {
+      target.x += dx;
+      target.y += dy;
+      return;
+    }
+    // Slide along whichever single axis is open, so a pull into a wall scrubs
+    // speed along that axis only instead of stopping dead.
+    if (free(target.x + dx, target.y)) target.x += dx;
+    else if (free(target.x, target.y + dy)) target.y += dy;
+    // Fully blocked: the pull simply does not move the player this frame.
+  }
+
   touchDamage() {
     if (this.vanishT > 0) return 0;
     const base = [0, 42, 60, 82][this.phase] || 42;
@@ -596,8 +640,7 @@ class Megalodon {
           const dy = (this.y + this.height / 2) - (target.y + target.height / 2);
           const d = Math.hypot(dx, dy) || 1;
           const pull = 95 * dt * power;
-          target.x += (dx / d) * pull;
-          target.y += (dy / d) * pull * 0.6;
+          this._pullTarget(target, (dx / d) * pull, (dy / d) * pull * 0.6);
         }
       }
     }
@@ -739,8 +782,12 @@ class Megalodon {
           const dist = Math.hypot(dx, dy) || 1;
           if (dist < 560) {
             const pull = 320 * dt * power;
-            target.x += (dx / dist) * pull;
-            target.y += (dy / dist) * pull * 0.75;
+            // NOTE: dx/dy point FROM the shark TO the player, so the suction
+            // displacement must be subtracted to drag the player INTO the
+            // spin. The old raw write added them, which shoved the player AWAY
+            // from the vortex — the opposite of the tell, the death message and
+            // the graze-hit check, which all assume the player is pulled in.
+            this._pullTarget(target, -(dx / dist) * pull, -(dy / dist) * pull * 0.75);
           }
           // Grazing the vortex hurts on a cooldown, not every frame.
           this._spinTick = (this._spinTick || 0) + dt;
@@ -981,8 +1028,7 @@ class Megalodon {
         const d = Math.hypot(dx, dy) || 1;
         if (d < this.pending.radius * 1.3 && d > 6) {
           const pull = 430 * dt * power;
-          target.x += (dx / d) * pull;
-          target.y += (dy / d) * pull * 0.7;
+          this._pullTarget(target, (dx / d) * pull, (dy / d) * pull * 0.7);
         }
         this.jawTarget = 1;
       }

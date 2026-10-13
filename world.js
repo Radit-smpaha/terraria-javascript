@@ -88,6 +88,21 @@ const TILES = {
   MARBLE: 70,
   BAMBOO: 71,
   COPPER_BLOCK: 72,
+  // ---- Environmental dressing (world-gen only, never built) ----------------
+  // Ids 41-57 belong to underworld.js and space.js and 73-85 to ocean.js
+  // (added onto TILES at load time), so this set starts safely above both.
+
+  // Non-colliding surface and cave garnish: fallen leaves, saplings, bushes,
+  // pebbles, hanging vines and mushrooms. They exist so the world reads as
+  // lived-in; none of them block movement, light the surface, or drop anything
+  // worth farming (a sapling refunds its acorn, the rest are decoration).
+  FALLEN_LEAF: 90,
+  SAPLING: 91,
+  BUSH: 92,
+  PEBBLE: 93,
+  VINE: 94,
+  MUSHROOM: 95,
+  GLOWSHROOM: 96,
 };
 
 const TILE_PROPERTIES = {
@@ -148,6 +163,14 @@ const TILE_PROPERTIES = {
   , [TILES.MARBLE]: { solid: true, light: 0, color: '#e7e5e4', name: 'Marble', drops: { id: 'marble', count: 1 } }
   , [TILES.BAMBOO]: { solid: true, light: 0, color: '#84cc16', name: 'Bamboo', drops: { id: 'bamboo', count: 1 } }
   , [TILES.COPPER_BLOCK]: { solid: true, light: 0, color: '#b87333', name: 'Copper Block', drops: { id: 'copper_block', count: 1 } }
+  // ---- Environmental dressing ---------------------------------------------
+  , [TILES.FALLEN_LEAF]: { solid: false, light: 0, color: '#4d7c0f', name: 'Fallen Leaves', drops: null }
+  , [TILES.SAPLING]: { solid: false, light: 0, color: '#22c55e', name: 'Sapling', drops: { id: 'acorn', count: 1 } }
+  , [TILES.BUSH]: { solid: false, light: 0, color: '#166534', name: 'Bush', drops: null }
+  , [TILES.PEBBLE]: { solid: false, light: 0, color: '#94a3b8', name: 'Pebbles', drops: null }
+  , [TILES.VINE]: { solid: false, light: 0, color: '#15803d', name: 'Vine', drops: null }
+  , [TILES.MUSHROOM]: { solid: false, light: 0, color: '#b91c1c', name: 'Cave Mushroom', drops: null }
+  , [TILES.GLOWSHROOM]: { solid: false, light: 3, color: '#67e8f9', name: 'Glowshroom', drops: null }
 };
 
 // The world is laid out as equal west→east bands, one per entry, in this order.
@@ -1152,19 +1175,98 @@ class World {
         this.height - 6
       );
       this.landmarks.push({ x: centerX, y: floorY - 2, type: 'vault' });
+      this.stampVault(centerX, floorY);
+    }
 
-      // A one-tile-thick brick shell with a 7x3 room inside it. The room's
-      // back wall is brick too, so the inside reads as built the moment you
-      // break through, instead of a hole in the dark.
-      for (let y = floorY - 4; y <= floorY; y++) {
-        for (let x = centerX - 4; x <= centerX + 4; x++) {
-          const inside = Math.abs(x - centerX) <= 3 && y > floorY - 4 && y < floorY;
-          this.setTile(x, y, inside ? TILES.AIR : TILES.STONE_BRICK);
-          this.walls[y * this.width + x] = inside ? TILES.STONE_BRICK : TILES.STONE;
+    this.decorateCaves();
+  }
+
+  /**
+   * Build one buried vault: a one-tile-thick brick shell with a 7x3 room
+   * inside it. The room's back wall is brick too, so the inside reads as
+   * built the moment you break through, instead of a hole in the dark.
+   * Split out of the generator so a vault can be re-stamped deeper later.
+   */
+  stampVault(centerX, floorY) {
+    for (let y = floorY - 4; y <= floorY; y++) {
+      for (let x = centerX - 4; x <= centerX + 4; x++) {
+        const inside = Math.abs(x - centerX) <= 3 && y > floorY - 4 && y < floorY;
+        this.setTile(x, y, inside ? TILES.AIR : TILES.STONE_BRICK);
+        this.walls[y * this.width + x] = inside ? TILES.STONE_BRICK : TILES.STONE;
+      }
+    }
+    this.setTile(centerX, floorY - 1, TILES.CHEST);
+    this.setTile(centerX - 3, floorY - 1, TILES.TORCH);
+  }
+
+  /**
+   * Re-seat any vault that a later terrain pass left inadequately buried.
+   *
+   * The reef floods the whole west band AFTER the underground features have
+   * run and rewrites surfaceHeights down to the new seabed, which can be far
+   * deeper than the natural surface the vaults were measured against — a
+   * sealed brick room left hanging in open ocean water. Each vault is checked
+   * against the CURRENT surface; any that no longer sit 20+ tiles down have
+   * their old shell refilled with rock and are re-stamped deep in the same
+   * column, so a player still finds 3-5 diggable vaults and never floats one.
+   */
+  reseatVaults() {
+    let moved = 0;
+    for (const l of this.landmarks) {
+      if (l.type !== 'vault') continue;
+      const floorY = l.y + 2;
+      const want = Math.min(
+        this.surfaceHeights[l.x] + 26 + Math.floor(this.rand() * 34),
+        this.height - 6
+      );
+      if (want <= floorY + 2) continue;                 // already buried enough
+      // Refill the old shell so the abandoned room cannot hang in the water.
+      for (let y = floorY - 6; y <= floorY + 1; y++) {
+        for (let x = l.x - 6; x <= l.x + 6; x++) {
+          if (x < 0 || x >= this.width || y < 0 || y >= this.height) continue;
+          this.setTile(x, y, TILES.STONE);
+          this.walls[y * this.width + x] = TILES.STONE;
         }
       }
-      this.setTile(centerX, floorY - 1, TILES.CHEST);
-      this.setTile(centerX - 3, floorY - 1, TILES.TORCH);
+      this.stampVault(l.x, want);
+      l.y = want - 2;
+      moved++;
+    }
+    if (moved > 0) this._tileCacheDirty = true;
+    return moved;
+  }
+
+  /**
+   * Cave dressing: moss on the stone, mushrooms on cave floors, and the odd
+   * cluster of bioluminescent glowshrooms that lights a pocket of the dark.
+   * One pass over the world at generation time — the player never sees it
+   * happen, only the world already looking lived-in.
+   */
+  decorateCaves() {
+    for (let x = 3; x < this.width - 3; x++) {
+      const surface = this.surfaceHeights[x];
+      for (let y = surface + 6; y < this.height - 3; y++) {
+        const tile = this.getTile(x, y);
+        const below = this.getTile(x, y + 1);
+        const above = this.getTile(x, y - 1);
+        const roll = this.rand();
+        // Cave floor: the open tile directly above solid ground.
+        if (tile === TILES.AIR && (below === TILES.STONE || below === TILES.DIRT)) {
+          if (roll < 0.012) this.setTile(x, y, TILES.MUSHROOM);
+          else if (roll < 0.022) this.setTile(x, y, TILES.GLOWSHROOM);
+          else if (roll < 0.035) this.setTile(x, y, TILES.PEBBLE);
+          continue;
+        }
+        // Moss creeps over stone faces that touch open air.
+        if (tile === TILES.STONE && above === TILES.AIR && roll < 0.045) {
+          this.setTile(x, y, TILES.MOSSY_STONE);
+          continue;
+        }
+        // Vines drip from cave ceilings.
+        if (tile === TILES.STONE && below === TILES.AIR && roll < 0.02) {
+          this.setTile(x, y + 1, TILES.VINE);
+        }
+      }
     }
   }
 
@@ -1197,7 +1299,8 @@ class World {
   }
 
   // Non-colliding surface dressing: flowers, tall grass, shrubs, cacti,
-  // icicles. Purely visual, mined for a small acorn/seed refund.
+  // icicles, pebbles and vines. Purely visual, mined for a small acorn/seed
+  // refund.
   decorateSurface() {
     for (let x = 4; x < this.width - 4; x++) {
       const biome = this.getBiomeAtX(x);
@@ -1208,66 +1311,227 @@ class World {
       if (biome === 'forest' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
         if (roll < 0.16) this.setTile(x, sy - 1, TILES.FLOWER);
         else if (roll < 0.42) this.setTile(x, sy - 1, TILES.TALL_GRASS);
+        else if (roll < 0.46) this.setTile(x, sy - 1, TILES.BUSH);
+        else if (roll < 0.50) this.setTile(x, sy - 1, TILES.PEBBLE);
+        else if (roll < 0.52) this.setTile(x, sy - 1, TILES.MUSHROOM);
       } else if (biome === 'snow' && ground === TILES.SNOW) {
         if (roll < 0.14) this.setTile(x, sy - 1, TILES.SNOWBUSH);
         else if (roll < 0.22) this.setTile(x, sy - 1, TILES.ICICLE);
+        else if (roll < 0.25) this.setTile(x, sy - 1, TILES.PEBBLE);
       } else if (biome === 'savanna' && (ground === TILES.SAND || ground === TILES.SANDSTONE)) {
         if (roll < 0.12) {
           const h = 2 + Math.floor(this.rand() * 3);
           for (let i = 1; i <= h; i++) this.setTile(x, sy - i, TILES.CACTUS);
         } else if (roll < 0.30) this.setTile(x, sy - 1, TILES.TALL_GRASS);
+        else if (roll < 0.38) this.setTile(x, sy - 1, TILES.PEBBLE);
+        else if (roll < 0.40) this.setTile(x, sy - 1, TILES.BUSH);
       } else if (biome === 'plains' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
         // Minecraft plains: mostly open grass, thick with flowers and tufts and
         // nothing that hurts to walk into. Denser than the forest on purpose —
         // that scatter of flowers is the biome's whole silhouette.
         if (roll < 0.22) this.setTile(x, sy - 1, TILES.FLOWER);
         else if (roll < 0.52) this.setTile(x, sy - 1, TILES.TALL_GRASS);
+        else if (roll < 0.55) this.setTile(x, sy - 1, TILES.PEBBLE);
       } else if (biome === 'swamp' && (ground === TILES.MUD || ground === TILES.WATER)) {
         if (ground === TILES.MUD && roll < 0.20) this.setTile(x, sy - 1, TILES.LILY);
         else if (ground === TILES.MUD && roll < 0.44) this.setTile(x, sy - 1, TILES.TALL_GRASS);
+        else if (ground === TILES.MUD && roll < 0.50) this.setTile(x, sy - 1, TILES.MUSHROOM);
+        else if (ground === TILES.MUD && roll < 0.53) this.setTile(x, sy - 1, TILES.BUSH);
+      }
+      // Vines drop from any overhang: solid ground with open air beneath it is
+      // a cliff lip or a bank, and a strand or two hanging off it is what makes
+      // the world feel weathered rather than machine-cut.
+      if (this.getTile(x, sy - 2) !== TILES.AIR && this.getTile(x, sy - 3) === TILES.AIR && this.rand() < 0.18) {
+        this.setTile(x, sy - 3, TILES.VINE);
       }
     }
   }
 
+  // ---- Tree anatomy helpers -------------------------------------------------
+  //
+  // Trunks, limbs, clusters and vines are laid out as discrete tiles into AIR
+  // only, so a tree never eats terrain, decor or a neighbouring trunk, and the
+  // player can always walk through the canopy (leaves are non-solid).
+
+  /** Stamp one irregular leaf cluster: a squashed disc with a ragged rim. */
+  _leafCluster(cx, cy, r, leafTile) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const d2 = dx * dx + dy * dy * 1.3;         // wider than tall: a canopy, not a ball
+        if (d2 > r * r + 0.4) continue;
+        // Rim pixels drop out so the silhouette is ragged, never a clean circle.
+        const rim = d2 > (r - 1) * (r - 1);
+        if (rim && this.rand() < 0.3) continue;
+        if (this.getTile(cx + dx, cy + dy) === TILES.AIR) {
+          this.setTile(cx + dx, cy + dy, leafTile);
+        }
+      }
+    }
+  }
+
+  /** A short diagonal limb from (x, y) heading (dx, -dy), so trunks can branch. */
+  _limb(x, y, dx, dy, len) {
+    for (let i = 0; i < len; i++) {
+      const lx = x + dx * i;
+      const ly = y - dy * i;
+      if (this.getTile(lx, ly) === TILES.AIR) this.setTile(lx, ly, TILES.WOOD);
+    }
+  }
+
+  /**
+   * Hanging vines under a canopy: thin strands dropping from leaf tiles whose
+   * underside faces open air, which is what sells depth on a big crown.
+   */
+  _hangVines(cx, cy, r, chance) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (this.rand() > chance) continue;
+      const len = 1 + Math.floor(this.rand() * 3);
+      for (let i = 1; i <= len; i++) {
+        if (this.getTile(cx + dx, cy + i) !== TILES.AIR) break;
+        if (this.rand() < 0.25) break;             // ragged ends
+        this.setTile(cx + dx, cy + i, TILES.TALL_GRASS);
+      }
+    }
+  }
+
+  /**
+   * Ground dressing around a trunk: fallen leaves, an occasional sapling and a
+   * bush nearby. Purely visual (all non-solid), but it is what makes a
+   * woodland floor feel settled instead of mown.
+   */
+  _dressTreeBase(baseX, baseY) {
+    const side = this.rand() < 0.5 ? -1 : 1;
+    for (let d = 1; d <= 3; d++) {
+      const lx = baseX + side * d;
+      if (this.getTile(lx, baseY) === TILES.AIR && this.rand() < 0.5) {
+        this.setTile(lx, baseY, TILES.FALLEN_LEAF);
+      }
+    }
+    // A sapling sprouts where the drift of leaves is thickest.
+    const sx = baseX + side * (1 + Math.floor(this.rand() * 3));
+    if (this.getTile(sx, baseY) === TILES.AIR && this.rand() < 0.35) {
+      this.setTile(sx, baseY, TILES.SAPLING);
+    }
+    const bx = baseX - side * (2 + Math.floor(this.rand() * 2));
+    if (this.getTile(bx, baseY) === TILES.AIR && this.rand() < 0.3) {
+      this.setTile(bx, baseY, TILES.BUSH);
+    }
+  }
+
+  /**
+   * Forest / plains broadleaf. Four silhouettes — ancient, oak, aspen, birch —
+   * each with its own height, lean, thickening, branching and crown-cluster
+   * layout, so no two neighbouring trees look stamped from one template.
+   */
   growTree(baseX, baseY) {
-    const giant = this.rand() < 0.12; // occasional ancient forest giant
-    const height = giant ? Math.floor(this.rand() * 4 + 12) : Math.floor(this.rand() * 6 + 7);
-    // Trunk (giants get a 2-wide trunk)
+    const roll = this.rand();
+    const ancient = roll < 0.07;                       // rare showpiece giant
+    const oak = !ancient && roll < 0.55;
+    const aspen = !ancient && !oak && roll < 0.82;
+
+    const height = ancient ? 14 + Math.floor(this.rand() * 4)
+      : oak ? 8 + Math.floor(this.rand() * 5)
+        : aspen ? 11 + Math.floor(this.rand() * 5)
+          : 6 + Math.floor(this.rand() * 4);
+
+    // Trunk: a gentle lean that can bend once on the way up. The base stays
+    // put and the crown drifts, which reads as a tree shaped by wind.
+    const lean = this.rand() < 0.45 ? (this.rand() < 0.5 ? -1 : 1) : 0;
+    const bend = lean !== 0 && this.rand() < 0.4 ? -lean : 0;
+    const bendAt = 3 + Math.floor(this.rand() * 3);
+    // Thick stump on the old growth only; saplings stay a single column.
+    const thick = ancient ? 6 : oak && this.rand() < 0.4 ? 3 : 0;
+
+    let tx = baseX;
+    let topX = baseX;
     for (let i = 0; i < height; i++) {
-      this.setTile(baseX, baseY - i, TILES.WOOD);
-      if (giant && i < 4) this.setTile(baseX + 1, baseY - i, TILES.WOOD);
+      const drift = i >= bendAt
+        ? (lean + bend) * Math.floor((i - bendAt) / 2)
+        : lean * Math.floor(i / 3);
+      tx = baseX + drift;
+      this.setTile(tx, baseY - i, TILES.WOOD);
+      if (thick > 0 && i < thick) this.setTile(tx + 1, baseY - i, TILES.WOOD);
+      if (i === height - 1) topX = tx;
     }
-    // Roots flare at the base
+    const topY = baseY - height + 1;   // topmost trunk tile
+
+    // Roots flare at the base (wider on the ancient and the leaning trunks).
     this.setTile(baseX - 1, baseY, TILES.WOOD);
-    this.setTile(baseX + (giant ? 2 : 1), baseY, TILES.WOOD);
-    if (this.rand() < 0.5) this.setTile(baseX - 2, baseY, TILES.WOOD);
-    // Tapered crown foliage keeps neighboring trees from becoming one flat canopy.
-    const topY = baseY - height;
-    const crownWidths = giant ? [2, 3, 4, 4, 3, 2, 1] : [1, 2, 3, 3, 2, 1];
-    for (let row = 0; row < crownWidths.length; row++) {
-      const width = crownWidths[row];
-      for (let ox = -width; ox <= width; ox++) {
-        if (Math.abs(ox) === width && row > 0 && this.rand() < 0.3) continue;
-        if (this.getTile(baseX + ox, topY + row) === TILES.AIR) {
-          this.setTile(baseX + ox, topY + row, TILES.LEAVES);
-        }
-      }
+    this.setTile(baseX + 1, baseY, TILES.WOOD);
+    if (thick > 0 || lean !== 0) {
+      this.setTile(baseX - 2, baseY, TILES.WOOD);
+      this.setTile(baseX + 2, baseY, TILES.WOOD);
+    } else if (this.rand() < 0.5) {
+      this.setTile(baseX + (this.rand() < 0.5 ? -2 : 2), baseY, TILES.WOOD);
     }
-    // Hanging vines on giants + a possible beehive glow spot
-    if (giant) {
-      for (const vx of [-2, 3]) {
-        const len = 2 + Math.floor(this.rand() * 3);
-        for (let i = 1; i <= len; i++) {
-          if (this.getTile(baseX + vx, topY + 2 + i) === TILES.AIR) this.setTile(baseX + vx, topY + 2 + i, TILES.TALL_GRASS);
-        }
+
+    if (aspen) {
+      // Tall and narrow: a column of small clusters up the trunk with one or
+      // two off to the side, like a poplar reading against the sky.
+      for (let i = 0; i < 4; i++) {
+        const cy = topY - 1 - i;
+        const r = i < 2 ? 2 : 1;
+        this._leafCluster(topX, cy, r, TILES.LEAVES);
+        if (i % 2 === 0) this._leafCluster(topX + (this.rand() < 0.5 ? -2 : 2), cy - 1, 1, TILES.LEAVES);
       }
+      this._limb(topX, topY + 1, this.rand() < 0.5 ? -1 : 1, 1, 2);
+      this._hangVines(topX, topY + 1, 2, 0.35);
+    } else if (oak) {
+      // Broad and clustered: limbs off the trunk at two thirds height, then
+      // overlapping clusters that leave gaps between them.
+      this._limb(topX, topY + 2, -1, 1, 2);
+      this._limb(topX, topY + 2, 1, 1, 2);
+      this._limb(topX, topY + 1, -1, 1, 2);
+      const wide = this.rand() < 0.3;
+      this._leafCluster(topX, topY - 1, 2, TILES.LEAVES);
+      this._leafCluster(topX - 2, topY, 2, TILES.LEAVES);
+      this._leafCluster(topX + 2, topY, 2, TILES.LEAVES);
+      this._leafCluster(topX - 1, topY - 2, 1, TILES.LEAVES);
+      this._leafCluster(topX + 1, topY - 2, 1, TILES.LEAVES);
+      // A raised crest on half the oaks, so the skyline varies tree to tree.
+      if (this.rand() < 0.5) {
+        const cdx = this.rand() < 0.5 ? -1 : 1;
+        this._leafCluster(topX + cdx, topY - 3, 1, TILES.LEAVES);
+        if (this.rand() < 0.4) this._leafCluster(topX + cdx, topY - 4, 1, TILES.LEAVES);
+      }
+      if (wide) this._leafCluster(topX + (this.rand() < 0.5 ? -3 : 3), topY - 1, 1, TILES.LEAVES);
+      this._hangVines(topX - 2, topY + 2, 1, 0.5);
+      this._hangVines(topX + 2, topY + 2, 1, 0.5);
+    } else if (ancient) {
+      // The showpiece: a thick trunk, three limbs, and a wide crown of five
+      // clusters with deliberate gaps between them.
+      this._limb(topX, topY + 3, -1, 1, 3);
+      this._limb(topX, topY + 3, 1, 1, 3);
+      this._limb(topX, topY + 1, -1, 1, 3);
+      this._limb(topX, topY + 1, 1, 1, 3);
+      this._leafCluster(topX, topY - 2, 3, TILES.LEAVES);
+      this._leafCluster(topX - 3, topY - 1, 2, TILES.LEAVES);
+      this._leafCluster(topX + 3, topY - 1, 2, TILES.LEAVES);
+      this._leafCluster(topX - 1, topY - 4, 2, TILES.LEAVES);
+      this._leafCluster(topX + 2, topY - 4, 2, TILES.LEAVES);
+      this._hangVines(topX - 3, topY + 2, 2, 0.6);
+      this._hangVines(topX + 3, topY + 2, 2, 0.6);
+    } else {
+      // Birch: slim, airy, small crown — a handful of clusters, no thick base.
+      this._limb(topX, topY + 1, this.rand() < 0.5 ? -1 : 1, 1, 2);
+      this._leafCluster(topX, topY - 1, 2, TILES.LEAVES);
+      this._leafCluster(topX - 2, topY, 1, TILES.LEAVES);
+      this._leafCluster(topX + 2, topY, 1, TILES.LEAVES);
+      if (this.rand() < 0.5) this._leafCluster(topX + 1, topY - 3, 1, TILES.LEAVES);
     }
+
+    this._dressTreeBase(baseX, baseY);
   }
 
   growSnowPine(baseX, baseY) {
     // Frostberry pines: layered boughs with snow caps and dangling icicles.
-    for (let i = 0; i < 9; i++) this.setTile(baseX, baseY - i, TILES.WOOD);
-    for (let row = 0; row < 7; row++) {
+    // Height varies tree to tree, and the bough layers get ragged outer edges,
+    // so a treeline ripples instead of marching in lockstep.
+    const h = 9 + Math.floor(this.rand() * 4);
+    for (let i = 0; i < h; i++) this.setTile(baseX, baseY - i, TILES.WOOD);
+    // Bare upper trunk: the leader pokes above the top bough.
+    const boughs = 6 + Math.floor(this.rand() * 3);
+    for (let row = 0; row < boughs; row++) {
       const width = Math.min(3, Math.floor(row / 2) + 1);
       for (let offset = -width; offset <= width; offset++) {
         if (Math.abs(offset) !== width || this.rand() > 0.2) {
@@ -1278,31 +1542,71 @@ class World {
           }
         }
       }
+      // Occasional branch stub poking out of a bough to break the silhouette.
+      if (row % 2 === 0 && this.rand() < 0.4) {
+        const bx = baseX + (this.rand() < 0.5 ? -1 : 1) * (width + 1);
+        if (this.getTile(bx, baseY - 3 - row) === TILES.AIR) this.setTile(bx, baseY - 3 - row, TILES.WOOD);
+      }
     }
     // Icicles drip from a random low bough.
     const ix = baseX + (this.rand() < 0.5 ? -2 : 2);
     if (this.getTile(ix, baseY - 3) === TILES.AIR) this.setTile(ix, baseY - 3, TILES.ICICLE);
+    if (this.rand() < 0.5) {
+      const ix2 = baseX + (ix < baseX ? 1 : -1);
+      if (this.getTile(ix2, baseY - 5) === TILES.AIR) this.setTile(ix2, baseY - 5, TILES.ICICLE);
+    }
     // Snowdrift at the roots.
     if (this.getTile(baseX - 1, baseY) === TILES.SNOW) this.setTile(baseX - 1, baseY - 1, TILES.SNOWBUSH);
+    if (this.getTile(baseX + 2, baseY) === TILES.SNOW && this.rand() < 0.5) {
+      this.setTile(baseX + 2, baseY - 1, TILES.SNOWBUSH);
+    }
   }
 
   growAcacia(baseX, baseY) {
     // Wind-sculpted acacia: leaning trunk, flat umbrella canopy, dry brush below.
     const lean = this.rand() < 0.5 ? -1 : 1;
-    for (let i = 0; i < 6; i++) {
+    const h = 6 + Math.floor(this.rand() * 3);
+    for (let i = 0; i < h; i++) {
       const lx = baseX + (i > 2 ? lean * Math.floor((i - 2) / 2) : 0);
       this.setTile(lx, baseY - i, TILES.WOOD);
     }
-    const topX = baseX + lean;
-    for (let offset = -4; offset <= 4; offset++) {
-      if (Math.abs(offset) < 4 || this.rand() > 0.35) {
-        if (this.getTile(topX + offset, baseY - 7) === TILES.AIR) this.setTile(topX + offset, baseY - 7, TILES.ACACIA_LEAVES);
-        if (Math.abs(offset) < 3 && this.getTile(topX + offset, baseY - 6) === TILES.AIR) this.setTile(topX + offset, baseY - 6, TILES.ACACIA_LEAVES);
+    const topX = baseX + lean * Math.floor((h - 3) / 2);
+    const topY = baseY - h;
+    // Two canopy levels: the wide umbrella on top, a shorter shelf beneath it.
+    // The top row stays nearly solid (that flat crown is the acacia's whole
+    // silhouette) but loses tiles along its rim and gains small crest tufts,
+    // so it reads as foliage blown flat rather than as a plank in the sky.
+    const halfW = 4 + Math.floor(this.rand() * 2);
+    const placed = [];
+    for (let offset = -halfW; offset <= halfW; offset++) {
+      const outer = Math.abs(offset) >= halfW;
+      const chance = outer ? 0.32 : 0.14;       // rim tiles drop out more often
+      if (this.getTile(topX + offset, topY) === TILES.AIR && this.rand() > chance) {
+        this.setTile(topX + offset, topY, TILES.ACACIA_LEAVES);
+        placed.push(offset);
+      }
+      if (Math.abs(offset) < halfW - 3 && this.getTile(topX + offset, topY + 1) === TILES.AIR && this.rand() > 0.4) {
+        this.setTile(topX + offset, topY + 1, TILES.ACACIA_LEAVES);
       }
     }
+    // Crest tufts climb off the solid part of the crown only, so they can never
+    // float: each tuft needs the row below it to actually exist.
+    for (const offset of placed) {
+      if (Math.abs(offset) >= halfW - 2) continue;
+      if (this.rand() < 0.3 && this.getTile(topX + offset, topY - 1) === TILES.AIR) {
+        this.setTile(topX + offset, topY - 1, TILES.ACACIA_LEAVES);
+        if (this.rand() < 0.35 && this.getTile(topX + offset, topY - 2) === TILES.AIR) {
+          this.setTile(topX + offset, topY - 2, TILES.ACACIA_LEAVES);
+        }
+      }
+    }
+    // Bare branch stubs before the canopy flares out — the limb reads before
+    // the leaves do, which is what makes an umbrella canopy work.
+    this._limb(topX, topY + 1, -1, 0, 2);
+    this._limb(topX, topY + 1, 1, 0, 2);
     // Drooping seed pods on the canopy edge.
-    this.setTile(topX - 4, baseY - 6, TILES.ACACIA_LEAVES);
-    this.setTile(topX + 4, baseY - 6, TILES.ACACIA_LEAVES);
+    this.setTile(topX - halfW, topY + 1, TILES.ACACIA_LEAVES);
+    this.setTile(topX + halfW, topY + 1, TILES.ACACIA_LEAVES);
     // A cactus sometimes keeps the acacia company.
     if (this.rand() < 0.3) {
       const cx = baseX + lean * 3;
@@ -1310,6 +1614,13 @@ class World {
         this.setTile(cx, baseY - 1, TILES.CACTUS);
         if (this.getTile(cx, baseY - 2) === TILES.AIR && this.rand() < 0.6) this.setTile(cx, baseY - 2, TILES.CACTUS);
       }
+    }
+    // Dry brush and a pebble or two in the shade of the canopy.
+    if (this.rand() < 0.5 && this.getTile(baseX - lean * 3, baseY - 1) === TILES.AIR) {
+      this.setTile(baseX - lean * 3, baseY - 1, TILES.TALL_GRASS);
+    }
+    if (this.rand() < 0.4 && this.getTile(baseX + lean * 2, baseY - 1) === TILES.AIR) {
+      this.setTile(baseX + lean * 2, baseY - 1, TILES.PEBBLE);
     }
   }
 
@@ -1319,20 +1630,23 @@ class World {
       this.setTile(baseX + rx, baseY, TILES.WOOD);
       this.setTile(baseX + (rx > 0 ? rx - 1 : rx + 1), baseY - 1, TILES.WOOD);
     }
-    for (let i = 0; i < 7; i++) this.setTile(baseX, baseY - i, TILES.WOOD);
-    for (let offset = -4; offset <= 4; offset++) {
-      for (let row = 0; row < 3; row++) {
-        if (Math.abs(offset) + row < 6 && (Math.abs(offset) < 2 || this.rand() > 0.25)) {
-          if (this.getTile(baseX + offset, baseY - 7 - row) === TILES.AIR) {
-            this.setTile(baseX + offset, baseY - 7 - row, TILES.MANGROVE_LEAVES);
-          }
-        }
-      }
-    }
+    const h = 7 + Math.floor(this.rand() * 2);
+    for (let i = 0; i < h; i++) this.setTile(baseX, baseY - i, TILES.WOOD);
+    // Five overlapping clusters with gaps between them, stepped back along the
+    // trunk — the gaps are what keep a broadleaf canopy from reading as a slab.
+    const cy = baseY - h;
+    this._leafCluster(baseX, cy, 3, TILES.MANGROVE_LEAVES);
+    this._leafCluster(baseX - 3, cy + 1, 2, TILES.MANGROVE_LEAVES);
+    this._leafCluster(baseX + 3, cy + 1, 2, TILES.MANGROVE_LEAVES);
+    this._leafCluster(baseX - 1, cy - 2, 2, TILES.MANGROVE_LEAVES);
+    this._leafCluster(baseX + 2, cy - 2, 1, TILES.MANGROVE_LEAVES);
     // Hanging moss strands.
     for (const mx of [-3, 0, 3]) {
-      if (this.getTile(baseX + mx, baseY - 6) === TILES.AIR && this.rand() < 0.7) {
-        this.setTile(baseX + mx, baseY - 6, TILES.TALL_GRASS);
+      if (this.getTile(baseX + mx, baseY - h - 1) === TILES.AIR && this.rand() < 0.7) {
+        this.setTile(baseX + mx, baseY - h - 1, TILES.VINE);
+        if (this.getTile(baseX + mx, baseY - h) === TILES.AIR && this.rand() < 0.6) {
+          this.setTile(baseX + mx, baseY - h, TILES.VINE);
+        }
       }
     }
     // Lily pads at the foot of the tree.
@@ -2763,13 +3077,18 @@ class World {
       const cy = baseY - heightVar;
 
       // Trunk with vertical grain bands, so it reads as timber and not a pole.
+      // A slight lean (stable per tree) keeps the treeline from marching in
+      // lockstep, and a flare at the base grounds it.
       const trunkC = biome === 'savanna' ? '#5b3413' : biome === 'swamp' ? '#2f2417' : biome === 'snow' ? '#4a3b2c' : '#3f2e1e';
       const trunkShade = biome === 'savanna' ? '#45240c' : biome === 'swamp' ? '#251a0f' : biome === 'snow' ? '#3a2e21' : '#302214';
+      const leanPx = Math.round(Math.sin(treeIdx * 1.7) * 4);
       ctx.fillStyle = trunkC;
       ctx.fillRect(screenX + spacing * 0.5 - 6, cy, 12, heightVar + 40);
       ctx.fillStyle = trunkShade;
       ctx.fillRect(screenX + spacing * 0.5 - 6, cy + 5, 3, heightVar + 28);
-      ctx.fillRect(screenX + spacing * 0.5 + 3, cy + 10, 3, heightVar + 22);
+      ctx.fillRect(screenX + spacing * 0.5 - 6, cy + heightVar + 30, 16, 10);
+      ctx.fillStyle = trunkShade;
+      ctx.fillRect(screenX + spacing * 0.5 - 2, cy + heightVar - 2, 3, heightVar * 0.4);
 
       // Lush crown: overlapping lobes rather than one circle, so the canopy
       // edge is broken up and reads as foliage. The lobes are placed from a
@@ -2788,6 +3107,12 @@ class World {
         ctx.arc(cxC + ox, cy + oy, r, 0, Math.PI * 2);
         ctx.fill();
       }
+      // Underside shadow where the lobes overhang the trunk: the cheap depth
+      // cue that keeps a canopy from reading as flat stickers.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.beginPath();
+      ctx.arc(cxC + crownRadius * 0.1, cy + crownRadius * 0.55, crownRadius * 0.78, 0, Math.PI * 2);
+      ctx.fill();
       // Sun-side rim: a lighter arc up and to the left, the same direction the
       // mountains are lit from.
       ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
@@ -2937,7 +3262,8 @@ class World {
 
   isAnimatedTile(tile) {
     return tile === TILES.LAVA || tile === TILES.TORCH || tile === TILES.CAMPFIRE ||
-      tile === TILES.LILY || tile === TILES.CRYSTAL || tile === TILES.LANTERN;
+      tile === TILES.LILY || tile === TILES.CRYSTAL || tile === TILES.LANTERN ||
+      tile === TILES.GLOWSHROOM;
   }
 
   // Background walls, painted into the static tile cache instead of the frame
@@ -3142,14 +3468,37 @@ class World {
         break;
       }
       case TILES.WOOD: {
-        ctx.fillStyle = '#92400e';
+        // Bark: a warm mid-brown base with two tones of vertical grain, an
+        // occasional knot, and left-edge shading that sells the trunk as a
+        // cylinder. Deterministic per (tx,ty) so one tree's bark is consistent
+        // top to bottom while no two trees repeat.
+        const bark = (tx * 31 + ty * 17) >>> 0;
+        ctx.fillStyle = '#7c3d12';
         ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-        // Tree bark lines
+        ctx.fillStyle = '#92400e';
+        ctx.fillRect(sx + 1, sy, TILE_SIZE - 2, TILE_SIZE);
         ctx.fillStyle = '#78350f';
         ctx.fillRect(sx + 4, sy, 3, TILE_SIZE);
         ctx.fillRect(sx + 14, sy, 4, TILE_SIZE);
-        ctx.fillStyle = '#b45309';
-        ctx.fillRect(sx + 8, sy, 2, TILE_SIZE);
+        // Second, lighter grain between the dark ones.
+        ctx.fillStyle = '#a3520f';
+        ctx.fillRect(sx + 9, sy, 2, TILE_SIZE);
+        if (((bark >>> 4) & 7) < 3) ctx.fillRect(sx + 18, sy, 2, TILE_SIZE);
+        // Knot: a small dark ellipse of rolled grain with a highlight.
+        if (((bark >>> 7) & 15) === 0) {
+          const ky = sy + 6 + ((bark >>> 11) & 7);
+          ctx.fillStyle = '#5c2c0b';
+          ctx.fillRect(sx + 5, ky, 6, 5);
+          ctx.fillStyle = '#451a03';
+          ctx.fillRect(sx + 6, ky + 1, 4, 3);
+          ctx.fillStyle = '#b45309';
+          ctx.fillRect(sx + 6, ky, 2, 1);
+        }
+        // Sun-catching edge down the lit side, shadow down the other.
+        ctx.fillStyle = 'rgba(217, 119, 6, 0.35)';
+        ctx.fillRect(sx + 1, sy, 1, TILE_SIZE);
+        ctx.fillStyle = 'rgba(60, 26, 5, 0.4)';
+        ctx.fillRect(sx + TILE_SIZE - 2, sy, 2, TILE_SIZE);
         break;
       }
       case TILES.LEAVES: {
@@ -3159,10 +3508,14 @@ class World {
         const h = (tx * 73856093 ^ ty * 19349663) >>> 0;
         ctx.fillStyle = '#14532d';
         ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-        // Shadow pockets between leaf clusters.
+        // Shadow pockets between leaf clusters: the depth that makes a crown
+        // read as many leaves rather than one green field.
         ctx.fillStyle = '#166534';
         ctx.fillRect(sx + 2, sy + 2, 8, 7);
         ctx.fillRect(sx + 13, sy + 12, 8, 8);
+        ctx.fillStyle = '#0f3f21';
+        ctx.fillRect(sx + 12, sy + 1, 6, 5);
+        ctx.fillRect(sx + 1, sy + 15, 7, 6);
         // Mid-tone leaf mass.
         ctx.fillStyle = '#16a34a';
         ctx.fillRect(sx, sy + 8, TILE_SIZE, 10);
@@ -3170,7 +3523,7 @@ class World {
         // Individual leaves: small offset quads, varied by the tile hash so no
         // two tiles repeat. Each leaf is a 3x4 sliver with a darker vein. A
         // few get a bright sun dapple so the canopy catches the light unevenly.
-        for (let l = 0; l < 9; l++) {
+        for (let l = 0; l < 11; l++) {
           const hx = ((h >> (l * 4)) & 7) / 7;
           const hy = ((h >> (l * 4 + 1)) & 7) / 7;
           const lx = sx + 1 + hx * (TILE_SIZE - 5);
@@ -3191,11 +3544,16 @@ class World {
         ctx.fillStyle = '#14532d';
         if (((h >> 3) & 3) === 0) ctx.fillRect(sx, sy, 3, 3);
         if (((h >> 5) & 3) === 1) ctx.fillRect(sx + TILE_SIZE - 3, sy + TILE_SIZE - 4, 3, 4);
+        if (((h >> 9) & 3) === 2) ctx.fillRect(sx + TILE_SIZE - 2, sy, 2, 3);
         // Sunlit edge leaves catching the light from the top-left.
         ctx.fillStyle = '#86efac';
         ctx.fillRect(sx + 4, sy + 5, 3, 2);
         ctx.fillRect(sx + 15, sy + 3, 3, 2);
         ctx.fillRect(sx + 9, sy + 17, 3, 2);
+        // Hot rim-light on the two corner leaves.
+        ctx.fillStyle = 'rgba(187, 247, 208, 0.7)';
+        ctx.fillRect(sx + 5, sy + 5, 1, 1);
+        ctx.fillRect(sx + 16, sy + 3, 1, 1);
         break;
       }
       case TILES.WOOD_PLATFORM: {
@@ -3577,27 +3935,80 @@ class World {
         break;
       }
       case TILES.SNOW_PINE_LEAVES: {
-        ctx.fillStyle = '#dbeafe';
+        // Frostberry needles: dark conifer base with frost-bright tips and a
+        // couple of snow grains, so a pine bough reads as needled, not blank.
+        const h = (tx * 73856093 ^ ty * 19349663) >>> 0;
+        ctx.fillStyle = '#1e3a5f';
         ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-        ctx.fillStyle = '#93c5fd';
+        ctx.fillStyle = '#2c5282';
+        ctx.fillRect(sx, sy + 6, TILE_SIZE, 12);
+        // Needles: short diagonal strokes in two tones.
+        ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(sx + 2, sy + 4, 6, 2);
+        ctx.fillRect(sx + 12, sy + 3, 7, 2);
+        ctx.fillRect(sx + 5, sy + 10, 7, 2);
+        ctx.fillRect(sx + 14, sy + 11, 6, 2);
+        ctx.fillStyle = '#60a5fa';
+        ctx.fillRect(sx + 3, sy + 4, 4, 1);
+        ctx.fillRect(sx + 13, sy + 3, 5, 1);
+        ctx.fillRect(sx + 6, sy + 10, 5, 1);
+        // Frost grains clustered toward the lit top-left.
+        ctx.fillStyle = '#dbeafe';
         ctx.fillRect(sx + 3, sy + 5, 7, 3);
         ctx.fillRect(sx + 14, sy + 14, 6, 3);
+        ctx.fillStyle = '#ffffff';
+        if (((h >>> 3) & 3) === 0) ctx.fillRect(sx + 5, sy + 6, 2, 2);
+        if (((h >>> 6) & 3) === 1) ctx.fillRect(sx + 16, sy + 15, 2, 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.fillRect(sx + 4, sy + 5, 2, 1);
         break;
       }
       case TILES.ACACIA_LEAVES: {
-        ctx.fillStyle = '#84cc16';
+        // Dry savanna canopy: a warm yellow-green base with brighter sunlit
+        // tufts and a dusty shadow underneath.
+        const h = (tx * 73856093 ^ ty * 19349663) >>> 0;
+        ctx.fillStyle = '#4d7c0f';
         ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#65a30d';
+        ctx.fillRect(sx, sy + 4, TILE_SIZE, 14);
+        // Leaf tufts: small feathered clusters, hashed per tile.
+        ctx.fillStyle = '#84cc16';
+        ctx.fillRect(sx + 3, sy + 4, 8, 4);
+        ctx.fillRect(sx + 13, sy + 8, 8, 4);
+        ctx.fillRect(sx + 7, sy + 13, 9, 4);
         ctx.fillStyle = '#bef264';
         ctx.fillRect(sx + 4, sy + 3, 5, 4);
         ctx.fillRect(sx + 15, sy + 13, 4, 4);
+        ctx.fillStyle = '#d9f99d';
+        if (((h >>> 4) & 3) === 0) ctx.fillRect(sx + 5, sy + 4, 2, 2);
+        if (((h >>> 8) & 3) === 1) ctx.fillRect(sx + 16, sy + 14, 2, 2);
+        ctx.fillStyle = 'rgba(63, 98, 18, 0.6)';
+        ctx.fillRect(sx + 3, sy + 18, 6, 2);
+        ctx.fillRect(sx + 14, sy + 19, 6, 2);
         break;
       }
       case TILES.MANGROVE_LEAVES: {
-        ctx.fillStyle = '#0f766e';
+        // Wet mire canopy: deep teal base with glossy highlights and the dark
+        // drip-shadow a broadleaf casts on itself.
+        const h = (tx * 73856093 ^ ty * 19349663) >>> 0;
+        ctx.fillStyle = '#064e46';
         ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#0f766e';
+        ctx.fillRect(sx, sy + 5, TILE_SIZE, 13);
+        ctx.fillStyle = '#115e59';
+        ctx.fillRect(sx + 2, sy + 2, 9, 6);
+        ctx.fillRect(sx + 13, sy + 13, 9, 7);
+        // Glossy leaves: a mid tone with a bright top-right rim.
+        ctx.fillStyle = '#0d9488';
+        ctx.fillRect(sx + 4, sy + 5, 8, 5);
+        ctx.fillRect(sx + 13, sy + 10, 8, 5);
+        ctx.fillRect(sx + 7, sy + 14, 9, 5);
         ctx.fillStyle = '#2dd4bf';
         ctx.fillRect(sx + 3, sy + 5, 6, 3);
         ctx.fillRect(sx + 14, sy + 14, 5, 3);
+        ctx.fillStyle = '#5eead4';
+        if (((h >>> 5) & 3) === 0) ctx.fillRect(sx + 8, sy + 6, 2, 2);
+        if (((h >>> 10) & 3) === 1) ctx.fillRect(sx + 15, sy + 15, 2, 2);
         break;
       }
       // ---- Water & biome dressing (all chunky Terraria-style rects) ----
@@ -3732,6 +4143,167 @@ class World {
         ctx.fill();
         ctx.fillStyle = '#f0f9ff';
         ctx.fillRect(sx + 9, sy + 1, 3, 12);
+        break;
+      }
+
+      // ============================================================
+      // ENVIRONMENTAL DRESSING — small non-solid garnish the world gen
+      // scatters on the ground, under canopies and through caves. Each one is
+      // deliberately tiny: they must read as detail without ever competing
+      // with the player or a monster for attention.
+      // ============================================================
+      case TILES.FALLEN_LEAF: {
+        // A scatter of dropped leaves on the soil, hashed so no two match.
+        const h = (tx * 73856093 ^ ty * 19349663) >>> 0;
+        ctx.fillStyle = 'rgba(20, 12, 4, 0.22)';
+        ctx.fillRect(sx + 2, sy + 21, 20, 2);
+        const leaves = 3 + ((h >>> 3) & 3);
+        for (let l = 0; l < leaves; l++) {
+          const lx = sx + 2 + (((h >>> (l * 5)) & 15) % 18);
+          const ly = sy + 16 + (((h >>> (l * 5 + 2)) & 7) % 8);
+          const tone = ((h >>> (l * 3 + 1)) & 3);
+          ctx.fillStyle = tone === 0 ? '#4d7c0f' : tone === 1 ? '#65a30d'
+            : tone === 2 ? '#3f6212' : '#854d0e';   // a few brown, mid-rotted
+          ctx.fillRect(lx, ly, 4, 2);
+          ctx.fillStyle = tone === 1 ? '#a3e635' : '#bef264';
+          ctx.fillRect(lx, ly, 4, 1);
+          ctx.fillStyle = 'rgba(20, 30, 8, 0.55)';
+          ctx.fillRect(lx, ly + 1, 1, 1);
+        }
+        break;
+      }
+      case TILES.SAPLING: {
+        // Two leaves on a bent stem: a tree that has only just started.
+        const leanL = ((tx * 7 + ty * 3) & 1) ? -1 : 1;
+        ctx.fillStyle = '#422813';
+        ctx.fillRect(sx + 11, sy + 10, 2, 14);
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(sx + 11, sy + 10, 1, 14);
+        // Stem bends into the wind.
+        ctx.fillStyle = '#422813';
+        ctx.fillRect(sx + 11 + leanL, sy + 8, 2, 3);
+        // Leaf pair.
+        ctx.fillStyle = '#166534';
+        ctx.fillRect(sx + 7 + leanL, sy + 4, 9, 6);
+        ctx.fillStyle = '#22c55e';
+        ctx.fillRect(sx + 8 + leanL, sy + 4, 7, 4);
+        ctx.fillStyle = '#4ade80';
+        ctx.fillRect(sx + 9 + leanL, sy + 4, 4, 2);
+        ctx.fillStyle = '#bbf7d0';
+        ctx.fillRect(sx + 10 + leanL, sy + 5, 2, 1);
+        break;
+      }
+      case TILES.BUSH: {
+        // A rounded shrub with a shaded underside and a couple of berries.
+        ctx.fillStyle = 'rgba(20, 12, 4, 0.22)';
+        ctx.fillRect(sx + 3, sy + 21, 18, 2);
+        ctx.fillStyle = '#14532d';
+        ctx.fillRect(sx + 4, sy + 12, 16, 10);
+        ctx.fillRect(sx + 6, sy + 9, 12, 3);
+        ctx.fillStyle = '#166534';
+        ctx.fillRect(sx + 5, sy + 13, 14, 8);
+        ctx.fillStyle = '#22c55e';
+        ctx.fillRect(sx + 6, sy + 12, 6, 5);
+        ctx.fillRect(sx + 13, sy + 15, 5, 4);
+        ctx.fillStyle = '#4ade80';
+        ctx.fillRect(sx + 7, sy + 12, 3, 2);
+        ctx.fillRect(sx + 14, sy + 15, 2, 2);
+        // Berries, so a bush is never just a green blob.
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(sx + 9, sy + 17, 2, 2);
+        ctx.fillRect(sx + 15, sy + 12, 2, 2);
+        ctx.fillStyle = '#fca5a5';
+        ctx.fillRect(sx + 9, sy + 17, 1, 1);
+        break;
+      }
+      case TILES.PEBBLE: {
+        // Two or three wind-rounded stones with a lit top and a dirt shadow.
+        const h = (tx * 13 + ty * 29) % 4;
+        ctx.fillStyle = 'rgba(20, 12, 4, 0.25)';
+        ctx.fillRect(sx + 4, sy + 19, 16, 3);
+        const stones = h < 2 ? [[6, 14, 5, 4], [14, 17, 4, 3]] : [[5, 16, 6, 5], [13, 13, 5, 4]];
+        for (const [ox, oy, w, hh] of stones) {
+          ctx.fillStyle = '#64748b';
+          ctx.fillRect(sx + ox, sy + oy, w, hh);
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillRect(sx + ox, sy + oy, w, hh - 1);
+          ctx.fillStyle = '#cbd5e1';
+          ctx.fillRect(sx + ox, sy + oy, w - 1, 1);
+          ctx.fillStyle = '#475569';
+          ctx.fillRect(sx + ox, sy + oy + hh - 1, w, 1);
+        }
+        break;
+      }
+      case TILES.VINE: {
+        // A hanging strand: a thin stem with leaves that thin out as it drops.
+        const h = (tx * 31 + ty * 17) & 7;
+        const len = 8 + h;
+        ctx.fillStyle = '#14532d';
+        ctx.fillRect(sx + 11, sy, 2, len);
+        ctx.fillStyle = '#166534';
+        ctx.fillRect(sx + 11, sy, 1, len);
+        for (let i = 2; i < len - 2; i += 4) {
+          const side = ((i >> 2) & 1) ? 1 : -1;
+          ctx.fillStyle = '#15803d';
+          ctx.fillRect(sx + 11 + side * 2, sy + i, 3, 2);
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(sx + 11 + side * 2, sy + i, 2, 1);
+        }
+        // Dark root shadow where it meets the surface above.
+        ctx.fillStyle = 'rgba(4, 20, 10, 0.35)';
+        ctx.fillRect(sx + 10, sy, 4, 2);
+        break;
+      }
+      case TILES.MUSHROOM: {
+        // Cave mushroom: pale stem, red cap, white spots.
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(sx + 8, sy + 22, 8, 2);
+        ctx.fillStyle = '#e7e5e4';
+        ctx.fillRect(sx + 10, sy + 14, 4, 9);
+        ctx.fillStyle = '#fafaf9';
+        ctx.fillRect(sx + 10, sy + 14, 2, 9);
+        ctx.fillStyle = '#a8a29e';
+        ctx.fillRect(sx + 13, sy + 17, 1, 6);
+        ctx.fillStyle = '#7f1d1d';
+        ctx.fillRect(sx + 6, sy + 13, 12, 2);
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillRect(sx + 5, sy + 8, 14, 5);
+        ctx.fillRect(sx + 7, sy + 6, 10, 2);
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(sx + 6, sy + 8, 12, 3);
+        ctx.fillStyle = '#fef2f2';
+        ctx.fillRect(sx + 8, sy + 8, 2, 2);
+        ctx.fillRect(sx + 13, sy + 9, 2, 2);
+        break;
+      }
+      case TILES.GLOWSHROOM: {
+        // Bioluminescent cave mushroom: cyan cap over a pale stem, breathing
+        // with a slow pulse so a cluster reads as alive in the dark.
+        const pulse = 0.55 + 0.45 * Math.sin(Date.now() * 0.0018 + tx * 1.3 + ty * 0.7);
+        ctx.save();
+        ctx.globalAlpha = 0.16 + pulse * 0.3;
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath();
+        ctx.arc(sx + 12, sy + 14, 12 + pulse * 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillRect(sx + 8, sy + 22, 8, 2);
+        ctx.fillStyle = '#155e75';
+        ctx.fillRect(sx + 10, sy + 14, 4, 9);
+        ctx.fillStyle = '#0e7490';
+        ctx.fillRect(sx + 10, sy + 14, 2, 9);
+        ctx.fillStyle = '#164e63';
+        ctx.fillRect(sx + 5, sy + 8, 14, 6);
+        ctx.fillRect(sx + 7, sy + 6, 10, 2);
+        ctx.fillStyle = '#0891b2';
+        ctx.fillRect(sx + 6, sy + 8, 12, 4);
+        ctx.fillStyle = '#22d3ee';
+        ctx.fillRect(sx + 7, sy + 8, 4, 2);
+        ctx.fillRect(sx + 14, sy + 10, 3, 2);
+        ctx.fillStyle = `rgba(207, 250, 254, ${(0.5 + pulse * 0.5).toFixed(2)})`;
+        ctx.fillRect(sx + 9, sy + 7, 2, 2);
+        ctx.fillRect(sx + 13, sy + 11, 2, 2);
         break;
       }
 
@@ -4087,7 +4659,8 @@ class World {
       for (let x = minTileX; x <= maxTileX; x++) {
         const tile = this.tiles[rowBase + x];
         if (tile !== TILES.TORCH && tile !== TILES.CAMPFIRE && tile !== TILES.LAVA &&
-            tile !== TILES.CRYSTAL && tile !== TILES.WATER && tile !== TILES.LANTERN) continue;
+            tile !== TILES.CRYSTAL && tile !== TILES.WATER && tile !== TILES.LANTERN &&
+            tile !== TILES.GLOWSHROOM) continue;
         if (tile === TILES.TORCH) {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
@@ -4110,6 +4683,12 @@ class World {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
           this.carveLightCircle(lightCtx, sx, sy, 250, 0.92);
+        } else if (tile === TILES.GLOWSHROOM) {
+          // Bioluminescence: a small, soft pool so a cluster reads as a living
+          // lantern in the dark without lighting a whole cavern.
+          const sx = x * TILE_SIZE + 12 - camera.x;
+          const sy = y * TILE_SIZE + 14 - camera.y;
+          this.carveLightCircle(lightCtx, sx, sy, 110, 0.5);
         } else {
           const sx = x * TILE_SIZE + 12 - camera.x;
           const sy = y * TILE_SIZE + 12 - camera.y;
