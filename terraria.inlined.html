@@ -4149,6 +4149,7 @@ class SoundSystem {
     // once init() has built them, so a saved setting survives first load.
     this.volume = 0.9;
     this.musicEnabled = true;
+    this.mood = 'forest';
   }
 
   init() {
@@ -4235,6 +4236,20 @@ class SoundSystem {
     if (!this.ctx) return;
     this.setVolume(this.volume);
     this.setMusicEnabled(this.musicEnabled);
+    this.setMood(this.mood);
+  }
+
+  /**
+   * Select the musical mood for where the player is: 'forest', 'plains',
+   * 'savanna', 'snow', 'ocean', 'reef', 'cave', 'swamp' or 'temple'. The
+   * sequencer crossfades and retunes itself on the next note, so the caller
+   * can set this as often as it likes — only actual changes cost anything.
+   */
+  setMood(mood) {
+    const next = typeof mood === 'string' ? mood : 'forest';
+    if (next === this.mood) return next;
+    this.mood = next;
+    return this.mood;
   }
 
   // Jump sound: cheerful retro frequency sweep
@@ -4647,7 +4662,31 @@ class SoundSystem {
     const BOSS_RIFF = [130.81, 130.81, 155.56, 130.81, 174.61, 164.81, 155.56, 146.83];
     const BOSS_BASS = [65.41, 65.41, 73.42, 61.74];
 
-    const seq = { prog: 0, chord: 0, pat: 0, gap: false, step: 0, lastMode: null };
+    // ---- Biome moods ------------------------------------------------------
+    // Each place gets its own key, tempo and voice balance, so walking from a
+    // forest into a cave or out onto the reef changes the music, not just the
+    // scenery. These are ORIGINAL progressions written for the engine below:
+    // warm major triads above ground, minor and low below it. `tempo` scales
+    // the note gap, `pad`/`lead` scale voice levels, `sparkle` gates the day
+    // octave shimmer, `progs` replaces the chord tables for the mood.
+    const Bb = [233.08, 293.66, 349.23, 466.16];
+    const D = [293.66, 369.99, 440.00, 587.33];
+    const Bbm = [233.08, 277.18, 349.23, 466.16];
+    const MOODS = {
+      forest: { progs: null, tempo: 1.0, pad: 1.0, lead: 1.0, sparkle: true },
+      plains: { progs: [[C, G, Am, F], [F, C, G, Am], [C, Em, Dm, G]], tempo: 0.88, pad: 0.9, lead: 1.1, sparkle: true },
+      savanna: { progs: [[G, D, Em, C], [C, G, D, Em]], tempo: 1.05, pad: 1.0, lead: 1.0, sparkle: true },
+      snow: { progs: [[Dm, Bb, F, C], [Am, Dm, Em, Am]], tempo: 1.45, pad: 1.15, lead: 0.75, sparkle: false },
+      ocean: { progs: [[Dm, Bb, F, C], [Dm, Am, Bb, F]], tempo: 1.6, pad: 1.5, lead: 0.62, sparkle: false },
+      cave: { progs: [[Am, Em, F, Em], [Am, F, Dm, Em]], tempo: 1.5, pad: 1.6, lead: 0.55, sparkle: false },
+      swamp: { progs: [[Dm, Am, Bb, F], [Dm, Bb, F, C]], tempo: 1.25, pad: 1.2, lead: 0.8, sparkle: false }
+    };
+    // The reef is the ocean mood with its own slow, wide table: it is where
+    // the Megalodon lives, so it should already feel vast before the fight.
+    MOODS.reef = { progs: [[Dm, Bb, Dm, Bb], [Am, Em, Am, Em]], tempo: 1.75, pad: 1.7, lead: 0.5, sparkle: false };
+    MOODS.temple = { progs: [[Am, F, Dm, E], [Am, Em, F, Dm]], tempo: 1.6, pad: 1.5, lead: 0.6, sparkle: false };
+
+    const seq = { prog: 0, chord: 0, pat: 0, gap: false, step: 0, lastMode: null, lastMood: null };
 
     const voice = (freq, when, dur, type, vol) => {
       const osc = this.ctx.createOscillator();
@@ -4702,6 +4741,23 @@ class SoundSystem {
         seq.lastMode = mode;
         seq.prog = 0; seq.chord = 0; seq.pat = 0; seq.gap = false; seq.step = 0;
       }
+      // Biome mood change: retune the same engine (key, tempo, voices) and
+      // dip the music bus for a beat so the change reads as a transition
+      // rather than as the soundtrack restarting.
+      const moodName = this.mood || 'forest';
+      if (moodName !== seq.lastMood && MOODS[moodName]) {
+        seq.lastMood = moodName;
+        seq.prog = 0; seq.chord = 0; seq.pat = 0; seq.gap = false;
+        if (this.ambientGain) {
+          const t = this.ctx.currentTime;
+          this.ambientGain.gain.cancelScheduledValues(t);
+          this.ambientGain.gain.setValueAtTime(this.ambientGain.gain.value, t);
+          this.ambientGain.gain.linearRampToValueAtTime(0.12, t + 0.35);
+          this.ambientGain.gain.linearRampToValueAtTime(
+            this.musicEnabled ? 0.75 : 0, t + 1.6);
+        }
+      }
+      const tune = MOODS[moodName] || MOODS.forest;
 
       // ---- Boss: fixed minor riff + stomping bass, constant tempo ----
       if (mode === 'boss') {
@@ -4717,7 +4773,7 @@ class SoundSystem {
       }
 
       const night = mode === 'night';
-      const progs = night ? NIGHT_PROGS : DAY_PROGS;
+      const progs = (tune.progs && !night ? tune.progs : (night ? NIGHT_PROGS : DAY_PROGS));
 
       // Minecraft's signature silence between pieces.
       if (seq.gap) {
@@ -4725,23 +4781,24 @@ class SoundSystem {
         seq.prog = (seq.prog + 1) % progs.length;
         seq.chord = 0;
         seq.pat = 0;
-        setTimeout(playNextNote, night ? 8000 + Math.random() * 5000 : 5500 + Math.random() * 3500);
+        const gapBase = night ? 8000 : 5500;
+        setTimeout(playNextNote, (gapBase + Math.random() * 5000) * tune.tempo);
         return;
       }
 
       // ---- Day / Night: arpeggiate the current chord of the progression ----
       const chord = progs[seq.prog][seq.chord];
       const lead = night ? chord[ARP[seq.pat]] / 2 : chord[ARP[seq.pat]];
-      const tempo = (night ? 980 : 760) + Math.floor(Math.random() * 140);
+      const tempo = ((night ? 980 : 760) + Math.floor(Math.random() * 140)) * tune.tempo;
 
       if (seq.pat === 0) {
         // When a chord lands: soft sustained pad + slow bass root underneath.
-        for (let i = 0; i < 3; i++) voice(chord[i], now, night ? 4.2 : 3.4, 'sine', night ? 0.035 : 0.045);
-        voice(chord[0] / 2, now, night ? 4.5 : 3.8, 'sine', 0.09);
+        for (let i = 0; i < 3; i++) voice(chord[i], now, night ? 4.2 : 3.4, 'sine', (night ? 0.035 : 0.045) * tune.pad);
+        voice(chord[0] / 2, now, night ? 4.5 : 3.8, 'sine', 0.09 * tune.pad);
       }
 
-      voice(lead, now, night ? 3.2 : 2.6, night ? 'triangle' : 'sine', night ? 0.11 : 0.13);
-      if (!night) voice(lead * 2, now, 1.2, 'triangle', 0.035); // gentle sparkle, day only
+      voice(lead, now, night ? 3.2 : 2.6, night ? 'triangle' : 'sine', (night ? 0.11 : 0.13) * tune.lead);
+      if (!night && tune.sparkle) voice(lead * 2, now, 1.2, 'triangle', 0.035); // gentle sparkle, day only
 
       // Advance: note -> next note ... end of progression -> silence -> next.
       seq.pat++;
@@ -8688,17 +8745,52 @@ class World {
         const wall = this.walls[rowBase + x];
         if (!wall || this.tiles[rowBase + x] !== TILES.AIR) continue;
         const sx = (x - originX) * T;
-        ctx.fillStyle = wall === HOUSE_WALL ? '#171c24' : wall === TILES.STONE ? '#262626' : '#2d1e12';
-        ctx.fillRect(sx, sy, T, T);
+        // Walls are the background seen through air: a house wall, a cave face,
+        // a shrine's stone. They were near-black (#171c24 / #262626), so every
+        // wall-backed pocket — a shrine interior, the starter house, a cave
+        // mouth — read as a solid black rectangle punched through the world.
+        // Each kind now gets its own readable mid-tone plus cheap texture, so
+        // the background still recedes behind the player and foreground tiles
+        // without looking like a hole in the render.
         if (wall === HOUSE_WALL) {
-          ctx.strokeStyle = 'rgba(100, 116, 139, 0.24)';
+          // Plastered wall of a lived-in room: warm grey with timber seams.
+          ctx.fillStyle = '#4a443c';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#3a352f';
+          ctx.fillRect(sx, sy + T - 3, T, 3);
+          ctx.fillStyle = '#5b544a';
+          ctx.fillRect(sx, sy + ((x + y) % 2) * 10, T, 1);
+          ctx.strokeStyle = 'rgba(15, 18, 24, 0.5)';
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(sx, sy + T - 1);
-          ctx.lineTo(sx + T, sy + T - 1);
-          ctx.moveTo(sx + ((x + y) % 2) * 12, sy);
-          ctx.lineTo(sx + ((x + y) % 2) * 12, sy + T);
+          const jx = sx + ((x + y) % 2) * 12;
+          ctx.moveTo(jx, sy);
+          ctx.lineTo(jx, sy + T);
           ctx.stroke();
+        } else if (wall === TILES.STONE) {
+          // Bare cave rock: mid grey with a speck of darker grain.
+          ctx.fillStyle = '#4b4b4b';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#575757';
+          ctx.fillRect(sx + ((x * 7 + y * 3) % 3) * 6, sy + ((x * 5 + y * 11) % 3) * 6, 7, 7);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+          ctx.fillRect(sx, sy + T - 2, T, 2);
+        } else if (wall === TILES.STONE_BRICK) {
+          // Worked masonry — shrines, vaults, ruins: coursed brick, readable
+          // even through air, so a sealed room looks built, not like a void.
+          ctx.fillStyle = '#6b7280';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#7c8697';
+          ctx.fillRect(sx + 1, sy + 1, T - 2, T - 4);
+          ctx.fillStyle = 'rgba(30, 35, 45, 0.55)';
+          ctx.fillRect(sx, sy + ((y % 2) ? 11 : 5), T, 2);
+          ctx.fillRect(sx + ((y % 2) ? T / 2 : 0), sy, 2, T);
+        } else {
+          // Soil wall behind a dug tunnel or a hollow.
+          ctx.fillStyle = '#4a3423';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#563f2b';
+          ctx.fillRect(sx + ((x * 3 + y * 7) % 3) * 7, sy + ((x * 11 + y * 5) % 3) * 7, 6, 6);
         }
       }
     }
@@ -24260,20 +24352,25 @@ class Megalodon {
       // through the fork, the short lower lobe, closed into the peduncle.
       // Both lobe edges run through raggedEdge(), so the crescent is torn
       // with bites whose depth scales with the phase and the damage taken.
+      // The upper lobe gets a SHOULDER point (a wide mid-lobe) so the
+      // crescent reads as a massive fin rather than two thin blades; bite
+      // amplitude is scaled to the lobe length so the shredding stays
+      // proportional at every phase.
       const upperRoot = { x: 34, y: -13 };
+      const shoulder = { x: -18, y: -96 };
       const upperTip = { x: -70, y: -126 };
       const fork = { x: -15, y: -24 };
       const lowerTip = { x: -60, y: 82 };
-      const upper = [upperRoot]
-        .concat(raggedEdge(upperRoot, upperTip, 5, 15 + tearAmp * 17, 11.3))
-        .concat(raggedEdge(upperTip, fork, 3, 10 + tearAmp * 13, 21.7));
+      const upper = [upperRoot, shoulder]
+        .concat(raggedEdge(shoulder, upperTip, 4, 9 + tearAmp * 11, 11.3))
+        .concat(raggedEdge(upperTip, fork, 3, 7 + tearAmp * 9, 21.7));
       // The lower lobe continues FROM the fork, straight out to its own tip.
       // Routing it through a `lowerRoot` at (-17, 20) instead filled the notch
       // with a 44px vertical wedge, which read as two lumps instead of one
       // crescent with a real V cut in it.
       const lower = [fork]
-        .concat(raggedEdge(fork, lowerTip, 4, 13 + tearAmp * 16, 41.9))
-        .concat(raggedEdge(lowerTip, { x: -32, y: 46 }, 2, 9 + tearAmp * 9, 51.3))
+        .concat(raggedEdge(fork, lowerTip, 4, 10 + tearAmp * 13, 41.9))
+        .concat(raggedEdge(lowerTip, { x: -32, y: 46 }, 2, 8 + tearAmp * 8, 51.3))
         .concat([{ x: 2, y: 22 }, { x: 32, y: 16 }]);
       // Droop + dash stretch the tail: fatigue sags it, a charge snaps it straight.
       const sag = (1 + droop * 0.35) * (dashing ? 0.86 : 1);
@@ -24439,17 +24536,31 @@ class Megalodon {
       const base       = spineAt(0.43, 0);
       // The sheet's dorsal: a big, heavy, swept-back triangle that leans into
       // the swim direction. Roots sit ON the back ridge (off=-1.0) so the fin
-      // merges with the hull instead of floating a sliver above it. Bleed
+      // merg with the hull instead of floating a sliver above it — and the
+      // BASE edge is traced along the ridge itself (sampled spine points, held
+      // a hair outside the hull line), so no background can show through
+      // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
       const tipX = base.x - 30 - (this.surge || 0) * 18 - (dashing ? 12 : 0);
       const tipY = base.y - bodyHalf(0.43) * 1.80 + finTilt * 14;
-      const pts = [
-        { x: rootFront.x + 4, y: rootFront.y + 3 },
-        { x: rootFront.x - 20, y: rootFront.y - bodyHalf(0.43) * 0.5 },
-        { x: tipX, y: tipY }
-      ].concat(raggedEdge({ x: tipX, y: tipY },
-        { x: base.x - 62, y: base.y - bodyHalf(0.43) * 0.42 }, 4, 8 + tearAmp * 13, 61.7))
-        .concat([{ x: rootBack.x, y: rootBack.y + 3 }]);
+      // Leading edge: rear root sweeps up and forward to the tip.
+      const leading = raggedEdge(
+        { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.45 },
+        { x: tipX, y: tipY }, 4, 6 + tearAmp * 10, 61.7);
+      // Trailing edge: tip falls back to the front root.
+      const trailing = raggedEdge({ x: tipX, y: tipY },
+        { x: rootFront.x + 2, y: rootFront.y - bodyHalf(0.43) * 0.30 }, 4, 7 + tearAmp * 12, 63.1);
+      // Base: ride the actual back ridge so the fin is one piece with the hull.
+      const baseLine = [];
+      for (let u = 0.62; u >= 0.235; u -= 0.035) {
+        const p = spineAt(u, -1.06);
+        baseLine.push({ x: p.x, y: p.y + 2 });
+      }
+      const pts = [{ x: rootBack.x, y: rootBack.y + 3 }]
+        .concat(leading)
+        .concat(trailing)
+        .concat([{ x: rootFront.x + 4, y: rootFront.y + 3 }])
+        .concat(baseLine);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finLite;
       ctx.fill();
@@ -24480,16 +24591,24 @@ class Megalodon {
         ctx.moveTo(tipX - 16, tipY + 10); ctx.lineTo(tipX + 2, tipY + 30); ctx.lineTo(tipX - 26, tipY + 26);
         ctx.closePath(); ctx.fill();
       }
-      // Second dorsal.
+      // Second dorsal — smaller, further back, its base also ridge-traced so it
+      // can never read as a loose triangle hovering over the back.
       {
         const rF = spineAt(0.30, -0.86);
         const rB = spineAt(0.235, -0.9);
         const bb = spineAt(0.265, 0);
         const tp = { x: bb.x - 16, y: bb.y - bodyHalf(0.265) * 1.28 + finTilt * 8 };
+        const ridge = [];
+        for (let u = 0.30; u >= 0.235; u -= 0.022) {
+          const p = spineAt(u, -1.04);
+          ridge.push({ x: p.x, y: p.y + 2 });
+        }
         ctx.beginPath();
         ctx.moveTo(rF.x, rF.y + 3);
         ctx.quadraticCurveTo(bb.x - 8, bb.y - bodyHalf(0.265) * 0.8, tp.x, tp.y);
         ctx.quadraticCurveTo(bb.x - 34, bb.y - bodyHalf(0.265) * 0.4, rB.x, rB.y + 3);
+        // Sweep the base back along the ridge to the front root.
+        for (const p of ridge) ctx.lineTo(p.x, p.y);
         ctx.closePath();
         ctx.fillStyle = flash ? '#e2e8f0' : finDark;
         ctx.fill();
@@ -24557,21 +24676,24 @@ class Megalodon {
       ctx.lineWidth = 4;
       ctx.stroke();
       // Rays + the trailing-edge shadow that gives the wing thickness.
+      // The rays are held INSIDE the wing: the old strokes ran past the
+      // trailing edge to mid.x-112, so in game they read as loose strands
+      // hanging off the fin rather than as membrane structure.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
       ctx.lineWidth = 1.8;
       // Rays: three clean strokes across the wing, not five scribbled lines.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
         ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 5);
-        ctx.quadraticCurveTo(mid.x - 60, mid.y + wing * 0.9 + r * 6,
-          mid.x - 112 - f(0.2) * 20, mid.y + wing * 1.15 + r * 8);
+        ctx.quadraticCurveTo(mid.x - 34, mid.y + wing * 0.78 + r * 6,
+          mid.x - 58 - f(0.2) * 12, mid.y + wing * 0.92 + r * 5);
         ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.4)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(mid.x - 70, mid.y + wing * 0.86);
-      ctx.quadraticCurveTo(mid.x - 100, mid.y + wing * 1.08, mid.x - 120 - f(0.15) * 24, mid.y + wing * 1.2);
+      ctx.quadraticCurveTo(mid.x - 96, mid.y + wing * 1.04, mid.x - 104 - f(0.15) * 12, mid.y + wing * 1.16);
       ctx.stroke();
     }
 
@@ -31744,6 +31866,27 @@ class Game {
     if (announce) this.showToast(`🔊 Volume: ${pct}%`);
   }
 
+  /**
+   * Which musical mood the player is standing in. Underground (or inside the
+   * reef temple) is its own sound regardless of the biome overhead; the
+   * ocean dimension and the reef band get the deep water voice; everything
+   * else follows the surface biome.
+   */
+  currentMusicMood() {
+    const world = this.world;
+    const player = this.player;
+    if (!world || !player) return 'forest';
+    const tx = Math.floor((player.x + player.width / 2) / TILE_SIZE);
+    const ty = Math.floor((player.y + player.height / 2) / TILE_SIZE);
+    if (typeof world.isInOcean === 'function' && world.isInOcean()) return 'ocean';
+    if (typeof world.isInSpace === 'function' && world.isInSpace()) return 'snow';
+    if (typeof world.isInsideReefTemple === 'function' && world.isInsideReefTemple(tx, ty)) return 'temple';
+    if (ty > 56 || ty > world.surfaceHeights[Math.max(0, Math.min(world.width - 1, tx))] + 8) return 'cave';
+    const biome = typeof world.getBiomeAtX === 'function' ? world.getBiomeAtX(tx) : 'forest';
+    if (biome === 'reef') return 'reef';
+    return biome;
+  }
+
   applyMusic() {
     this.sound.setMusicEnabled(this.settings.music !== false);
   }
@@ -36731,6 +36874,14 @@ this.player.dodgeTime = 0;
     if (this.bedNagTimer > 0) this.bedNagTimer = Math.max(0, this.bedNagTimer - dt);
     this.sound.isNight = this.world.isNight();
     this.sound.isBoss = !!(this.boss && !this.boss.dead);
+    // Music follows the player through the world. Checked on a slow timer:
+    // the mood only changes as the biome does, so there is nothing to gain
+    // from polling every frame.
+    this.moodTimer = (this.moodTimer || 0) - dt;
+    if (this.moodTimer <= 0) {
+      this.moodTimer = 0.5;
+      this.sound.setMood(this.currentMusicMood());
+    }
 
     // Extreme weather (rain, storms, blizzards, sandstorms, fog).
     // Frozen solid while the player is inside the Ossuary: there is no sky up

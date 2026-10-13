@@ -2707,6 +2707,27 @@ class Game {
     if (announce) this.showToast(`🔊 Volume: ${pct}%`);
   }
 
+  /**
+   * Which musical mood the player is standing in. Underground (or inside the
+   * reef temple) is its own sound regardless of the biome overhead; the
+   * ocean dimension and the reef band get the deep water voice; everything
+   * else follows the surface biome.
+   */
+  currentMusicMood() {
+    const world = this.world;
+    const player = this.player;
+    if (!world || !player) return 'forest';
+    const tx = Math.floor((player.x + player.width / 2) / TILE_SIZE);
+    const ty = Math.floor((player.y + player.height / 2) / TILE_SIZE);
+    if (typeof world.isInOcean === 'function' && world.isInOcean()) return 'ocean';
+    if (typeof world.isInSpace === 'function' && world.isInSpace()) return 'snow';
+    if (typeof world.isInsideReefTemple === 'function' && world.isInsideReefTemple(tx, ty)) return 'temple';
+    if (ty > 56 || ty > world.surfaceHeights[Math.max(0, Math.min(world.width - 1, tx))] + 8) return 'cave';
+    const biome = typeof world.getBiomeAtX === 'function' ? world.getBiomeAtX(tx) : 'forest';
+    if (biome === 'reef') return 'reef';
+    return biome;
+  }
+
   applyMusic() {
     this.sound.setMusicEnabled(this.settings.music !== false);
   }
@@ -7694,6 +7715,14 @@ this.player.dodgeTime = 0;
     if (this.bedNagTimer > 0) this.bedNagTimer = Math.max(0, this.bedNagTimer - dt);
     this.sound.isNight = this.world.isNight();
     this.sound.isBoss = !!(this.boss && !this.boss.dead);
+    // Music follows the player through the world. Checked on a slow timer:
+    // the mood only changes as the biome does, so there is nothing to gain
+    // from polling every frame.
+    this.moodTimer = (this.moodTimer || 0) - dt;
+    if (this.moodTimer <= 0) {
+      this.moodTimer = 0.5;
+      this.sound.setMood(this.currentMusicMood());
+    }
 
     // Extreme weather (rain, storms, blizzards, sandstorms, fog).
     // Frozen solid while the player is inside the Ossuary: there is no sky up

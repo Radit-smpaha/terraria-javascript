@@ -3280,17 +3280,52 @@ class World {
         const wall = this.walls[rowBase + x];
         if (!wall || this.tiles[rowBase + x] !== TILES.AIR) continue;
         const sx = (x - originX) * T;
-        ctx.fillStyle = wall === HOUSE_WALL ? '#171c24' : wall === TILES.STONE ? '#262626' : '#2d1e12';
-        ctx.fillRect(sx, sy, T, T);
+        // Walls are the background seen through air: a house wall, a cave face,
+        // a shrine's stone. They were near-black (#171c24 / #262626), so every
+        // wall-backed pocket — a shrine interior, the starter house, a cave
+        // mouth — read as a solid black rectangle punched through the world.
+        // Each kind now gets its own readable mid-tone plus cheap texture, so
+        // the background still recedes behind the player and foreground tiles
+        // without looking like a hole in the render.
         if (wall === HOUSE_WALL) {
-          ctx.strokeStyle = 'rgba(100, 116, 139, 0.24)';
+          // Plastered wall of a lived-in room: warm grey with timber seams.
+          ctx.fillStyle = '#4a443c';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#3a352f';
+          ctx.fillRect(sx, sy + T - 3, T, 3);
+          ctx.fillStyle = '#5b544a';
+          ctx.fillRect(sx, sy + ((x + y) % 2) * 10, T, 1);
+          ctx.strokeStyle = 'rgba(15, 18, 24, 0.5)';
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(sx, sy + T - 1);
-          ctx.lineTo(sx + T, sy + T - 1);
-          ctx.moveTo(sx + ((x + y) % 2) * 12, sy);
-          ctx.lineTo(sx + ((x + y) % 2) * 12, sy + T);
+          const jx = sx + ((x + y) % 2) * 12;
+          ctx.moveTo(jx, sy);
+          ctx.lineTo(jx, sy + T);
           ctx.stroke();
+        } else if (wall === TILES.STONE) {
+          // Bare cave rock: mid grey with a speck of darker grain.
+          ctx.fillStyle = '#4b4b4b';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#575757';
+          ctx.fillRect(sx + ((x * 7 + y * 3) % 3) * 6, sy + ((x * 5 + y * 11) % 3) * 6, 7, 7);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+          ctx.fillRect(sx, sy + T - 2, T, 2);
+        } else if (wall === TILES.STONE_BRICK) {
+          // Worked masonry — shrines, vaults, ruins: coursed brick, readable
+          // even through air, so a sealed room looks built, not like a void.
+          ctx.fillStyle = '#6b7280';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#7c8697';
+          ctx.fillRect(sx + 1, sy + 1, T - 2, T - 4);
+          ctx.fillStyle = 'rgba(30, 35, 45, 0.55)';
+          ctx.fillRect(sx, sy + ((y % 2) ? 11 : 5), T, 2);
+          ctx.fillRect(sx + ((y % 2) ? T / 2 : 0), sy, 2, T);
+        } else {
+          // Soil wall behind a dug tunnel or a hollow.
+          ctx.fillStyle = '#4a3423';
+          ctx.fillRect(sx, sy, T, T);
+          ctx.fillStyle = '#563f2b';
+          ctx.fillRect(sx + ((x * 3 + y * 7) % 3) * 7, sy + ((x * 11 + y * 5) % 3) * 7, 6, 6);
         }
       }
     }
