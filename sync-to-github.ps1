@@ -35,7 +35,13 @@ $ErrorActionPreference = 'Stop'
 # the game but not the server cannot host across machines. qa-multiplayer.js
 # travels with it so a fresh clone can prove the session end to end.
 $GameFiles = @(
-  'app.py', 'requirements.txt', 'terraria.html', 'terraria.css', 'server.js',
+  'app.py', 'requirements.txt', '.gitignore', 'terraria.html', 'terraria.css',
+  # Self-contained single-file build served by GitHub Pages and embedded by
+  # app.py via INLINED_URL. Build it fresh first: node qa-inline-build.js
+  # .gitignore travels too so the deployed copy stops ignoring the inlined
+  # build above (otherwise `git add -A` here skips it and Pages 404s).
+  'terraria.inlined.html',
+  'server.js',
   'audio.js', 'particles.js', 'world.js', 'weather.js', 'entities.js',
   'underworld.js', 'juice.js', 'npcs.js', 'journey.js', 'multiplayer.js', 'space.js', 'ocean.js',
   'terraria.js', 'qa-multiplayer.js', 'qa-fps-speed.js', 'qa-boss-walls.js',
