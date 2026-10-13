@@ -1002,6 +1002,14 @@ class Player {
   }
 
   resolveWorldCollisions(world, dropThrough) {
+    // Safety net first: anything that has ever written the player's position
+    // directly (boss suction pulls, teleports, save restores, knockback) could
+    // leave the AABB overlapping solid rock or outside the world entirely, and
+    // the velocity-based solver below can only BLOCK motion — it can never
+    // push a player who is already embedded back out. Eject them before this
+    // frame's movement is integrated so they recover on the very next tick.
+    this.unstickFromSolids(world);
+
     // Remember the falling speed so we can detect heavy landings.
     this._impactVy = this.vy;
 
@@ -1094,6 +1102,74 @@ class Player {
       this.coyoteTimer = 0.1;
     }
     this.wasOnGround = this.onGround;
+  }
+
+  /**
+   * Recover the player from an impossible position: embedded inside a solid
+   * tile, or outside the map.
+   *
+   * The physics solver only ever blocks NEW motion into a wall, so anything
+   * that teleports the player (the Megalodon's vortex/maw suction, a bed
+   * respawn, a rift exit) can leave them stuck inside rock with no velocity
+   * to resolve — a soft-lock — or past the world border where the camera can
+   * never follow. This runs at the top of every physics step, costs nothing
+   * when the player is fine (a 2x3 AABB probe), and otherwise relocates them
+   * to the nearest position that is genuinely open. Walk-through platforms
+   * are treated as air, matching how they are everywhere else in movement.
+   */
+  unstickFromSolids(world) {
+    const T = TILE_SIZE;
+    const blocks = (tx, ty) => {
+      const tile = world.getTile(tx, ty);
+      const prop = TILE_PROPERTIES[tile];
+      return !!(prop && prop.solid && !prop.isPlatform);
+    };
+    const free = (x, y) => {
+      if (x < 0 || y < 0) return false;
+      if (x + this.width > world.pixelWidth || y + this.height > world.pixelHeight) return false;
+      const x0 = Math.floor(x / T), x1 = Math.floor((x + this.width - 1) / T);
+      const y0 = Math.floor(y / T), y1 = Math.floor((y + this.height - 1) / T);
+      for (let ty = y0; ty <= y1; ty++) {
+        for (let tx = x0; tx <= x1; tx++) {
+          if (blocks(tx, ty)) return false;
+        }
+      }
+      return true;
+    };
+
+    // Clamped target: anything outside the map is an impossible position even
+    // when the tiles it overlaps happen to be inside it.
+    const maxX = world.pixelWidth - this.width;
+    const maxY = world.pixelHeight - this.height;
+    const cx = Math.max(0, Math.min(maxX, this.x));
+    const cy = Math.max(0, Math.min(maxY, this.y));
+    if (cx === this.x && cy === this.y && free(this.x, this.y)) return;
+
+    // Eject: nearest open spot to where the player should be. Upward first —
+    // the common failure is being shoved into the floor — then a widening
+    // ring of the eight directions, nearest first.
+    const dirs = [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]];
+    for (let r = 1; r <= 10; r++) {
+      for (const [dx, dy] of dirs) {
+        const nx = cx + dx * r * T;
+        const ny = cy + dy * r * T;
+        if (free(nx, ny)) {
+          this.x = nx;
+          this.y = ny;
+          this.vx = 0;
+          this.vy = 0;
+          this.onGround = false;
+          return;
+        }
+      }
+    }
+
+    // Genuinely buried (solid rock every way out): keep the player inside the
+    // world at least, so the camera, HUD and death handling keep working.
+    this.x = cx;
+    this.y = cy;
+    this.vx = 0;
+    this.vy = 0;
   }
 
   startSwing(duration = 0.22) {

@@ -270,6 +270,31 @@ class ParticleSystem {
     }
   }
 
+  /**
+   * Dust and pollen motes: the air-suspension layer that makes a scene feel
+   * lit rather than merely visible. Slow, nearly weightless specks drifting on
+   * a lazy sine sway; they exist in every biome, stay far in the background
+   * (small, translucent) and are the cheapest possible way to suggest depth.
+   */
+  initAmbientMotes(worldWidth, worldHeight) {
+    this.ambientMotes = [];
+    const count = Math.max(16, Math.round(46 * this.density));
+    for (let i = 0; i < count; i++) {
+      this.ambientMotes.push({
+        x: Math.random() * worldWidth,
+        y: Math.random() * worldHeight * 0.75,
+        vx: (Math.random() - 0.35) * 0.22,
+        vy: (Math.random() - 0.6) * 0.18,
+        size: Math.random() < 0.75 ? 1 : 2,
+        phase: Math.random() * Math.PI * 2,
+        swaySpeed: 0.3 + Math.random() * 0.5,
+        swayAmp: 0.25 + Math.random() * 0.5,
+        // Warm motes catch the sun; cool ones read as shade in the air.
+        warm: Math.random() > 0.45
+      });
+    }
+  }
+
   update(dt, worldWidth, worldHeight) {
     // Update regular particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
@@ -324,9 +349,35 @@ class ParticleSystem {
         leaf.y = Math.random() * -100;
       }
     }
+
+    // Update dust motes: they wrap softly on all four sides so the field never
+    // empties out while the camera crosses the world.
+    if (this.ambientMotes) {
+      for (const m of this.ambientMotes) {
+        m.phase += m.swaySpeed * dt;
+        m.x += m.vx + Math.sin(m.phase) * m.swayAmp;
+        m.y += m.vy + Math.cos(m.phase * 0.7) * m.swayAmp * 0.4;
+        if (m.y < -30) m.y = worldHeight * 0.75;
+        else if (m.y > worldHeight * 0.78) m.y = -20;
+        if (m.x < -30) m.x = worldWidth;
+        else if (m.x > worldWidth + 30) m.x = -20;
+      }
+    }
   }
 
   render(ctx, camera) {
+    // Dust and pollen motes first: they sit furthest back, so they must not
+    // wash over anything with more presence than they have.
+    if (this.ambientMotes) {
+      for (const m of this.ambientMotes) {
+        const sx = m.x - camera.x;
+        const sy = m.y - camera.y;
+        if (sx < -10 || sx > camera.viewportWidth + 10 || sy < -10 || sy > camera.viewportHeight + 10) continue;
+        ctx.fillStyle = m.warm ? 'rgba(253, 230, 138, 0.5)' : 'rgba(191, 219, 254, 0.45)';
+        ctx.fillRect(sx | 0, sy | 0, m.size, m.size);
+      }
+    }
+
     // Ambient Leaves in forest
     for (const leaf of this.ambientLeaves) {
       const sx = leaf.x - camera.x;
