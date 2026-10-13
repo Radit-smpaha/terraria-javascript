@@ -4783,10 +4783,12 @@ class Megalodon {
       // Membrane rays + leading-edge highlight.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.28)';
       ctx.lineWidth = 1.5;
-      for (let r = 0; r < 5; r++) {
+      // Membrane rays: a FEW clean strokes, not a fan of 5 that scribbles the
+      // fin. Three read as fin structure; five read as clutter at game scale.
+      for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(rootFront.x - 6, rootFront.y - 10 - r * 2);
-        ctx.lineTo(tipX + 8 + r * 3, tipY + 16 + r * 8);
+        ctx.moveTo(rootFront.x - 6, rootFront.y - 10 - r * 3);
+        ctx.lineTo(tipX + 8 + r * 5, tipY + 16 + r * 13);
         ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(206, 224, 255, 0.30)';
@@ -4878,11 +4880,12 @@ class Megalodon {
       // Rays + the trailing-edge shadow that gives the wing thickness.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
       ctx.lineWidth = 1.8;
-      for (let r = 0; r < 5; r++) {
+      // Rays: three clean strokes across the wing, not five scribbled lines.
+      for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 3);
-        ctx.quadraticCurveTo(mid.x - 60, mid.y + wing * 0.9 + r * 4,
-          mid.x - 112 - f(0.2) * 20, mid.y + wing * 1.15 + r * 5);
+        ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 5);
+        ctx.quadraticCurveTo(mid.x - 60, mid.y + wing * 0.9 + r * 6,
+          mid.x - 112 - f(0.2) * 20, mid.y + wing * 1.15 + r * 8);
         ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.4)';
@@ -4897,23 +4900,27 @@ class Megalodon {
     // 6. GILL SLITS â€” five slashes behind the head, fluttering with breath.
     // ======================================================================
     {
-      const open = Math.max(0.18, Math.min(1.4,
-        (this.gillFlare || 0) * 0.55 + (this.surge || 0) * 0.3 - droop * 0.3));
+      const open = Math.max(0.18, Math.min(1.2,
+        (this.gillFlare || 0) * 0.5 + (this.surge || 0) * 0.25 - droop * 0.3));
+      // Five SHORT, clean, evenly-spaced slits on the upper flank only. The old
+      // gills spanned the whole body depth (-0.62 → 0.34) and flared hugely,
+      // so they scribbled vertical bars across the torso; these stay a tidy row
+      // just behind the eye, breathing a little with the swim cycle.
       for (let g = 0; g < 5; g++) {
-        const u = 0.80 - g * 0.042;
-        const top = spineAt(u, -0.62);
-        const bot = spineAt(u - 0.005, 0.34);
-        const len = (bot.y - top.y) * (0.5 + open * 0.5);
-        ctx.strokeStyle = ph >= 2 ? 'rgba(90, 16, 28, 0.85)' : 'rgba(6, 10, 20, 0.78)';
-        ctx.lineWidth = 3;
+        const u = 0.80 - g * 0.046;
+        const top = spineAt(u, -0.52);
+        const bot = spineAt(u - 0.004, 0.02);
+        const len = (bot.y - top.y) * (0.5 + open * 0.35);
+        ctx.strokeStyle = ph >= 2 ? 'rgba(90, 16, 28, 0.82)' : 'rgba(6, 10, 20, 0.72)';
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.moveTo(top.x - 2, top.y + 8);
-        ctx.quadraticCurveTo(top.x - 6, top.y + 8 + len * 0.5, top.x - 3, top.y + 8 + len);
+        ctx.moveTo(top.x - 2, top.y + 6);
+        ctx.quadraticCurveTo(top.x - 6, top.y + 6 + len * 0.5, top.x - 3, top.y + 6 + len);
         ctx.stroke();
         // Phase 2+: the gills bleed light in the dark water.
         if (ph >= 2 && woundGlow > 0.2) {
           ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.18 + woundGlow * 0.3).toFixed(2) + ')';
-          ctx.lineWidth = 1.6;
+          ctx.lineWidth = 1.4;
           ctx.stroke();
         }
       }
@@ -5184,33 +5191,34 @@ class Megalodon {
         }
         ctx.stroke();
         // LOWER TEETH: they ride the top edge of the dropped jaw, pointing up
-        // into the gape so the two rows interleave when it snaps shut.
-        const lowerTeeth = 13;
+        // into the gape so the two rows interleave when it snaps shut. Fewer,
+        // cleaner teeth (was 13, oversized and overlapping).
+        const lowerTeeth = 9;
         for (let t = 0; t < lowerTeeth; t++) {
           const f = 0.04 + (t / (lowerTeeth - 1)) * 0.94;
           const base = jawPt(f);
           const tg = jawTangent(f);
-          const tlen = (9 + Math.sin(f * Math.PI) * 19 + open01 * 5)
+          const tlen = (8 + Math.sin(f * Math.PI) * 13 + open01 * 4)
             * (ph === 3 && t % 3 === 1 ? 0.45 : 1);   // apex: teeth snapped off
           // direction: from the jaw line up into the gape = (-t.y, t.x) reversed
-          this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 4.4, tooth);
+          this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 3.4, tooth);
         }
       }
 
-      // ---- UPPER TEETH: two staggered rows hanging from the upper lip. ----
+      // ---- UPPER TEETH: ONE clean, evenly-spaced row hanging from the upper
+      //      lip. The old two staggered rows (28 overlapping triangles) read as
+      //      a messy white zigzag; a single row is how a shark's real serrated
+      //      bite looks and keeps every tooth individually readable.
       {
-        for (let row = 0; row < 2; row++) {
-          const count = row === 0 ? 15 : 13;
-          const scale = row === 0 ? 1 : 0.74;
-          for (let t = 0; t < count; t++) {
-            const f = 0.02 + (t / (count - 1)) * 0.96 + row * 0.05;
-            const base = lipPt(Math.min(1, f));
-            const tg = lipTangent(Math.min(1, f));
-            const tlen = (11 + Math.sin(f * Math.PI) * 25 + open01 * 6) * scale
-              * (ph === 3 && t % 3 === 2 ? 0.5 : 1);  // apex: teeth snapped off
-            // direction: from the lip down into the gape = (t.y, -t.x)
-            this._toothTri(ctx, base.x - tg.y * 1.5, base.y + tg.x * 1.5, -tg.y, tg.x, tlen, 4.8 * scale, tooth);
-          }
+        const count = 11;
+        for (let t = 0; t < count; t++) {
+          const f = 0.03 + (t / (count - 1)) * 0.94;
+          const base = lipPt(f);
+          const tg = lipTangent(f);
+          const tlen = (9 + Math.sin(f * Math.PI) * 16 + open01 * 4)
+            * (ph === 3 && t % 3 === 2 ? 0.5 : 1);  // apex: a tooth snapped off
+          // direction: from the lip down into the gape = (t.y, -t.x)
+          this._toothTri(ctx, base.x - tg.y * 1.4, base.y + tg.x * 1.4, -tg.y, tg.x, tlen, 3.6, tooth);
         }
         // Gum line along the upper jaw, just inside the lip.
         ctx.strokeStyle = gum;
@@ -5233,11 +5241,11 @@ class Megalodon {
         ctx.beginPath();
         traceSmooth(ctx, [closedY(0.06), closedY(0.4), closedY(0.75), closedY(0.98)]);
         ctx.stroke();
-        for (let t = 0; t < 9; t++) {
-          const f = 0.16 + t * 0.095;
+        for (let t = 0; t < 7; t++) {
+          const f = 0.18 + t * 0.105;
           const base = lipPt(f);
           const tg = lipTangent(f);
-          this._toothTri(ctx, base.x - tg.y * 2, base.y + tg.x * 2, -tg.y, tg.x,
+          this._toothTri(ctx, base.x - tg.y * 1.4, base.y + tg.x * 1.4, -tg.y, tg.x,
             8 + Math.sin(f * Math.PI) * 5, 3.4, tooth);
         }
       }
@@ -5424,16 +5432,26 @@ class Megalodon {
    *  (nx,ny) the unit direction the point aims INTO the gape. */
   _toothTri(c, x, y, nx, ny, len, halfW, fill) {
     const px = -ny, py = nx;                     // perpendicular of the aim
-    const jag = (this._hash01(x * 0.37 + y * 0.11) - 0.5) * 0.9;
-    c.fillStyle = fill;
-    c.strokeStyle = 'rgba(6, 10, 20, 0.55)';
-    c.lineWidth = 1.5;
+    // A CLEAN, crisp triangle. The old random per-tooth `jag` plus a heavy
+    // outline on ~50 overlapping teeth read as a messy white zigzag; this is a
+    // smooth sliver with only a soft rim, so each tooth stays individually
+    // readable against the dark mouth without scribbling over its neighbours.
+    const tipX = x + nx * len, tipY = y + ny * len;
     c.beginPath();
     c.moveTo(x + px * halfW, y + py * halfW);
-    c.lineTo(x - px * halfW, y - py * halfW);
-    c.lineTo(x + nx * len + px * jag, y + ny * len + py * jag);
+    c.quadraticCurveTo(x + nx * len * 0.16, y + ny * len * 0.16, tipX, tipY);
+    c.quadraticCurveTo(x + nx * len * 0.16, y + ny * len * 0.16, x - px * halfW, y - py * halfW);
     c.closePath();
+    c.fillStyle = fill;
     c.fill();
+    c.strokeStyle = 'rgba(10, 16, 28, 0.34)';    // thin, soft rim — not a scribble
+    c.lineWidth = 1;
+    c.stroke();
+    c.strokeStyle = 'rgba(96, 34, 44, 0.30)';    // gum-side shade: teeth sit IN the jaw
+    c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(x + px * halfW * 0.9, y + py * halfW * 0.9);
+    c.lineTo(x - px * halfW * 0.9, y - py * halfW * 0.9);
     c.stroke();
   }
 
