@@ -1266,46 +1266,173 @@ class Player {
     ctx.restore();
   }
 
+  /**
+   * The player's body — a Terraria-style pixel model. It is built from the
+   * same rect primitives as before (no spritesheet), but with the things that
+   * make a figure read as a CHARACTER rather than a stack of boxes:
+   *   - a real hair shape with fringe and sideburn, and a shaded face with
+   *     two facing-correct eyes, a nose and a chin shadow;
+   *   - a torso with shoulder seams, a chest highlight along the lit side and
+   *     a proper belt;
+   *   - TWO arms that swing against the walk cycle, so the run has a cycle
+   *     instead of a bob;
+   *   - TWO legs with a real stride (alternating offsets, plus a lift on the
+   *     forward leg) and boots with a lit toe and a sole;
+   *   - a thin dark keyline around the silhouette so the player never
+   *     disappears into dark caves or the ocean.
+   * The pose is derived from the committed movement state, and every frame is
+   * deterministic from it, so the sprite never twitches while standing still.
+   */
   drawPlayerBody(ctx, ox, oy) {
-    // Terraria-style Pixel Player Model
-    // 1. Hair / Helmet
-    ctx.fillStyle = '#b45309'; // Copper/Golden hair
-    ctx.fillRect(ox + 3, oy + 2, 12, 6);
-    ctx.fillRect(ox + 2, oy + 4, 3, 5);
+    // Walk cycle: a real stride (two legs alternating) instead of both legs
+    // shortening by the same sine. Cadence follows wall-clock time so the
+    // figure never freezes mid-stride between two physics steps, and the model
+    // is a fixed size, so speed scales nothing.
+    this.animClock = (this.animClock || 0) + (Date.now() - (this.animClockLast || Date.now()));
+    this.animClockLast = Date.now();
+    const t = this.animClock * 0.001;
+    const moving = Math.abs(this.vx) > 0.2;
+    const airborne = !this.onGround;
+    const cadence = moving ? Math.sin(t * 11) : 0;
+    const cadence2 = moving ? Math.cos(t * 11) : 0;
+    const stride = moving ? 2.4 : 0;
+    // Idle breathing keeps a standing player alive without animating the legs.
+    const breathe = moving ? 0 : Math.sin(t * 1.8) * 0.5;
+    const legL = moving ? cadence * stride : 0;
+    const legR = moving ? -cadence * stride : 0;
+    const liftL = moving && cadence < -0.55 ? -1 : 0;
+    const liftR = moving && cadence > 0.55 ? -1 : 0;
+    // A falling/rising pose tucks the legs so the silhouette reads as a jump.
+    const jumpTuck = airborne ? (this.vy < 0 ? 2 : 1) : 0;
+    // Arm swing: opposite the legs, and raised while climbing/falling.
+    const armL = moving ? -cadence2 * 4 : Math.sin(t * 1.8) * 0.6;
+    const armR = moving ? cadence2 * 4 : 0;
+    const armRaise = airborne ? (this.vy < 0 ? -3 : 3) : 0;
 
-    // 2. Head / Face
-    ctx.fillStyle = '#fed7aa'; // Skin tone
-    ctx.fillRect(ox + 4, oy + 6, 10, 8);
+    const skin = '#fed7aa';
+    const skinShade = '#f0bd8a';
+    const skinDeep = '#c98a5d';
+    const hair = '#b45309';
+    const hairDark = '#8a3f06';
+    const tunic = '#2563eb';
+    const tunicDark = '#1d4ed8';
+    const tunicDeep = '#16309c';
+    const pants = '#334155';
+    const pantsDark = '#1e293b';
+    const boot = '#78350f';
+    const bootDark = '#55240a';
+    const line = 'rgba(6, 10, 22, 0.85)';
+    const hi = 'rgba(255, 255, 255, 0.35)';
 
-    // Eyes
-    ctx.fillStyle = '#1e3a8a';
-    ctx.fillRect(ox + 10, oy + 8, 3, 3);
+    // ---- cape/ponytail: a small tail of hair behind the head ---------------
+    ctx.fillStyle = hairDark;
+    ctx.fillRect(ox - 2, oy + 5, 4, 6);
+
+    // ---- hair --------------------------------------------------------------
+    ctx.fillStyle = hair;
+    ctx.fillRect(ox + 3, oy + 1, 12, 3);        // crown
+    ctx.fillRect(ox + 2, oy + 3, 2, 5);        // left sideburn
+    ctx.fillRect(ox + 14, oy + 3, 1, 5);       // right edge
+    ctx.fillStyle = hairDark;
+    ctx.fillRect(ox + 4, oy + 3, 9, 1);        // fringe shadow under the crown
+    ctx.fillStyle = hi;
+    ctx.fillRect(ox + 6, oy + 1, 5, 1);        // lit crown
+
+    // ---- face --------------------------------------------------------------
+    ctx.fillStyle = skin;
+    ctx.fillRect(ox + 4, oy + 5, 10, 8);
+    ctx.fillStyle = skinShade;
+    ctx.fillRect(ox + 12, oy + 5, 2, 8);        // shaded cheek (away from light)
+    ctx.fillStyle = skinDeep;
+    ctx.fillRect(ox + 4, oy + 12, 10, 1);       // chin shadow
+    ctx.fillStyle = hi;
+    ctx.fillRect(ox + 4, oy + 5, 6, 1);         // brow light
+    // Eyes: two pixels with a lit catchlight; the far eye is one short of the
+    // near one, which is what makes a 3/4 pixel face read as turned.
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(ox + 10, oy + 8, 1, 1);
+    ctx.fillRect(ox + 8, oy + 7, 2, 3);
+    ctx.fillRect(ox + 11, oy + 7, 2, 3);
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fillRect(ox + 9, oy + 7, 2, 3);
+    ctx.fillRect(ox + 12, oy + 8, 1, 2);
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(ox + 9, oy + 8, 1, 1);
+    // Nose + mouth: two mid pixels, no more.
+    ctx.fillStyle = skinDeep;
+    ctx.fillRect(ox + 10, oy + 9, 1, 2);
+    ctx.fillStyle = '#9a3b2e';
+    ctx.fillRect(ox + 9, oy + 11, 2, 1);
 
-    // 3. Torso / Shirt
-    ctx.fillStyle = '#2563eb'; // Blue adventurer tunic
-    ctx.fillRect(ox + 3, oy + 14, 12, 11);
-    ctx.fillStyle = '#1d4ed8'; // Belt / shadows
-    ctx.fillRect(ox + 3, oy + 22, 12, 3);
-    ctx.fillStyle = '#f59e0b'; // Gold belt buckle
-    ctx.fillRect(ox + 8, oy + 22, 3, 3);
+    // ---- torso -------------------------------------------------------------
+    ctx.fillStyle = tunic;
+    ctx.fillRect(ox + 3, oy + 14, 12, 11 + breathe);
+    ctx.fillStyle = tunicDark;
+    ctx.fillRect(ox + 3, oy + 23 + breathe, 12, 2);          // hem
+    ctx.fillStyle = tunicDeep;
+    ctx.fillRect(ox + 12, oy + 15, 3, 8);                     // shaded side
+    ctx.fillStyle = hi;
+    ctx.fillRect(ox + 4, oy + 15, 5, 1);                      // shoulder highlight
+    // Collar seam + a chest strap so the tunic has direction.
+    ctx.fillStyle = tunicDeep;
+    ctx.fillRect(ox + 3, oy + 14, 12, 1);
+    ctx.fillRect(ox + 8, oy + 16, 2, 7 + breathe);
+    // Belt and buckle.
+    ctx.fillStyle = pantsDark;
+    ctx.fillRect(ox + 3, oy + 22 + breathe, 12, 3);
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(ox + 8, oy + 22 + breathe, 3, 3);
+    ctx.fillStyle = '#fde68a';
+    ctx.fillRect(ox + 9, oy + 22 + breathe, 1, 1);
 
-    // 4. Arms
-    ctx.fillStyle = '#fed7aa';
-    ctx.fillRect(ox + 1, oy + 15, 3, 8);
+    // ---- arms (back arm first so the front overlaps) -----------------------
+    const armY = oy + 15;
+    // Back arm.
+    ctx.fillStyle = skinShade;
+    ctx.fillRect(ox + 1, armY + armR * 0.6 + armRaise * 0.5, 3, 9);
+    ctx.fillStyle = tunicDark;
+    ctx.fillRect(ox + 1, armY + armR * 0.6 + armRaise * 0.5, 3, 3);
+    // Front arm (the one the held item anchors to).
+    ctx.fillStyle = skin;
+    ctx.fillRect(ox + 14, armY + armL * 0.6 + armRaise * 0.5, 3, 9);
+    ctx.fillStyle = tunic;
+    ctx.fillRect(ox + 14, armY + armL * 0.6 + armRaise * 0.5, 3, 3);
+    ctx.fillStyle = skinDeep;
+    ctx.fillRect(ox + 14, armY + 8 + armL * 0.6 + armRaise * 0.5, 3, 1);
 
-    // 5. Pants & Boots
-    const walkAnim = Math.abs(this.vx) > 0.2 ? Math.sin(Date.now() * 0.015) * 3 : 0;
-    // Legs
-    ctx.fillStyle = '#334155'; // Dark trousers
-    ctx.fillRect(ox + 4, oy + 25, 4, 6 - walkAnim);
-    ctx.fillRect(ox + 10, oy + 25, 4, 6 + walkAnim);
+    // ---- legs --------------------------------------------------------------
+    const hipY = oy + 25;
+    // Back leg.
+    ctx.fillStyle = pantsDark;
+    ctx.fillRect(ox + 5, hipY + legR * 0.4, 4, 6 - Math.max(0, legR * 0.5) + jumpTuck);
+    // Front leg.
+    ctx.fillStyle = pants;
+    ctx.fillRect(ox + 10, hipY + legL * 0.4, 4, 6 - Math.max(0, legL * 0.5) + jumpTuck);
 
-    // Boots
-    ctx.fillStyle = '#78350f'; // Leather boots
-    ctx.fillRect(ox + 3, oy + 31 - walkAnim, 5, 5);
-    ctx.fillRect(ox + 9, oy + 31 + walkAnim, 5, 5);
+    // ---- boots -------------------------------------------------------------
+    const bootL = ox + 4, bootR = ox + 9;
+    ctx.fillStyle = boot;
+    ctx.fillRect(bootL, oy + 31 - liftL + legR * 0.4 + jumpTuck, 5, 5);
+    ctx.fillRect(bootR, oy + 31 - liftR + legL * 0.4 + jumpTuck, 5, 5);
+    // Lit toe and dark sole: a boot reads as a boot because the top catches the
+    // light and the sole does not.
+    ctx.fillStyle = '#a3540f';
+    ctx.fillRect(bootL, oy + 31 - liftL + legR * 0.4 + jumpTuck, 5, 2);
+    ctx.fillRect(bootR, oy + 31 - liftR + legL * 0.4 + jumpTuck, 5, 2);
+    ctx.fillStyle = bootDark;
+    ctx.fillRect(bootL, oy + 35 - liftL + legR * 0.4 + jumpTuck, 5, 1);
+    ctx.fillRect(bootR, oy + 35 - liftR + legL * 0.4 + jumpTuck, 5, 1);
+
+    // ---- keyline: a dark rim so the silhouette never melts into the world ---
+    // Only the outer edge rows/columns that are actually body, so it stays
+    // crisp without painting a box around the player.
+    ctx.fillStyle = line;
+    ctx.fillRect(ox + 3, oy + 1, 1, 1);                 // hair top-left
+    ctx.fillRect(ox + 14, oy + 1, 1, 3);
+    ctx.fillRect(ox + 2, oy + 3, 1, 15);                // left edge
+    ctx.fillRect(ox + 15, oy + 8, 1, 10);               // right head/torso edge
+    ctx.fillRect(ox + 1, oy + 15, 1, 9);                // back arm edge
+    ctx.fillRect(ox + 3, oy + 25, 1, 11);               // back leg edge
+    ctx.fillRect(ox + 15, oy + 25, 1, 11);              // front leg edge
   }
 
   renderArmor(ctx, armorItem, ox, oy) {

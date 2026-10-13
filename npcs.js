@@ -271,20 +271,65 @@ class NPCManager {
   findStandableSpot(preferredX) {
     const world = this.game.world;
     const start = Math.max(6, Math.min(world.width - 7, Math.round(preferredX)));
-    for (let d = 0; d < world.width; d++) {
+    // ---- Where a villager may stand -------------------------------------
+    // Two checks the old walk did not make:
+    //   1. THE REEF BAND. generateReef rewrites surfaceHeights for the whole
+    //      west ocean down to the seabed, so the naive "solid ground with air
+    //      above" test happily resolves a plot of seabed 30 tiles under the
+    //      water and the villager spawns submerged. Reef columns are excluded
+    //      outright (plus a margin into the snow), not filtered by depth.
+    //   2. OPEN SKY ABOVE. Standing spots were also found on the house roof, on
+    //      a tree trunk and in the plains plot's wall, because the test only
+    //      looked two tiles up. A villager's row is now required to have clear
+    //      air over their whole height, and to stand on natural ground rather
+    //      than on a built/tree tile.
+    const reef = world.reefBounds;
+    const reefMaxX = reef ? reef.right + 6 : -1;
+    // Natural ground a villager belongs on.
+    const land = new Set([TILES.GRASS, TILES.DIRT, TILES.SAND, TILES.SANDSTONE,
+      TILES.SNOW, TILES.MUD, TILES.PLANKS, TILES.COBBLESTONE]);
+    const clearAbove = (x, y, n) => {
+      for (let i = 1; i <= n; i++) {
+        const t = world.getTile(x, y - i);
+        if (t !== TILES.AIR) return false;
+      }
+      return true;
+    };
+    /**
+     * The tile a villager would actually STAND on in this column: the topmost
+     * solid, non-platform tile. `surfaceHeights` is captured during terrain
+     * generation and does not know about anything grown afterwards — a swamp
+     * mangrove's stilt roots are solid WOOD two tiles above the mud, and a
+     * snow pine's boughs are solid too — so a villager placed from the stale
+     * height "stands" on a root and floats above their own ground. Scanning
+     * the column is the only way to answer this correctly for every biome.
+     */
+    const standingTile = (x) => {
+      for (let y = 1; y < world.height; y++) {
+        const t = world.getTile(x, y);
+        const p = TILE_PROPERTIES[t];
+        if (p && p.solid && !p.isPlatform) return { y, t };
+      }
+      return null;
+    };
+    // Stay local: a villager found across the map is a villager nobody visits.
+    for (let d = 0; d < 80; d++) {
       const candidates = d === 0 ? [start] : [start - d, start + d];
       for (const x of candidates) {
         if (x < 6 || x > world.width - 7) continue;
-        const sy = world.surfaceHeights[x];
-        // Footing, and two tiles of clear air for the body and head.
-        if (!world.isSolid(x, sy)) continue;
-        if (world.getTile(x, sy - 1) !== TILES.AIR) continue;
-        if (world.getTile(x, sy - 2) !== TILES.AIR) continue;
-        return { x, sy };
+        if (x <= reefMaxX) continue;
+        const spot = standingTile(x);
+        if (!spot || spot.y < 4) continue;
+        if (!land.has(spot.t)) continue;
+        // Body (2 tiles) plus a tile of headroom above it.
+        if (!clearAbove(x, spot.y - 1, 3)) continue;
+        return { x, sy: spot.y };
       }
     }
     // Last resort: keep them on the map even if nothing nearby qualifies.
-    return { x: start, sy: world.surfaceHeights[start] };
+    let fallback = start;
+    if (fallback <= reefMaxX) fallback = Math.max(fallback, reefMaxX + 4);
+    return { x: fallback, sy: world.surfaceHeights[Math.max(0, Math.min(world.width - 1, fallback))] };
   }
 
   quest(npc) {

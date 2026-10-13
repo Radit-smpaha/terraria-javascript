@@ -2320,8 +2320,44 @@ class World {
     this.renderDeciduousForestLayer(ctx, camera, 0.4, palette.near, h * 0.7, 75, biome);
     if (reefClipped) ctx.restore();
 
+    // The reef still needs ONE hard cut — where its own waterline ends the
+    // mountain ranges — and a bare clip edge on water reads as a drawn line.
+    // Wash sea haze across the seam instead: it is atmospheric (distant water
+    // is hazy) and it dissolves the edge in both directions.
+    this._paintReefSeamHaze(ctx, camera, w, h);
+
     // Sun position is needed by the god-ray layer below, so hand it back.
     return { sunX, sunY };
+  }
+
+  /**
+   * Sea haze across the reef's waterline seams. Draws a soft gradient over
+   * each border column where the open ocean begins, so the clipped land
+   * scenery dissolves into the water instead of ending on a vertical line.
+   */
+  _paintReefSeamHaze(ctx, camera, w, h) {
+    const rb = this.reefBounds;
+    if (!rb) return;
+    const seams = [
+      rb.left * TILE_SIZE - camera.x,     // reef's west edge (open sea)
+      rb.right * TILE_SIZE - camera.x     // reef's east edge (meets the snow)
+    ];
+    const reach = 170;
+    const haze = (x0, x1) => {
+      const left = Math.max(0, x0);
+      const right = Math.min(w, x1);
+      if (right - left < 2) return;
+      const grad = ctx.createLinearGradient(left, 0, right, 0);
+      grad.addColorStop(0, 'rgba(17, 62, 100, 0.72)');
+      grad.addColorStop(0.55, 'rgba(20, 70, 110, 0.34)');
+      grad.addColorStop(1, 'rgba(20, 70, 110, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(left, 0, right - left, h);
+    };
+    for (const seam of seams) {
+      if (seam < -reach || seam > w + reach) continue;
+      haze(seam - reach, seam + reach * 0.35);
+    }
   }
 
   // Small, deterministic scenery props for each biome. Uses the same world
@@ -3025,11 +3061,30 @@ class World {
       const heightVar = Math.sin(treeIdx * 3.7) * 25 + 70;
       const tipY = baseY - heightVar;
 
-      if (biome === 'savanna') {
+      // Each tree belongs to the biome of the column it SITS ON, not to the
+      // column the camera happens to be centred on. That is what makes the
+      // treeline stop dead at a biome border (and never march across the open
+      // reef water) while still cross-fading as the camera moves: the layer is
+      // a strip of trees at different world positions, so it must sample the
+      // world, not the viewport.
+      const sourceX = Math.floor((treeIdx * treeWidth) / TILE_SIZE);
+      const treeBiome = this.dimension === 'ocean' || this.dimension === 'space'
+        ? biome
+        : this.getBiomeAtX(sourceX);
+      // The reef is open ocean: no land scenery over it, and no hard clip line
+      // at the border either, because there is simply nothing drawn there.
+      if (treeBiome === 'reef') continue;
+      // Pines are the snow band's silhouette; a snow-band strip over a forest
+      // camera (or vice versa) must not paint both species' trees.
+      const isPine = treeBiome === 'snow';
+      if (biome === 'snow' && !isPine) continue;
+      if (biome !== 'snow' && isPine) continue;
+
+      if (treeBiome === 'savanna') {
         // Distant flat-top acacia silhouettes.
         ctx.fillRect(screenX + treeWidth * 0.5 - 2, tipY + 30, 4, 40);
         ctx.fillRect(screenX + 4, tipY + 24, treeWidth - 8, 10);
-      } else if (biome === 'swamp') {
+      } else if (treeBiome === 'swamp') {
         // Cypress knees + drooping moss curtains.
         ctx.fillRect(screenX + treeWidth * 0.5 - 3, tipY + 20, 6, 50);
         ctx.fillRect(screenX + 8, tipY + 44, 5, 22);
@@ -3080,6 +3135,23 @@ class World {
       const heightVar = Math.sin(treeIdx * 2.1) * 20 + 80;
       const crownRadius = 38 + (treeIdx % 4) * 5;
       const cy = baseY - heightVar;
+
+      // Per-column biome, exactly like the pine layer: the treeline stops at
+      // the reef's water instead of being cut out with a hard clip line, and a
+      // forest camera cannot paint a snow or reef strip over the frame.
+      const sourceX = Math.floor((treeIdx * spacing) / TILE_SIZE);
+      const treeBiome = this.dimension === 'ocean' || this.dimension === 'space'
+        ? biome
+        : this.getBiomeAtX(sourceX);
+      if (treeBiome === 'reef') continue;
+      // Snow columns belong to the pine layer; deciduous trees would look
+      // wrong hanging over the snow band's skyline.
+      if (treeBiome === 'snow') continue;
+      // Savannah and swamp columns have their own silhouettes in the pine
+      // layer's variants; a plain oak crown over their horizon reads as forest
+      // creeping in, which is exactly the bug this replaces.
+      const broadleaf = treeBiome === 'forest' || treeBiome === 'plains';
+      if (!broadleaf) continue;
 
       // Trunk with vertical grain bands, so it reads as timber and not a pole.
       // A slight lean (stable per tree) keeps the treeline from marching in

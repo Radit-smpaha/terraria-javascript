@@ -60,7 +60,10 @@ TILES.WRECK_HULL = OCEAN_TILES.WRECK_HULL;
 TILES.WRECK_MAST = OCEAN_TILES.WRECK_MAST;
 
 Object.assign(TILE_PROPERTIES, {
-  [OCEAN_TILES.PEARL]: { solid: true, light: 11, color: '#67e8f9', name: 'Sacred Pearl', drops: { id: 'sacred_pearl', count: 1 } },
+  // Sacred Pearl: light was 11, which turned every pearl into a lighthouse
+  // visible across the map — the opposite of a secret. 4 is a local glimmer
+  // you only see once you are already down there.
+  [OCEAN_TILES.PEARL]: { solid: true, light: 4, color: '#67e8f9', name: 'Sacred Pearl', drops: { id: 'sacred_pearl', count: 1 } },
   [OCEAN_TILES.SHRINE]: { solid: true, light: 2, color: '#0e7490', name: 'Dormant Reef Shrine', drops: null },
   [OCEAN_TILES.SHRINE_ACTIVE]: { solid: true, light: 9, color: '#22d3ee', name: 'Awakened Reef Shrine', drops: null },
   [OCEAN_TILES.PORTAL]: { solid: false, light: 15, color: '#22d3ee', name: 'Tide Portal', drops: null },
@@ -508,6 +511,36 @@ World.prototype.placeDistributedReefPearls = function(count = 4) {
   const available = [];
   for (let i = 0; i < targets.length; i++) {
     const target = targets[i];
+    // ---- SECRECY ----------------------------------------------------------
+    // The four pearls used to settle in whatever AIR/WATER tile was nearest
+    // the target, which meant they sat ON the surface glowing like beacons
+    // and the whole ritual was a sightseeing tour. A pearl now prefers a
+    // BURIED pocket: it is placed inside the terrain, sealed under a solid
+    // roof, so finding one takes digging or an accident — the glow is a
+    // reward for being close, not a signpost from three screens away. An
+    // open spot is only used when the column has nowhere buried to hide.
+    const surface = this.surfaceHeights[Math.max(0, Math.min(this.width - 1, target.x))] + 2;
+    const buried = [];
+    for (let dy = 0; dy <= 14 && !buried[i]; dy++) {
+      for (const step of (dy === 0 ? [0] : [-dy, dy])) {
+        const x = target.x + step;
+        if (x < 2 || x >= this.width - 2) continue;
+        const y = surface + dy;
+        if (y < 2 || y >= this.height - 2) continue;
+        const index = y * this.width + x;
+        const tile = this.tiles[index];
+        const above = this.tiles[index - this.width];
+        const wall = this.walls && this.walls[index];
+        const originalWall = this.naturalTerrainWalls && this.naturalTerrainWalls[index];
+        // Must be solid ground we can replace, and solid ground above it so
+        // the pearl is genuinely sealed in.
+        if ([TILES.DIRT, TILES.STONE, TILES.SAND, TILES.MUD, TILES.SANDSTONE].includes(tile) &&
+            above !== TILES.AIR && above !== TILES.WATER && !(wall && wall !== originalWall)) {
+          buried[i] = { x, y };
+          break;
+        }
+      }
+    }
     for (let radius = 0; radius <= 10 && !available[i]; radius++) {
       for (const offset of radius === 0 ? [0] : [radius, -radius]) {
         const x = target.x + offset;
@@ -527,6 +560,9 @@ World.prototype.placeDistributedReefPearls = function(count = 4) {
         break;
       }
     }
+    // Buried ALWAYS wins when it exists: the open-spot search above is the
+    // fallback for a column with nowhere to hide, not an equally good option.
+    if (buried[i]) available[i] = buried[i];
   }
   const wanted = Math.min(Math.max(0, count), targets.length);
   this.reefPearls = [];
@@ -597,6 +633,19 @@ World.prototype.generateReef = function() {
     this.surfaceHeights[x] = floor;
     for (let y = seaY; y < floor; y++) this.setTile(x, y, TILES.WATER);
     if (floor >= seaY) this.setTile(x, floor, x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
+  }
+
+  // The flood shaves vegetation and terrain above the new waterline back to
+  // AIR, which left the overworld's own walls standing in the open sea: every
+  // carved column showed the natural stone wall (and vault/shrine brick) as a
+  // dark background floating at the top of the water. Walls only render where
+  // the tile is AIR, so dropping the wall under carved/carveable air is the
+  // whole fix — and it cannot touch terrain, water or anything solid.
+  for (let x = left; x < edgeRight; x++) {
+    for (let y = 1; y < seaY; y++) {
+      const idx = y * this.width + x;
+      if (this.tiles[idx] === TILES.AIR) this.walls[idx] = TILES.AIR;
+    }
   }
 
   for (let x = left + 4; x < mainRight - 3; x += 8) {
@@ -1331,7 +1380,17 @@ World.prototype.generateOceanPlanet = function() {
       this.setTile(x, duneFloor[x], x % 5 === 0 ? TILES.SANDSTONE : TILES.SAND);
       for (let y = duneFloor[x] + 1; y < this.height; y++) this.setTile(x, y, TILES.STONE);
     }
-    // ---- Living seabed dressing -----------------------------------------
+    // ---- WALLS ---------------------------------------------------------------
+  // The overworld's walls ride along into this dimension, and they only show
+  // through AIR — so the ocean planet's open water and swim gaps painted the
+  // overworld's cave stone (and every buried structure's brick) as a dark
+  // background hanging under every island. This dimension has no caves and no
+  // kept walls: drop the wall under every non-solid tile so the water is water.
+  for (let i = 0; i < this.tiles.length; i++) {
+    if (this.tiles[i] !== TILES.AIR) continue;
+    const t = this.tiles[i];
+    if (t === TILES.AIR) this.walls[i] = TILES.AIR;
+  }
     // The old coral grew as tall vertical columns, which read as thin coloured
     // poles covering the whole ocean. It is now a flat 1-tile crust scattered
     // across the dune floor, plus swaying sea grass: a living sea floor, not
@@ -1367,6 +1426,18 @@ World.prototype.generateOceanPlanet = function() {
       }
     }
   }
+
+  // ---- WALLS ---------------------------------------------------------------
+  // The overworld's walls ride along into this dimension, and they only show
+  // through AIR — so the ocean planet's open water and swim gaps painted the
+  // overworld's cave stone (and every buried structure's brick) as a dark
+  // background hanging under every island. This dimension's caves are carved
+  // AFTER this point and repaint their own walls; everything above only needs
+  // the overworld's walls gone.
+  for (let i = 0; i < this.tiles.length; i++) {
+    if (this.tiles[i] === TILES.AIR) this.walls[i] = TILES.AIR;
+  }
+  this._tileCacheDirty = true;
 
   // ---- The abyssal UNDERGROUND: carved caverns beneath the seabed ----
   // The planet used to be solid stone from the seabed straight to the map
@@ -3012,6 +3083,94 @@ class Megalodon {
         ctx.lineTo(sx - c * len * 1.1, sy - s * len * 1.1);
         ctx.lineTo(sx - c * len + s * wide * 0.5, sy - s * len - c * wide * 0.5);
         ctx.stroke();
+      } else if (f.kind === 'foam') {
+        // ---- PRESSURE FOAM: a filled disc of churned water ---------------
+        // A pressure wave moves WATER, and water displaced visibly is a
+        // volume. This is a filled radial plume (not a stroked ring): a pale
+        // core fading out through foam blue, studded with bubbles that pop as
+        // the plume passes them. It is what makes a charge read as a body of
+        // water moving rather than as a drawn line.
+        const r = f.r0 + (f.r1 - f.r0) * e;
+        const grad = ctx.createRadialGradient(sx, sy, r * 0.12, sx, sy, r);
+        grad.addColorStop(0, 'rgba(240, 253, 255, ' + (0.62 * (1 - k * 0.85)).toFixed(3) + ')');
+        grad.addColorStop(0.55, 'rgba(148, 226, 253, ' + (0.34 * (1 - k * 0.9)).toFixed(3) + ')');
+        grad.addColorStop(1, 'rgba(70, 150, 200, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+        // Bubbles: a stable ring of small circles that drift outward with the
+        // plume and shrink as they pop. Deterministic per index, so the plume
+        // keeps its shape frame to frame.
+        const bubbles = q > 0.7 ? 12 : 7;
+        for (let b = 0; b < bubbles; b++) {
+          const a = (b / bubbles) * Math.PI * 2 + f.ang + e * 0.6;
+          const rr = r * (0.3 + 0.65 * e) * (0.7 + 0.3 * Math.sin(b * 2.7));
+          const br = Math.max(1, 4.2 * (1 - k) * (0.6 + 0.4 * Math.sin(b * 1.9)));
+          const bx = sx + Math.cos(a) * rr, by = sy + Math.sin(a) * rr;
+          ctx.fillStyle = 'rgba(224, 242, 254, ' + (0.5 * (1 - k)).toFixed(3) + ')';
+          ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.55 * (1 - k)).toFixed(3) + ')';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(bx - br * 0.3, by - br * 0.3, br * 0.5, 0, Math.PI * 2); ctx.stroke();
+        }
+        // The displaced rim: one bright crest line where the wave is breaking.
+        ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.4 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.arc(sx, sy, r * 0.97, f.ang, f.ang + Math.PI * 1.15); ctx.stroke();
+      } else if (f.kind === 'bubbleCluster') {
+        // ---- RISING BUBBLES: water torn loose by a bite or a dash --------
+        // A column of bubbles climbing with a wobble, each sized by its index
+        // and popping before the top of the column: air from a submerged kill,
+        // which is the single most readable "something big just moved" tell.
+        const n = q > 0.6 ? 9 : 5;
+        for (let b = 0; b < n; b++) {
+          const f0 = b / n;
+          const rise = (1 - f0) * 1.0 + 0.02;
+          const by = sy - e * f.r1 * rise;
+          const bx = sx + Math.sin(e * 5 + b * 1.3 + f.ang) * 10 + (b - n / 2) * 2.4;
+          const life = Math.max(0, 1 - Math.max(0, e - 0.75) / 0.25);
+          const br = Math.max(0.5, (1.6 + 2.6 * ((b * 37) % 5) / 4) * life);
+          ctx.strokeStyle = 'rgba(226, 246, 255, ' + (0.75 * life).toFixed(3) + ')';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.28 * life).toFixed(3) + ')';
+          ctx.beginPath(); ctx.arc(bx, by, br * 0.55, 0, Math.PI * 2); ctx.fill();
+        }
+      } else if (f.kind === 'splash') {
+        // ---- SPLASH CROWN: the water thrown out of an impact ------------
+        // A filled crescent shoulder on each side of the impact, plus a jet of
+        // droplets. This is the difference between a dot and a splash.
+        const r = f.r0 + (f.r1 - f.r0) * e;
+        const fade = 1 - Math.pow(k, 1.6);
+        for (const side of [-1, 1]) {
+          ctx.fillStyle = 'rgba(186, 232, 253, ' + (0.42 * fade).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.quadraticCurveTo(
+            sx + side * r * 0.75, sy - r * (0.55 + 0.35 * e),
+            sx + side * r * 1.15, sy - r * (0.05 + 0.25 * e));
+          ctx.quadraticCurveTo(sx + side * r * 0.6, sy + r * 0.12, sx, sy);
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.6 * fade).toFixed(3) + ')';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.quadraticCurveTo(
+            sx + side * r * 0.75, sy - r * (0.55 + 0.35 * e),
+            sx + side * r * 1.15, sy - r * (0.05 + 0.25 * e));
+          ctx.stroke();
+        }
+        // Droplet jet.
+        const drops = q > 0.6 ? 10 : 6;
+        for (let d = 0; d < drops; d++) {
+          const f0 = d / drops;
+          const side = (d % 2) ? 1 : -1;
+          const dr = r * (0.85 + 0.5 * f0);
+          const dx = sx + side * dr * (0.45 + 0.55 * f0);
+          const dy = sy - r * (0.9 + 0.5 * f0) * (1 - e * 0.25) + e * 14;
+          const dl = Math.max(1, 3 * fade);
+          ctx.fillStyle = 'rgba(240, 253, 255, ' + (0.8 * fade).toFixed(3) + ')';
+          ctx.fillRect(dx, dy, dl, dl + 1);
+        }
       }
     }
     ctx.restore();
@@ -3646,6 +3805,17 @@ class Megalodon {
       // EXECUTION: a burst at the jaws the instant it commits. No screen flash.
       this._fxSpawn('burst', mouth.x, mouth.y,
         { r0: 22, r1: 86, life: 0.3, ang: a });
+      // The water it is displacing: a foam plume blooming at the jaws and a
+      // splash crown as the charge tears free, so the dash leaves a visible
+      // body of water behind it rather than a streak.
+      this._fxSpawn('foam', mouth.x, mouth.y,
+        { r0: 30, r1: 130 * power, life: 0.5, ang: a });
+      this._fxSpawn('splash', mouth.x, mouth.y,
+        { r0: 26, r1: 105 * power, life: 0.42, ang: a });
+      if (q > 0.55) {
+        this._fxSpawn('bubbleCluster', mouth.x, mouth.y,
+          { r0: 0, r1: 90, life: 0.9, ang: a });
+      }
       this.skillFX(particles, ccx, ccy, 'charge', {});
       if (sound) sound.playBossRoar();
     } else if (p.type === 'crushing_bite') {
@@ -3661,6 +3831,11 @@ class Megalodon {
       // ring that stays where the lunge began.
       this._fxSpawn('burst', mouth.x, mouth.y,
         { r0: 18, r1: 82, life: 0.28, ang: a });
+      this._fxSpawn('foam', mouth.x, mouth.y,
+        { r0: 26, r1: 120 * power, life: 0.46, ang: a });
+      // Bubbles torn loose by the strike: the aftermath that sells the hit.
+      this._fxSpawn('bubbleCluster', mouth.x, mouth.y,
+        { r0: 0, r1: 70, life: 1.0, ang: a });
       this._fxSpawn('ring', ccx, ccy, { r0: 70, r1: 200 * power, life: 0.45 });
       this.skillFX(particles, ccx, ccy, 'bite', {});
       this.skillImpact('bite', 0.6);
@@ -3678,6 +3853,14 @@ class Megalodon {
       this._fxSpawn('arc', ccx, ccy, {
         r0: (p.radius || 220) * 0.4, r1: (p.radius || 220),
         wide: 1.15, ang: p.angle || 0, life: 0.4
+      });
+      // The displaced water the tail is dragging with it: a foam plume that
+      // blooms at the body, plus a splash thrown out along the sweep.
+      this._fxSpawn('foam', ccx, ccy, {
+        r0: 40, r1: (p.radius || 220) * 0.9, life: 0.5, ang: p.angle || 0, wide: 0.7
+      });
+      this._fxSpawn('splash', ccx, ccy, {
+        r0: 30, r1: (p.radius || 220) * 0.55, life: 0.4, ang: p.angle || 0
       });
       this.skillFX(particles, ccx, ccy, 'sweep', { radius: p.radius, angle: p.angle });
       this.skillImpact('sweep', 0.5);
@@ -3714,6 +3897,14 @@ class Megalodon {
       // The vortex closes on itself the moment it forms.
       this._fxSpawn('collapse', ccx, ccy, {
         r0: 40, r1: (p.radius || 260), life: 0.5, ang: Math.random() * 6.28
+      });
+      // The water the vortex is actually pulling into a funnel: a foam core
+      // and a column of bubbles drawn in from around the spin.
+      this._fxSpawn('foam', ccx, ccy, {
+        r0: 60, r1: (p.radius || 260), life: 0.6
+      });
+      this._fxSpawn('bubbleCluster', ccx, ccy, {
+        r0: 0, r1: (p.radius || 260) * 0.7, life: 1.1
       });
       this.skillFX(particles, ccx, ccy, 'spin', { radius: p.radius });
       this.skillImpact('spin', 0.55);
@@ -3759,6 +3950,18 @@ class Megalodon {
       // what the player dodged is what they see close.
       this._fxSpawn('collapse', ccx, ccy, { r0: 60, r1: p.radius || 420, life: 0.32 });
       this._fxSpawn('burst', mouth.x, mouth.y, { r0: 26, r1: 110, life: 0.3, ang: a });
+      // The suction's payoff: a foam plume at the jaws, a splash crown where
+      // the pressure was released, and a column of bubbles drawn up from the
+      // funnel — the maw reads as it ate something, not as a line snappping.
+      this._fxSpawn('foam', mouth.x, mouth.y, {
+        r0: 40, r1: (p.radius || 420) * 0.55, life: 0.5, ang: a
+      });
+      this._fxSpawn('splash', mouth.x, mouth.y, {
+        r0: 34, r1: 130, life: 0.45, ang: a
+      });
+      this._fxSpawn('bubbleCluster', ccx, ccy, {
+        r0: 0, r1: (p.radius || 420) * 0.5, life: 1.1
+      });
       this._fxSpawn('ring', ccx, ccy,
         { r0: 90, r1: 260 + ph * 60, life: 0.55, ang: a });
       this.skillFX(particles, ccx, ccy, 'maw', {});
@@ -5027,21 +5230,53 @@ class Megalodon {
         const slen = 16 + this._hash01(sSeed * 2.3) * 26;
         // Slashes rake backwards along the body, following the spine.
         const sang = 0.6 + this._hash01(sSeed * 3.1) * 0.5 + spineBend(u) * 0.4;
-        const p2 = { x: p.x + Math.cos(sang) * slen, y: p.y + Math.sin(sang) * slen };
-        ctx.strokeStyle = ph >= 2
-          ? 'rgba(190, 60, 76, ' + Math.min(0.9, 0.45 + injury * 0.4).toFixed(2) + ')'
-          : 'rgba(148, 163, 198, 0.62)';
-        ctx.lineWidth = 2.6 + this._hash01(sSeed * 5.1) * 1.6;
+        const a2 = spineAt(u + 0.05, -0.85 + this._hash01(sSeed * 1.7) * 0.7);
+        // A SCAR is healed tissue, not a drawn line: a pale core with a darker
+        // shadow along one side (the keloid standing proud of the hide) and a
+        // bright rim along the other, over a 3-segment jag — never a single
+        // clean stroke, and never glowing. Straight bright lines are what these
+        // used to be, and straight bright lines read as vector art.
+        const j1 = {
+          x: p.x + Math.cos(sang) * slen * 0.45 + Math.sin(sang + 1.6) * 2.5,
+          y: p.y + Math.sin(sang) * slen * 0.45 + Math.cos(sang + 1.6) * 2.5
+        };
+        const p2 = {
+          x: a2.x + Math.cos(sang) * slen - 2,
+          y: a2.y + Math.sin(sang) * slen + 1
+        };
+        // 1. Shadow under the raised tissue.
+        ctx.strokeStyle = 'rgba(8, 14, 26, 0.5)';
+        ctx.lineWidth = 3.4;
+        ctx.beginPath();
+        ctx.moveTo(p.x + 1.6, p.y + 1.8);
+        ctx.lineTo(j1.x + 1.6, j1.y + 1.8);
+        ctx.lineTo(p2.x + 1.6, p2.y + 1.8);
+        ctx.stroke();
+        // 2. Pale healed core: the widest part is the middle of the slash.
+        ctx.strokeStyle = 'rgba(206, 214, 228, ' + (0.62 + injury * 0.22).toFixed(2) + ')';
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
+        ctx.lineTo(j1.x, j1.y);
         ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
-        // Phase 3: the wounds weep light through the hide.
-        if (ph === 3) {
-          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.22 + woundGlow * 0.4).toFixed(2) + ')';
-          ctx.lineWidth = 1.4;
+        // 3. Bright rim on the sun side, only on the upper edge.
+        ctx.strokeStyle = 'rgba(240, 246, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p.x - 1, p.y - 1.2);
+        ctx.lineTo(j1.x - 1, j1.y - 1.2);
+        ctx.lineTo(p2.x - 1, p2.y - 1.2);
+        ctx.stroke();
+        // 4. In the apex phase a couple of the OLDEST wounds throb: a slow,
+        // dim pulse under two of them only, so the body reads as scarred flesh
+        // that happens to be alive, not as a map of light sources.
+        if (ph === 3 && s % 3 === 0) {
+          ctx.strokeStyle = 'rgba(190, 70, 80, ' + (0.16 + 0.22 * (0.5 + 0.5 * Math.sin(this.animT * 2.2 + s))).toFixed(2) + ')';
+          ctx.lineWidth = 5;
           ctx.beginPath();
-          ctx.moveTo(p.x + 1, p.y + 1);
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(j1.x, j1.y);
           ctx.lineTo(p2.x, p2.y);
           ctx.stroke();
         }
@@ -5056,12 +5291,18 @@ class Megalodon {
       spineAt(0.98, 0).x - spineAt(0.86, 0).x);
     {
       // Brow ridge: a heavy shadow above the eye, angriest in the apex phase.
+      // PHASE 3 RAGE: the whole brow drops and thickens — the classic predatory
+      // glare — and a second, darker folded brow ridge stacks over the first,
+      // which is the single cheapest way to make the same head read as enraged
+      // instead of merely darker-tinted.
       const browA = spineAt(0.92, -0.62);
       const browB = spineAt(0.70, -0.55);
       const bb = spineAt(0.80, 0);
+      const rageBrow = ph === 3 ? (0.28 + 0.1 * Math.sin(this.animT * 4)) : 0;
       ctx.beginPath();
       ctx.moveTo(browA.x, browA.y);
-      ctx.quadraticCurveTo(bb.x + 6, bb.y - bodyHalf(0.80) * (1.05 + 0.1 * eyeGlow), browB.x, browB.y);
+      ctx.quadraticCurveTo(bb.x + 6, bb.y - bodyHalf(0.80) * (1.05 + 0.1 * eyeGlow),
+        browB.x, browB.y);
       ctx.quadraticCurveTo(bb.x + 2, bb.y - bodyHalf(0.80) * 0.55, browA.x + 12, browA.y + 8);
       ctx.closePath();
       ctx.fillStyle = hideTop;
@@ -5069,6 +5310,21 @@ class Megalodon {
       ctx.strokeStyle = outline;
       ctx.lineWidth = 3;
       ctx.stroke();
+      if (rageBrow > 0.01) {
+        // The folded angry brow: a wedge pressed down over the eye.
+        const foldA = spineAt(0.94, -0.72);
+        const foldB = spineAt(0.72, -0.34);
+        ctx.beginPath();
+        ctx.moveTo(foldA.x, foldA.y);
+        ctx.quadraticCurveTo(bb.x + 8, bb.y - bodyHalf(0.80) * (1.34 + rageBrow), foldB.x, foldB.y);
+        ctx.quadraticCurveTo(bb.x + 2, bb.y - bodyHalf(0.80) * 0.78, foldA.x + 14, foldA.y + 6);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(6, 12, 24, 0.55)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
 
       // THE EYE: bead + iris + pupil + glint, with a nictitating blink. It
       // sits just above the mouth line, a third of the way back from the
@@ -5093,13 +5349,26 @@ class Megalodon {
         ctx.arc(eyeX, eyeY, 13 + eyeGlow * 5 + Math.sin(this.animT * 6) * 1.5, 0, Math.PI * 2);
         ctx.fill();
       }
+      // PHASE 3 RAGE: the eye goes wide — sclera showing all around a blown
+      // iris — with a hot outer ring. Wide iris + visible sclera is the body
+      // language of an enraged animal; a bigger version of the same calm eye
+      // is not.
+      const rageEye = ph === 3 ? 1 : 0;
       // Sclera: white when it flashes, a livid red neon the rest of the time.
       ctx.fillStyle = flash ? '#ffffff' : eyeGlow > 0.6 ? '#fca5a5' : '#e2b3b3';
-      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 8.4, 7.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, 8.4 + rageEye * 1.6, 7.2 + rageEye * 1.2, 0, 0, Math.PI * 2); ctx.fill();
       // Iris: deep blood-red, brightening with the phase.
       const iris = ph === 1 ? '#7f1d1d' : ph === 2 ? '#b91c1c' : '#ef4444';
       ctx.fillStyle = flash ? '#fecdd3' : iris;
-      ctx.beginPath(); ctx.ellipse(eyeX + lookX * 2, eyeY + lookY * 1.4, 5.8, 6.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(eyeX + lookX * 2, eyeY + lookY * 1.4, 5.8 + rageEye * 1.5, 6.2 + rageEye * 1.2, 0, 0, Math.PI * 2); ctx.fill();
+      if (rageEye) {
+        // Hot rim where the iris meets the sclera: the "starved" read.
+        ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.5 + 0.3 * Math.sin(this.animT * 8)).toFixed(2) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.ellipse(eyeX + lookX * 2, eyeY + lookY * 1.4, 5.8 + rageEye * 1.5, 6.2 + rageEye * 1.2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       // Pupil: a black vertical slit, the way a shark's eye actually reads.
       ctx.fillStyle = '#0b0710';
       ctx.beginPath(); ctx.ellipse(eyeX + lookX * 3, eyeY + lookY * 2, 1.7, 4.2, 0, 0, Math.PI * 2); ctx.fill();
@@ -5419,13 +5688,32 @@ class Megalodon {
     // of which survive with every post-processing effect disabled.)
     // Phase 2+ rim light: a crimson keyline running the whole silhouette, so
     // the frenzy phases read as the same animal lit from inside.
+    //
+    // PHASE 3 is no longer a flat red outline around the WHOLE body — that
+    // read as a sticker, and it is exactly what made the apex phase look like a
+    // tint rather than a mood. The heat is now confined to the UPPER silhouette
+    // (back, dorsal, head) as a slow ember pulse: the animal is lit from within
+    // where the muscle is working, while the pale belly stays cold.
     if (ph >= 2 && !vanished) {
-      ctx.strokeStyle = ph === 3
-        ? 'rgba(248, 113, 113, ' + (0.35 + woundGlow * 0.3).toFixed(2) + ')'
-        : 'rgba(248, 113, 113, 0.26)';
-      ctx.lineWidth = 2.4;
-      this._hullPath(ctx, st);
-      ctx.stroke();
+      if (ph === 3) {
+        const pulse = 0.5 + 0.5 * Math.sin(this.animT * 3.4);
+        ctx.save();
+        // Clip to the upper half of the body plus a margin, in world space.
+        const midY = y + this.height * 0.42 + (this.bob || 0);
+        ctx.beginPath();
+        ctx.rect(x - 220 - (this.sway || 0), midY - 260, this.width + 440, 300);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(249, 115, 22, ' + (0.16 + 0.16 * pulse + woundGlow * 0.12).toFixed(3) + ')';
+        ctx.lineWidth = 3.2;
+        this._hullPath(ctx, st);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.strokeStyle = 'rgba(248, 113, 113, 0.26)';
+        ctx.lineWidth = 2.4;
+        this._hullPath(ctx, st);
+        ctx.stroke();
+      }
     }
     ctx.restore();
     // Hit flash: a soft white bloom over the silhouette so it reads as the
