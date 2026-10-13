@@ -4637,20 +4637,25 @@ class Megalodon {
       // through the fork, the short lower lobe, closed into the peduncle.
       // Both lobe edges run through raggedEdge(), so the crescent is torn
       // with bites whose depth scales with the phase and the damage taken.
+      // The upper lobe gets a SHOULDER point (a wide mid-lobe) so the
+      // crescent reads as a massive fin rather than two thin blades; bite
+      // amplitude is scaled to the lobe length so the shredding stays
+      // proportional at every phase.
       const upperRoot = { x: 34, y: -13 };
+      const shoulder = { x: -18, y: -96 };
       const upperTip = { x: -70, y: -126 };
       const fork = { x: -15, y: -24 };
       const lowerTip = { x: -60, y: 82 };
-      const upper = [upperRoot]
-        .concat(raggedEdge(upperRoot, upperTip, 5, 15 + tearAmp * 17, 11.3))
-        .concat(raggedEdge(upperTip, fork, 3, 10 + tearAmp * 13, 21.7));
+      const upper = [upperRoot, shoulder]
+        .concat(raggedEdge(shoulder, upperTip, 4, 9 + tearAmp * 11, 11.3))
+        .concat(raggedEdge(upperTip, fork, 3, 7 + tearAmp * 9, 21.7));
       // The lower lobe continues FROM the fork, straight out to its own tip.
       // Routing it through a `lowerRoot` at (-17, 20) instead filled the notch
       // with a 44px vertical wedge, which read as two lumps instead of one
       // crescent with a real V cut in it.
       const lower = [fork]
-        .concat(raggedEdge(fork, lowerTip, 4, 13 + tearAmp * 16, 41.9))
-        .concat(raggedEdge(lowerTip, { x: -32, y: 46 }, 2, 9 + tearAmp * 9, 51.3))
+        .concat(raggedEdge(fork, lowerTip, 4, 10 + tearAmp * 13, 41.9))
+        .concat(raggedEdge(lowerTip, { x: -32, y: 46 }, 2, 8 + tearAmp * 8, 51.3))
         .concat([{ x: 2, y: 22 }, { x: 32, y: 16 }]);
       // Droop + dash stretch the tail: fatigue sags it, a charge snaps it straight.
       const sag = (1 + droop * 0.35) * (dashing ? 0.86 : 1);
@@ -4816,17 +4821,31 @@ class Megalodon {
       const base       = spineAt(0.43, 0);
       // The sheet's dorsal: a big, heavy, swept-back triangle that leans into
       // the swim direction. Roots sit ON the back ridge (off=-1.0) so the fin
-      // merges with the hull instead of floating a sliver above it. Bleed
+      // merg with the hull instead of floating a sliver above it — and the
+      // BASE edge is traced along the ridge itself (sampled spine points, held
+      // a hair outside the hull line), so no background can show through
+      // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
       const tipX = base.x - 30 - (this.surge || 0) * 18 - (dashing ? 12 : 0);
       const tipY = base.y - bodyHalf(0.43) * 1.80 + finTilt * 14;
-      const pts = [
-        { x: rootFront.x + 4, y: rootFront.y + 3 },
-        { x: rootFront.x - 20, y: rootFront.y - bodyHalf(0.43) * 0.5 },
-        { x: tipX, y: tipY }
-      ].concat(raggedEdge({ x: tipX, y: tipY },
-        { x: base.x - 62, y: base.y - bodyHalf(0.43) * 0.42 }, 4, 8 + tearAmp * 13, 61.7))
-        .concat([{ x: rootBack.x, y: rootBack.y + 3 }]);
+      // Leading edge: rear root sweeps up and forward to the tip.
+      const leading = raggedEdge(
+        { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.45 },
+        { x: tipX, y: tipY }, 4, 6 + tearAmp * 10, 61.7);
+      // Trailing edge: tip falls back to the front root.
+      const trailing = raggedEdge({ x: tipX, y: tipY },
+        { x: rootFront.x + 2, y: rootFront.y - bodyHalf(0.43) * 0.30 }, 4, 7 + tearAmp * 12, 63.1);
+      // Base: ride the actual back ridge so the fin is one piece with the hull.
+      const baseLine = [];
+      for (let u = 0.62; u >= 0.235; u -= 0.035) {
+        const p = spineAt(u, -1.06);
+        baseLine.push({ x: p.x, y: p.y + 2 });
+      }
+      const pts = [{ x: rootBack.x, y: rootBack.y + 3 }]
+        .concat(leading)
+        .concat(trailing)
+        .concat([{ x: rootFront.x + 4, y: rootFront.y + 3 }])
+        .concat(baseLine);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finLite;
       ctx.fill();
@@ -4857,16 +4876,24 @@ class Megalodon {
         ctx.moveTo(tipX - 16, tipY + 10); ctx.lineTo(tipX + 2, tipY + 30); ctx.lineTo(tipX - 26, tipY + 26);
         ctx.closePath(); ctx.fill();
       }
-      // Second dorsal.
+      // Second dorsal — smaller, further back, its base also ridge-traced so it
+      // can never read as a loose triangle hovering over the back.
       {
         const rF = spineAt(0.30, -0.86);
         const rB = spineAt(0.235, -0.9);
         const bb = spineAt(0.265, 0);
         const tp = { x: bb.x - 16, y: bb.y - bodyHalf(0.265) * 1.28 + finTilt * 8 };
+        const ridge = [];
+        for (let u = 0.30; u >= 0.235; u -= 0.022) {
+          const p = spineAt(u, -1.04);
+          ridge.push({ x: p.x, y: p.y + 2 });
+        }
         ctx.beginPath();
         ctx.moveTo(rF.x, rF.y + 3);
         ctx.quadraticCurveTo(bb.x - 8, bb.y - bodyHalf(0.265) * 0.8, tp.x, tp.y);
         ctx.quadraticCurveTo(bb.x - 34, bb.y - bodyHalf(0.265) * 0.4, rB.x, rB.y + 3);
+        // Sweep the base back along the ridge to the front root.
+        for (const p of ridge) ctx.lineTo(p.x, p.y);
         ctx.closePath();
         ctx.fillStyle = flash ? '#e2e8f0' : finDark;
         ctx.fill();
@@ -4934,21 +4961,24 @@ class Megalodon {
       ctx.lineWidth = 4;
       ctx.stroke();
       // Rays + the trailing-edge shadow that gives the wing thickness.
+      // The rays are held INSIDE the wing: the old strokes ran past the
+      // trailing edge to mid.x-112, so in game they read as loose strands
+      // hanging off the fin rather than as membrane structure.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
       ctx.lineWidth = 1.8;
       // Rays: three clean strokes across the wing, not five scribbled lines.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
         ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 5);
-        ctx.quadraticCurveTo(mid.x - 60, mid.y + wing * 0.9 + r * 6,
-          mid.x - 112 - f(0.2) * 20, mid.y + wing * 1.15 + r * 8);
+        ctx.quadraticCurveTo(mid.x - 34, mid.y + wing * 0.78 + r * 6,
+          mid.x - 58 - f(0.2) * 12, mid.y + wing * 0.92 + r * 5);
         ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.4)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(mid.x - 70, mid.y + wing * 0.86);
-      ctx.quadraticCurveTo(mid.x - 100, mid.y + wing * 1.08, mid.x - 120 - f(0.15) * 24, mid.y + wing * 1.2);
+      ctx.quadraticCurveTo(mid.x - 96, mid.y + wing * 1.04, mid.x - 104 - f(0.15) * 12, mid.y + wing * 1.16);
       ctx.stroke();
     }
 

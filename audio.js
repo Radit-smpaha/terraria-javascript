@@ -13,6 +13,7 @@ class SoundSystem {
     // once init() has built them, so a saved setting survives first load.
     this.volume = 0.9;
     this.musicEnabled = true;
+    this.mood = 'forest';
   }
 
   init() {
@@ -99,6 +100,20 @@ class SoundSystem {
     if (!this.ctx) return;
     this.setVolume(this.volume);
     this.setMusicEnabled(this.musicEnabled);
+    this.setMood(this.mood);
+  }
+
+  /**
+   * Select the musical mood for where the player is: 'forest', 'plains',
+   * 'savanna', 'snow', 'ocean', 'reef', 'cave', 'swamp' or 'temple'. The
+   * sequencer crossfades and retunes itself on the next note, so the caller
+   * can set this as often as it likes — only actual changes cost anything.
+   */
+  setMood(mood) {
+    const next = typeof mood === 'string' ? mood : 'forest';
+    if (next === this.mood) return next;
+    this.mood = next;
+    return this.mood;
   }
 
   // Jump sound: cheerful retro frequency sweep
@@ -511,7 +526,31 @@ class SoundSystem {
     const BOSS_RIFF = [130.81, 130.81, 155.56, 130.81, 174.61, 164.81, 155.56, 146.83];
     const BOSS_BASS = [65.41, 65.41, 73.42, 61.74];
 
-    const seq = { prog: 0, chord: 0, pat: 0, gap: false, step: 0, lastMode: null };
+    // ---- Biome moods ------------------------------------------------------
+    // Each place gets its own key, tempo and voice balance, so walking from a
+    // forest into a cave or out onto the reef changes the music, not just the
+    // scenery. These are ORIGINAL progressions written for the engine below:
+    // warm major triads above ground, minor and low below it. `tempo` scales
+    // the note gap, `pad`/`lead` scale voice levels, `sparkle` gates the day
+    // octave shimmer, `progs` replaces the chord tables for the mood.
+    const Bb = [233.08, 293.66, 349.23, 466.16];
+    const D = [293.66, 369.99, 440.00, 587.33];
+    const Bbm = [233.08, 277.18, 349.23, 466.16];
+    const MOODS = {
+      forest: { progs: null, tempo: 1.0, pad: 1.0, lead: 1.0, sparkle: true },
+      plains: { progs: [[C, G, Am, F], [F, C, G, Am], [C, Em, Dm, G]], tempo: 0.88, pad: 0.9, lead: 1.1, sparkle: true },
+      savanna: { progs: [[G, D, Em, C], [C, G, D, Em]], tempo: 1.05, pad: 1.0, lead: 1.0, sparkle: true },
+      snow: { progs: [[Dm, Bb, F, C], [Am, Dm, Em, Am]], tempo: 1.45, pad: 1.15, lead: 0.75, sparkle: false },
+      ocean: { progs: [[Dm, Bb, F, C], [Dm, Am, Bb, F]], tempo: 1.6, pad: 1.5, lead: 0.62, sparkle: false },
+      cave: { progs: [[Am, Em, F, Em], [Am, F, Dm, Em]], tempo: 1.5, pad: 1.6, lead: 0.55, sparkle: false },
+      swamp: { progs: [[Dm, Am, Bb, F], [Dm, Bb, F, C]], tempo: 1.25, pad: 1.2, lead: 0.8, sparkle: false }
+    };
+    // The reef is the ocean mood with its own slow, wide table: it is where
+    // the Megalodon lives, so it should already feel vast before the fight.
+    MOODS.reef = { progs: [[Dm, Bb, Dm, Bb], [Am, Em, Am, Em]], tempo: 1.75, pad: 1.7, lead: 0.5, sparkle: false };
+    MOODS.temple = { progs: [[Am, F, Dm, E], [Am, Em, F, Dm]], tempo: 1.6, pad: 1.5, lead: 0.6, sparkle: false };
+
+    const seq = { prog: 0, chord: 0, pat: 0, gap: false, step: 0, lastMode: null, lastMood: null };
 
     const voice = (freq, when, dur, type, vol) => {
       const osc = this.ctx.createOscillator();
@@ -566,6 +605,23 @@ class SoundSystem {
         seq.lastMode = mode;
         seq.prog = 0; seq.chord = 0; seq.pat = 0; seq.gap = false; seq.step = 0;
       }
+      // Biome mood change: retune the same engine (key, tempo, voices) and
+      // dip the music bus for a beat so the change reads as a transition
+      // rather than as the soundtrack restarting.
+      const moodName = this.mood || 'forest';
+      if (moodName !== seq.lastMood && MOODS[moodName]) {
+        seq.lastMood = moodName;
+        seq.prog = 0; seq.chord = 0; seq.pat = 0; seq.gap = false;
+        if (this.ambientGain) {
+          const t = this.ctx.currentTime;
+          this.ambientGain.gain.cancelScheduledValues(t);
+          this.ambientGain.gain.setValueAtTime(this.ambientGain.gain.value, t);
+          this.ambientGain.gain.linearRampToValueAtTime(0.12, t + 0.35);
+          this.ambientGain.gain.linearRampToValueAtTime(
+            this.musicEnabled ? 0.75 : 0, t + 1.6);
+        }
+      }
+      const tune = MOODS[moodName] || MOODS.forest;
 
       // ---- Boss: fixed minor riff + stomping bass, constant tempo ----
       if (mode === 'boss') {
@@ -581,7 +637,7 @@ class SoundSystem {
       }
 
       const night = mode === 'night';
-      const progs = night ? NIGHT_PROGS : DAY_PROGS;
+      const progs = (tune.progs && !night ? tune.progs : (night ? NIGHT_PROGS : DAY_PROGS));
 
       // Minecraft's signature silence between pieces.
       if (seq.gap) {
@@ -589,23 +645,24 @@ class SoundSystem {
         seq.prog = (seq.prog + 1) % progs.length;
         seq.chord = 0;
         seq.pat = 0;
-        setTimeout(playNextNote, night ? 8000 + Math.random() * 5000 : 5500 + Math.random() * 3500);
+        const gapBase = night ? 8000 : 5500;
+        setTimeout(playNextNote, (gapBase + Math.random() * 5000) * tune.tempo);
         return;
       }
 
       // ---- Day / Night: arpeggiate the current chord of the progression ----
       const chord = progs[seq.prog][seq.chord];
       const lead = night ? chord[ARP[seq.pat]] / 2 : chord[ARP[seq.pat]];
-      const tempo = (night ? 980 : 760) + Math.floor(Math.random() * 140);
+      const tempo = ((night ? 980 : 760) + Math.floor(Math.random() * 140)) * tune.tempo;
 
       if (seq.pat === 0) {
         // When a chord lands: soft sustained pad + slow bass root underneath.
-        for (let i = 0; i < 3; i++) voice(chord[i], now, night ? 4.2 : 3.4, 'sine', night ? 0.035 : 0.045);
-        voice(chord[0] / 2, now, night ? 4.5 : 3.8, 'sine', 0.09);
+        for (let i = 0; i < 3; i++) voice(chord[i], now, night ? 4.2 : 3.4, 'sine', (night ? 0.035 : 0.045) * tune.pad);
+        voice(chord[0] / 2, now, night ? 4.5 : 3.8, 'sine', 0.09 * tune.pad);
       }
 
-      voice(lead, now, night ? 3.2 : 2.6, night ? 'triangle' : 'sine', night ? 0.11 : 0.13);
-      if (!night) voice(lead * 2, now, 1.2, 'triangle', 0.035); // gentle sparkle, day only
+      voice(lead, now, night ? 3.2 : 2.6, night ? 'triangle' : 'sine', (night ? 0.11 : 0.13) * tune.lead);
+      if (!night && tune.sparkle) voice(lead * 2, now, 1.2, 'triangle', 0.035); // gentle sparkle, day only
 
       // Advance: note -> next note ... end of progression -> silence -> next.
       seq.pat++;
