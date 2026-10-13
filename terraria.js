@@ -315,6 +315,15 @@ const NEW_ITEMS = {
     id: 'meteor_shard', name: 'Meteor Shard', type: 'material',
     icon: '☄️', stackMax: 999
   },
+  // The Abyssal Horn: the ONLY way to call the Megalodon. Its arena is a
+  // drowned colosseum out in the reef, and nothing happens there until the
+  // horn is blown — the same design rule as the bone rite: an arrival is a
+  // scouting trip, the rite is the decision to fight.
+  abyss_horn: {
+    id: 'abyss_horn', name: 'Abyssal Horn', type: 'consumable',
+    megRite: true, icon: '📯', stackMax: 3,
+    desc: 'Black coral and sea ivory. Blow it in the drowned colosseum to call the last predator.'
+  },
   nebula_crystal: {
     id: 'nebula_crystal', name: 'Nebula Crystal', type: 'material',
     icon: '💜', stackMax: 999
@@ -754,6 +763,14 @@ const RECIPES = [
     result: { id: 'healing_potion', count: 2 },
     materials: [{ id: 'acorn', count: 2 }, { id: 'wood', count: 1 }],
     name: 'Healing Potion (x2)'
+  },
+  // The Abyssal Horn: reef materials, one pearl, and coral — deliberately
+  // mid-game. You should be able to hear the ocean before you choose to fight
+  // what lives at the bottom of it.
+  {
+    result: { id: 'abyss_horn', count: 1 },
+    materials: [{ id: 'coral_fragment', count: 24 }, { id: 'sacred_pearl', count: 1 }, { id: 'sea_scale', count: 6 }, { id: 'iron_ore', count: 8 }],
+    name: 'Abyssal Horn'
   },
   // ---- Fishing gear ----
   {
@@ -6820,6 +6837,13 @@ class Game {
       return;
     }
 
+    // The Abyssal Horn: the Megalodon's own rite. Same reason again — a
+    // consumable that must never fall into the potion/healing pipeline.
+    if (itemData && itemData.megRite) {
+      this.performAbyssRite();
+      return;
+    }
+
     // Consumable Potion
     if (itemData && itemData.type === 'consumable') {
       if (itemData.id === 'bomb') {
@@ -7283,6 +7307,85 @@ class Game {
     this.particles.magicSparkle(this.player.x, this.player.y, '#fbcfe8', 60);
     this.dragonHP = null;
     return this.wakeSovereign(arena, null) !== null;
+  }
+
+  /**
+   * Right-click the Abyssal Horn: the Megalodon's own rite.
+   *
+   * The drowned colosseum out in the reef is the only place this is accepted —
+   * no horn, no shark, and no arrival ever ambushes you. Same rules as the
+   * bone rite: host-only in a session, one beast at a time, a refused horn is
+   * never spent, and a banked fight (leviathanHP) is a fight in progress.
+   */
+  performAbyssRite() {
+    const g = this;
+    const world = g.world;
+    if (g.mp && g.mp.denyForClient('📯 Only the host may blow the Abyssal Horn during a session.')) {
+      return false;
+    }
+    if (!world || !world.isInOcean) {
+      g.showToast('📯 The horn only sounds in the deep water of the west.');
+      return false;
+    }
+    if (g.wormhole) {
+      g.showToast('📯 The horn needs still water to be heard.');
+      return false;
+    }
+    if (g.boss && !g.boss.dead) {
+      g.boss.kind === 'kraken'
+        ? g.showToast('🦈 The Megalodon is already awake.')
+        : g.showToast('📯 Something else already owns this water.');
+      return false;
+    }
+    // The arena: standing inside the colosseum, not anywhere in the world.
+    const arena = world.oceanArena;
+    if (!arena || !world.isInOcean()) {
+      g.showToast('📯 The colosseum is far west, past the reef temple. Find the drowned bowl and blow the horn there.');
+      return false;
+    }
+    const inArena = Math.abs((g.player.x + g.player.width / 2) - arena.arenaCX) < 26 * TILE_SIZE &&
+      Math.abs((g.player.y + g.player.height / 2) - arena.arenaCY) < 20 * TILE_SIZE;
+    if (!inArena) {
+      g.showToast('📯 Not here. The horn answers only inside the drowned colosseum.');
+      return false;
+    }
+    // A banked Megalodon fight (a wounded boss the player left) is a fight in
+    // progress: refuse it and give the horn back, exactly like the bone rite.
+    if (Number.isFinite(g.leviathanHP)) {
+      g.showToast('🦈 The one you started is not finished. Kill it before you call another.');
+      return false;
+    }
+    if (g.leviathanSlain) {
+      g.showToast('🦈 The reef has fallen quiet. The last predator you slew has not come back.');
+      return false;
+    }
+    if (g.countItem('abyss_horn') <= 0) {
+      g.showToast('📯 You need an Abyssal Horn.');
+      return false;
+    }
+    if (!g.removeItem('abyss_horn', 1)) {
+      g.showToast('📯 The horn will not sound.');
+      return false;
+    }
+    g.showAnnouncement('📯 THE HORN SOUNDS — SOMETHING OLD IS COMING.');
+    g.sound.playBossRoar?.();
+    g.particles.bubbleBurst?.(g.player.x, g.player.y, '#5eead4', 26);
+    // The shark rises in the middle of the pit, eight tiles above the floor,
+    // facing the player — the same geometry the tesla harnesses drive by hand.
+    const tx = arena.arenaCX;
+    const ty = (arena.floorY - 8) * TILE_SIZE;
+    try {
+      const m = new Megalodon(tx, ty, g);
+      m.hp = m.maxHp;
+      g.boss = m;
+      g.leviathanHP = null;
+      g.sound.isBoss = true;
+      document.getElementById('boss-panel')?.classList.remove('hidden');
+      return true;
+    } catch (e) {
+      g.showToast('📯 The horn echoes back. Nothing answered.');
+      return false;
+    }
   }
 
   /**
