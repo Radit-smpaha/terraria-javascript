@@ -2430,8 +2430,11 @@ class Megalodon {
     //    ON TOP. It flaps on the swim beat, lagging the head like a real fin.
     // ======================================================================
     {
-      const rootA = spineAt(0.70, 0.6);
-      const rootB = spineAt(0.58, 0.66);
+      // Roots sit ON the belly ridge (off→0.9) so the wing emerges from the
+      // hull silhouette with no floating gap — the old 0.6/0.66 roots left a
+      // sliver of background between the fin base and the body outline.
+      const rootA = spineAt(0.70, 0.90);
+      const rootB = spineAt(0.58, 0.92);
       const mid   = spineAt(0.635, 0);
       const f = pecFlap;
       const wing = bodyHalf(0.635) * 1.5 + swing * 0.05;

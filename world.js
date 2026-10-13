@@ -332,8 +332,10 @@ class World {
       // The reef band is generated as land first and then flooded, so keep its
       // ground almost level — deep valleys here would poke through the waterline.
       case 'reef': return Math.sin(x * 0.05 + 1.1 + ph.a) * 1.5;
-      case 'snow': return Math.sin(x * 0.11 + ph.d) * 4 + Math.sin(x * 0.31) * 1.5;
-      case 'forest': return Math.sin(x * 0.06 + ph.a) * 6 + Math.sin(x * 0.21) * 1.5;
+      case 'snow': return Math.sin(x * 0.11 + ph.d) * 3 + Math.sin(x * 0.31) * 1.2;
+      // Forest relief softened from 6→4 so its hills roll rather than stack
+      // into cliffs. Kept with a slow second wave so it stays interesting.
+      case 'forest': return Math.sin(x * 0.06 + ph.a) * 4 + Math.sin(x * 0.21) * 1.2;
       // Rolling meadow. The whole landform is carried by ONE very long, lazy
       // swell (0.018 tiles^-1, ~350 tiles per wave): that gives the plains real
       // shape over a wide area while contributing almost nothing to TILE-TO-TILE
@@ -374,7 +376,11 @@ class World {
     for (let x = 0; x < this.width; x++) {
       const mix = this.biomeMix(x);
       const biome = mix.b ? (mix.t < 0.5 ? mix.a : mix.b) : mix.a;
-      const base = Math.sin(x * 0.03 + ph.a) * 12 + Math.sin(x * 0.08 + ph.b) * 5 + Math.sin(x * 0.18 + ph.c) * 2;
+      // Gentler relief: two long swells still give rolling hills and real
+      // landform, but the high-frequency chop that stacked into cliffs and small
+      // mountains is cut back hard (8→5, 3→2, 1.2→0.8) so the surface reads as
+      // soft rolling hills instead of jagged steps — interesting, not a plateau.
+      const base = Math.sin(x * 0.03 + ph.a) * 5 + Math.sin(x * 0.08 + ph.b) * 2 + Math.sin(x * 0.18 + ph.c) * 0.8;
       const reliefA = this.biomeRelief(mix.a, x, ph);
       const reliefB = mix.b ? this.biomeRelief(mix.b, x, ph) : reliefA;
       const relief = reliefA + ((reliefB - reliefA) * (mix.b ? mix.t : 0));
@@ -385,7 +391,19 @@ class World {
       const reliefScale = scaleA + ((scaleB - scaleA) * (mix.b ? mix.t : 0));
       // Swamp sags a touch lower to make room for pools.
       const sag = biome === 'swamp' ? 2.5 : 0;
-      const surfaceY = Math.floor(baseSurface + base * 0.55 * reliefScale + relief + sag);
+      let surfaceY = Math.floor(baseSurface + base * 0.55 * reliefScale + relief + sag);
+      // Cliff limiter: cap the per-column rise so the surface can't snap into
+      // sheer cliffs and spike mountains. Broad swells still come through — a
+      // 3-tile step repeated over many columns is a gentle hill — only the abrupt
+      // high-frequency jumps that read as cliffs get trimmed, and a light blend
+      // keeps the result rolling rather than a flat plateau.
+      if (x > 0) {
+        const prev = this.surfaceHeights[x - 1];
+        const maxStep = 3;
+        if (surfaceY - prev > maxStep) surfaceY = prev + maxStep;
+        else if (prev - surfaceY > maxStep) surfaceY = prev - maxStep;
+        surfaceY = Math.round(prev * 0.3 + surfaceY * 0.7);
+      }
       this.surfaceHeights[x] = surfaceY;
       const surfaceTile = biome === 'snow' ? TILES.SNOW : biome === 'savanna' ? TILES.SAND : biome === 'swamp' ? TILES.MUD : TILES.GRASS;
       const dirtTile = biome === 'snow' ? TILES.SNOW : biome === 'savanna' ? TILES.SANDSTONE : biome === 'swamp' ? TILES.MUD : TILES.DIRT;
@@ -465,16 +483,19 @@ class World {
     // explicitly skipped so the starter camp stays clear.
     this.generateSurfaceOres();
 
-    // Grow lush Forest Trees!
-    for (let x = 10; x < this.width - 10; x += Math.floor(this.rand() * 5 + 4)) {
+    // Grow Forest Trees. A touch sparser than before so the overworld reads as
+    // open woodland and meadows rather than solid forest, but far from barren:
+    // the step stays moderate (rand*15+13) and the per-plot chance is trimmed a
+    // little (forest 0.58→0.48, plains 0.16→0.12) — fewer trees, still plenty.
+    for (let x = 10; x < this.width - 10; x += Math.floor(this.rand() * 15 + 13)) {
       const groundY = this.surfaceHeights[x];
       const biome = this.getBiomeAtX(x);
       if (this.getTile(x, groundY) !== TILES.AIR) {
         // 4 tiles of margin: a canopy is wider than a trunk, and the plot is
         // meant to be open sky, not a cave of leaves.
         if (this.isInPlainsBuildPlot(x, 4)) continue;
-        if (biome === 'forest') this.growTree(x, groundY - 1);
-        if (biome === 'plains' && this.rand() < 0.30) this.growTree(x, groundY - 1);
+        if (biome === 'forest' && this.rand() < 0.48) this.growTree(x, groundY - 1);
+        if (biome === 'plains' && this.rand() < 0.12) this.growTree(x, groundY - 1);
         if (biome === 'snow') this.growSnowPine(x, groundY - 1);
         if (biome === 'savanna') this.growAcacia(x, groundY - 1);
         if (biome === 'swamp') this.growMangrove(x, groundY - 1);
@@ -1329,6 +1350,10 @@ class World {
       this.timeOfDay = 0;
       this.dayCount++;
     }
+    // Wind clock for canopy sway: a slow, continuous phase the leaf overlay and
+    // the falling-leaves pass both read. Independent of the day cycle so leaves
+    // still stir at night.
+    this.windT = (this.windT || 0) + dt;
   }
 
   isNight() {
@@ -2856,6 +2881,53 @@ class World {
         this.applyTileLightFast(ctx, sx, sy, sun);
       }
     }
+
+    // ---- canopy sway -------------------------------------------------------
+    // Leaves are baked into the static cache (they don't move the ground), so
+    // their wind motion is a light overlay drawn live here: whole leaf-cluster
+    // highlight bands drift side to side across the exposed canopy with the wind
+    // phase, plus a darker counter-slip on the opposite edge to sell direction.
+    // Two sway frequencies (a slow gust + a fast flutter) and a per-column phase
+    // keep neighbouring trees out of lockstep, so the woodland visibly ripples
+    // left and right instead of twitching. Only the top two exposed rows are
+    // touched, so this stays cheap (a few dozen tiles in view).
+    if (this.windT != null) {
+      const t = this.windT;
+      for (let y = viewMinY; y <= viewMaxY; y++) {
+        const rowBase = y * this.width;
+        // Interior canopy sways a little less than the sunlit surface row.
+        const exposed = this.getTile(viewMinX, y - 1);
+        for (let x = viewMinX; x <= viewMaxX; x++) {
+          const tile = this.tiles[rowBase + x];
+          if (tile !== TILES.LEAVES && tile !== TILES.ACACIA_LEAVES &&
+              tile !== TILES.MANGROVE_LEAVES && tile !== TILES.SNOW_PINE_LEAVES) continue;
+          // The sunlit surface is any leaf tile with air above it.
+          if (this.getTile(x, y - 1) !== TILES.AIR) continue;
+          const sx = x * TILE_SIZE - camera.x;
+          const sy = y * TILE_SIZE - camera.y;
+          // Gust + flutter, offset per column so trees move independently.
+          const gust = Math.sin(t * 1.1 + x * 0.35) + 0.5 * Math.sin(t * 2.3 + x * 0.8);
+          const shift = Math.round(gust * 7);          // ±7-10 px: clearly visible
+          const isSnow = tile === TILES.SNOW_PINE_LEAVES;
+          // Lit highlight bands drifting WITH the wind across the whole tile.
+          ctx.fillStyle = isSnow ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.22)';
+          ctx.fillRect(sx + 1 + shift, sy + 2, 5, 3);
+          ctx.fillRect(sx + 8 + shift, sy + 1, 5, 3);
+          ctx.fillRect(sx + 15 + shift, sy + 3, 4, 2);
+          ctx.fillRect(sx + 4 + shift, sy + 9, 4, 2);
+          ctx.fillRect(sx + 12 + shift, sy + 11, 4, 2);
+          // A green leaf-cluster sliver also travels with the wind, so real
+          // foliage (not just a white glint) reads as moving.
+          ctx.fillStyle = isSnow ? 'rgba(226,242,255,0.34)' : 'rgba(74,222,128,0.26)';
+          ctx.fillRect(sx + 6 + shift, sy + 5, 3, 3);
+          ctx.fillRect(sx + 13 + shift, sy + 14, 3, 3);
+          // Darker counter-slip on the opposite edge anchors the sway direction.
+          ctx.fillStyle = 'rgba(4,20,10,0.24)';
+          ctx.fillRect(sx + 6 - shift, sy + 7, 4, 2);
+          ctx.fillRect(sx + 13 - shift, sy + 6, 4, 2);
+        }
+      }
+    }
   }
 
   // Sun bucketed into 8 phases: cache rebuilds ~8x per day, not per frame.
@@ -3081,13 +3153,49 @@ class World {
         break;
       }
       case TILES.LEAVES: {
-        ctx.fillStyle = '#15803d';
+        // Detailed forest canopy: a dark base, then individual leaf shapes with
+        // veins, shadow pockets and lit highlights, so the canopy reads as dense
+        // foliage rather than a flat green block. Deterministic per (tx,ty).
+        const h = (tx * 73856093 ^ ty * 19349663) >>> 0;
+        ctx.fillStyle = '#14532d';
         ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+        // Shadow pockets between leaf clusters.
+        ctx.fillStyle = '#166534';
+        ctx.fillRect(sx + 2, sy + 2, 8, 7);
+        ctx.fillRect(sx + 13, sy + 12, 8, 8);
+        // Mid-tone leaf mass.
         ctx.fillStyle = '#16a34a';
-        ctx.fillRect(sx + 3, sy + 2, 8, 8);
-        ctx.fillRect(sx + 13, sy + 12, 7, 7);
-        ctx.fillStyle = '#4ade80';
-        ctx.fillRect(sx + 5, sy + 4, 3, 3);
+        ctx.fillRect(sx, sy + 8, TILE_SIZE, 10);
+        ctx.fillRect(sx + 7, sy + 2, 10, 7);
+        // Individual leaves: small offset quads, varied by the tile hash so no
+        // two tiles repeat. Each leaf is a 3x4 sliver with a darker vein. A
+        // few get a bright sun dapple so the canopy catches the light unevenly.
+        for (let l = 0; l < 9; l++) {
+          const hx = ((h >> (l * 4)) & 7) / 7;
+          const hy = ((h >> (l * 4 + 1)) & 7) / 7;
+          const lx = sx + 1 + hx * (TILE_SIZE - 5);
+          const ly = sy + 1 + hy * (TILE_SIZE - 6);
+          const dark = (l & 1) === 0;
+          ctx.fillStyle = dark ? '#22c55e' : '#15803d';
+          ctx.fillRect(lx | 0, ly | 0, 4, 5);
+          // Vein highlight down the middle of the leaf.
+          ctx.fillStyle = dark ? '#4ade80' : '#0f5132';
+          ctx.fillRect(lx + 1 | 0, ly | 0, 1, 5);
+          // Every third leaf catches a hard sun dapple: a 2x2 hot highlight.
+          if ((l % 3) === 0) {
+            ctx.fillStyle = '#bbf7d0';
+            ctx.fillRect((lx + 1) | 0, (ly + 1) | 0, 2, 2);
+          }
+        }
+        // Ragged silhouette on the tile edges so canopies don't read as a grid.
+        ctx.fillStyle = '#14532d';
+        if (((h >> 3) & 3) === 0) ctx.fillRect(sx, sy, 3, 3);
+        if (((h >> 5) & 3) === 1) ctx.fillRect(sx + TILE_SIZE - 3, sy + TILE_SIZE - 4, 3, 4);
+        // Sunlit edge leaves catching the light from the top-left.
+        ctx.fillStyle = '#86efac';
+        ctx.fillRect(sx + 4, sy + 5, 3, 2);
+        ctx.fillRect(sx + 15, sy + 3, 3, 2);
+        ctx.fillRect(sx + 9, sy + 17, 3, 2);
         break;
       }
       case TILES.WOOD_PLATFORM: {

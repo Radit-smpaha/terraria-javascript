@@ -4760,13 +4760,15 @@ class Megalodon {
     // ======================================================================
     const finTilt = (spinning ? 0.5 : 0) + rollV * 0.4 - droop * 0.25;
     {
-      const rootFront = spineAt(0.60, -0.92);
-      const rootBack  = spineAt(0.26, -0.96);
+      const rootFront = spineAt(0.62, -1.0);
+      const rootBack  = spineAt(0.24, -1.0);
       const base       = spineAt(0.43, 0);
       // The sheet's dorsal: a big, heavy, swept-back triangle that leans into
-      // the swim direction. Bleed Frenzy/Apex tear chunks out of its back.
-      const tipX = base.x - 26 - (this.surge || 0) * 16 - (dashing ? 12 : 0);
-      const tipY = base.y - bodyHalf(0.43) * 1.72 + finTilt * 14;
+      // the swim direction. Roots sit ON the back ridge (off=-1.0) so the fin
+      // merges with the hull instead of floating a sliver above it. Bleed
+      // Frenzy/Apex tear chunks out of its back.
+      const tipX = base.x - 30 - (this.surge || 0) * 18 - (dashing ? 12 : 0);
+      const tipY = base.y - bodyHalf(0.43) * 1.80 + finTilt * 14;
       const pts = [
         { x: rootFront.x + 4, y: rootFront.y + 3 },
         { x: rootFront.x - 20, y: rootFront.y - bodyHalf(0.43) * 0.5 },
@@ -4860,8 +4862,11 @@ class Megalodon {
     //    ON TOP. It flaps on the swim beat, lagging the head like a real fin.
     // ======================================================================
     {
-      const rootA = spineAt(0.70, 0.6);
-      const rootB = spineAt(0.58, 0.66);
+      // Roots sit ON the belly ridge (off→0.9) so the wing emerges from the
+      // hull silhouette with no floating gap — the old 0.6/0.66 roots left a
+      // sliver of background between the fin base and the body outline.
+      const rootA = spineAt(0.70, 0.90);
+      const rootB = spineAt(0.58, 0.92);
       const mid   = spineAt(0.635, 0);
       const f = pecFlap;
       const wing = bodyHalf(0.635) * 1.5 + swing * 0.05;

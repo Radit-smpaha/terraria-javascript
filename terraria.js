@@ -6669,6 +6669,15 @@ class Game {
           ));
         }
 
+        // Leaves sometimes drop a Forest Acorn (a sapling) — chop foliage to
+        // gather seeds you can replant. 22% per leaf tile, only on leaf blocks.
+        if ((tile === TILES.LEAVES || tile === TILES.ACACIA_LEAVES ||
+             tile === TILES.MANGROVE_LEAVES) && Math.random() < 0.22) {
+          this.drops.push(new DropItem(
+            tileX * TILE_SIZE + 5, tileY * TILE_SIZE + 5, 'acorn', 1
+          ));
+        }
+
         // A chest carries its own storage grid: breaking one spills the
         // contents into the world instead of deleting them with the tile.
         if (tile === TILES.CHEST || tile === TILES.CHEST_OPEN) this.spillChestContents(tileX, tileY);
@@ -6726,6 +6735,34 @@ class Game {
         this.useBomb();
       } else {
         this.useConsumable(itemData);
+      }
+      return;
+    }
+
+    // Forest Acorn — plant a sapling on open ground to regrow a tree. Kept out
+    // of the generic tile pipeline because an acorn is a seed, not a block.
+    if (itemData && itemData.id === 'acorn') {
+      const tileX = Math.floor(mouseWorldX / TILE_SIZE);
+      const tileY = Math.floor(mouseWorldY / TILE_SIZE);
+      const below = this.world.getTile(tileX, tileY + 1);
+      const plantable = [TILES.GRASS, TILES.DIRT, TILES.SAND, TILES.MUD, TILES.SNOW];
+      // Don't let the new trunk swallow the player.
+      const pL = Math.floor(this.player.x / TILE_SIZE);
+      const pR = Math.floor((this.player.x + this.player.width) / TILE_SIZE);
+      const pT = Math.floor(this.player.y / TILE_SIZE);
+      const pB = Math.floor((this.player.y + this.player.height) / TILE_SIZE);
+      const overlapsPlayer = tileX >= pL - 1 && tileX <= pR + 1 &&
+                             tileY >= pT - 2 && tileY <= pB;
+      if (this.world.getTile(tileX, tileY) === TILES.AIR &&
+          plantable.indexOf(below) !== -1 && !overlapsPlayer) {
+        this.world.growTree(tileX, tileY);
+        this.removeItem(held.id, 1);
+        this.sound.playPlace();
+        this.particles.tileBreak(tileX, tileY, '#4ade80');
+        this.stats.blocksPlaced += 1;
+        this.minimap.markDirty();
+      } else {
+        this.showToast('🌱 Plant an acorn on open ground with soil below.');
       }
       return;
     }
