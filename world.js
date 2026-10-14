@@ -4874,25 +4874,44 @@ class World {
           for (let cy = 0; cy < rows; cy++) {
             const tile = this.tiles[(occY0 + cy) * this.width + x];
             const props = TILE_PROPERTIES[tile];
-            const solid = !!(props && props.solid && !props.isPlatform);
-            if (solid) sky *= 0.40;               // rock/roof: eat the light
-            else sky += (1 - sky) * 0.10;         // open air: bleed sideways back
+            const isPlat = !!(props && props.isPlatform);
+            const solid = !!(props && props.solid && !isPlat);
+            if (solid) {
+              sky *= 0.34;                     // rock/roof: eat most of the light
+            } else {
+              // A wood PLATFORM is a real roof/floor you can see through — it
+              // must cast a shadow or platform-roofed houses stayed bright —
+              // but only a partial one, so a thin bridge in the open does not
+              // black out the ground far below it.
+              if (isPlat) sky *= 0.55;
+              // Open air bleeds sideways back toward daylight, but SLOWLY.
+              // At 0.10/tile a room was re-lit to near-outdoor within ~5 tiles
+              // of its roof, which is why interiors never looked shadowed.
+              sky += (1 - sky) * 0.045;
+            }
             buf[cy * cols + cx] = solid ? -1 : (1 - sky);
           }
         }
         lightCtx.save();
         lightCtx.fillStyle = 'rgb(6, 10, 26)';
-        const occA = 0.62;                        // darkness of a fully shaded room
+        const occA = 0.66;                        // darkness of a fully shaded room
         const px0 = occX0 * TILE_SIZE - camera.x;
         for (let cx = 0; cx < cols; cx++) {
-          // Horizontal 3-tap smooth so a single column never reads as a
-          // stripe; solid neighbours contribute nothing (they are ground).
+          // Horizontal smooth so a single column never reads as a stripe. A
+          // solid neighbour is an opaque wall: it contributes NOTHING but it
+          // must not DILUTE the cell either. The old code counted walls as 0 in
+          // a fixed /4 average, so an interior column flanked by walls kept only
+          // half its shade — and a room's middle columns are exactly that, which
+          // is why rooms read as lit. Renormalising over the live neighbours
+          // keeps edge columns soft while letting enclosed interiors hold their
+          // full darkness.
           const shadeAt = (cy) => {
             const raw = buf[cy * cols + cx];
             if (raw < 0) return 0;
-            const l = cx > 0 ? buf[cy * cols + cx - 1] : -1;
-            const r = cx < cols - 1 ? buf[cy * cols + cx + 1] : -1;
-            const v = ((l < 0 ? 0 : l) + 2 * raw + (r < 0 ? 0 : r)) / 4;
+            let sum = 2 * raw, n = 2;
+            if (cx > 0) { const l = buf[cy * cols + cx - 1]; if (l >= 0) { sum += l; n++; } }
+            if (cx < cols - 1) { const r = buf[cy * cols + cx + 1]; if (r >= 0) { sum += r; n++; } }
+            const v = sum / n;
             return v < 0.05 ? 0 : Math.round(v * 8) / 8;   // quantize: fewer runs
           };
           let runStart = -1;

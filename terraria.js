@@ -9468,18 +9468,37 @@ this.player.dodgeTime = 0;
 
     const workStart = performance.now();
     let steps = 0;
-    while (this._stepAccum >= FIXED_DT && steps < maxCatchUpSteps) {
-      this.update(FIXED_DT);
-      this._stepAccum -= FIXED_DT;
-      steps += 1;
-    }
-    // Dropped time (more than maxCatchUpSteps worth) is discarded rather than
-    // queued, so the game slows under extreme load instead of teleporting.
-    if (this._stepAccum > FIXED_DT * maxCatchUpSteps) this._stepAccum = 0;
+    // A single thrown frame must never kill the animation loop. Without this
+    // guard the exception propagates straight out of loop(), the
+    // requestAnimationFrame at the bottom never runs, and the whole simulation
+    // stops on whatever it last painted — which for a dimension swap is the
+    // white-out flash or a half-drawn arena. That is exactly the "the screen
+    // goes white/black when I cross into the abyss, but the UI still works"
+    // bug: the canvas rAF loop is dead while the DOM around it is fine. Swallow
+    // the bad frame (rate-limited logging), reset the accumulator so we do not
+    // replay the crash forever, and keep the loop alive.
+    try {
+      while (this._stepAccum >= FIXED_DT && steps < maxCatchUpSteps) {
+        this.update(FIXED_DT);
+        this._stepAccum -= FIXED_DT;
+        steps += 1;
+      }
+      // Dropped time (more than maxCatchUpSteps worth) is discarded rather than
+      // queued, so the game slows under extreme load instead of teleporting.
+      if (this._stepAccum > FIXED_DT * maxCatchUpSteps) this._stepAccum = 0;
 
-    // Nothing to simulate this frame (very high refresh rate, e.g. 240Hz):
-    // still paint, and still feed the quality/FPS controller the real interval.
-    this.render();
+      // Nothing to simulate this frame (very high refresh rate, e.g. 240Hz):
+      // still paint, and still feed the quality/FPS controller the real interval.
+      this.render();
+    } catch (err) {
+      this._frameErrors = (this._frameErrors || 0) + 1;
+      const n = this._frameErrors;
+      if (n <= 3 || n % 300 === 0) {
+        console.error('[loop] frame error #' + n + ':', err && (err.stack || err.message));
+      }
+      // Drop any queued simulation time so a persistent fault cannot spiral.
+      this._stepAccum = 0;
+    }
     const work = (performance.now() - workStart) / 1000;
 
     // Presented only once the whole update/render pair is done, so the quality
