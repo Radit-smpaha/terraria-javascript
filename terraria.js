@@ -2429,6 +2429,10 @@ class Game {
     // summon); everything else is "swing" (mine, attack, interact, talk).
     const isUse = (!!itemData && (itemData.type === 'tile' || itemData.type === 'consumable' ||
       itemData.type === 'pet')) || petUse;
+    // A tap near the Tide Gate or a shrine podium is an interaction no matter
+    // what is in hand: on a phone there is no right-click, so the gate must be
+    // reachable with the same tool you were already holding.
+    if (!isUse && this.nearTempleThing(worldX, worldY)) isUse = true;
     if (isUse) {
       // A canvas tap is a single action. Leaving mouseDown set makes the game
       // loop immediately run the left-click path too, which mines the tile
@@ -4810,14 +4814,17 @@ class Game {
       return;
     }
 
-    const amount = document.getElementById('creative-fill-hotbar')?.checked ? 999 : null;
+    const fillHotbar = document.getElementById('creative-fill-hotbar')?.checked;
 
     for (const item of matches) {
       const cell = document.createElement('div');
       cell.className = 'creative-cell';
       cell.dataset.id = item.id;
-      const stack = amount || item.stackMax || 99;
-      this.tip(cell, `${item.name} (max ${item.stackMax || 99}) — click to add ${stack}`);
+      // Grab size: ONE by default, a full stack with shift, and 999 only when
+      // the "fill hotbar" switch is explicitly on (that switch is the opt-in
+      // for bulk mode; it should not make every click a 999-stack).
+      const stack = fillHotbar ? 999 : (item.stackMax || 99);
+      this.tip(cell, `${item.name} (max ${item.stackMax || 99}) — click for 1, shift+click for ${stack}`);
 
       const icon = document.createElement('span');
       icon.className = 'creative-cell-icon';
@@ -4826,11 +4833,13 @@ class Game {
 
       const badge = document.createElement('span');
       badge.className = 'creative-cell-count';
-      badge.textContent = stack;
+      badge.textContent = fillHotbar ? 999 : '1';
       cell.appendChild(badge);
 
-      cell.addEventListener('click', () => {
-        this.giveCreativeItem(item.id, stack);
+      cell.addEventListener('click', (e) => {
+        const one = fillHotbar ? 999 : 1;
+        const amount = (e.shiftKey && !fillHotbar) ? stack : one;
+        this.giveCreativeItem(item.id, amount);
         // Green flash so a click always visibly lands.
         cell.classList.add('flash');
         setTimeout(() => cell.classList.remove('flash'), 180);
@@ -6220,8 +6229,59 @@ class Game {
     setTimeout(() => banner.classList.add('hidden'), 3500);
   }
 
+  /**
+   * Is this world point within a tap's reach of a Tide-Gate / shrine-podium
+   * tile? Used by the touch path so the gate is reachable with whatever tool is
+   * in hand (there is no right-click on a phone), and by the mouse path's
+   * forgiveness pass. Mirrors the reach used there.
+   */
+  nearTempleThing(worldX, worldY) {
+    const tx = Math.floor(worldX / TILE_SIZE);
+    const ty = Math.floor(worldY / TILE_SIZE);
+    for (let dy = -4; dy <= 4; dy++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        const t = this.world.getTile(tx + dx, ty + dy);
+        if (t === TILES.OCEAN_PORTAL || t === TILES.DORMANT_OCEAN_PORTAL ||
+            t === TILES.REEF_SHRINE || t === TILES.REEF_SHRINE_ACTIVE) {
+          if (Math.hypot(dx, dy) <= 3.4) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   interactWithSpecialTile(tileX, tileY) {
-    const tile = this.world.getTile(tileX, tileY);
+    let tile = this.world.getTile(tileX, tileY);
+    // ---- Forgiveness pass: big targets must not require pixel precision ----
+    // The Tide Gate renders as a large glowing ellipse, but functionally it was
+    // one 24px tile: click a finger's width off the middle and the interaction
+    // silently fell through to "nothing here" (or, worse, to digging). Both the
+    // portal and the shrine podiums now pull the nearest instance of their own
+    // kind within a few tiles of wherever the player actually pointed, so the
+    // click area matches the artwork. If the click already landed on the tile,
+    // nothing changes.
+    const isPortalish = (t) => t === TILES.OCEAN_PORTAL || t === TILES.DORMANT_OCEAN_PORTAL;
+    const isTempleish = (t) => t === TILES.REEF_SHRINE || t === TILES.REEF_SHRINE_ACTIVE;
+    if (!isPortalish(tile) && !isTempleish(tile)) {
+      const playerX = (this.player.x + this.player.width / 2) / TILE_SIZE;
+      const playerY = (this.player.y + this.player.height / 2) / TILE_SIZE;
+      const REACH = 3.4;                       // ~3 tiles of slop around the click
+      let best = null;
+      for (let dy = -4; dy <= 4; dy++) {
+        for (let dx = -4; dx <= 4; dx++) {
+          const cx = tileX + dx, cy = tileY + dy;
+          const t = this.world.getTile(cx, cy);
+          if (!isPortalish(t) && !isTempleish(t)) continue;
+          const dl = Math.hypot(dx, dy);
+          if (dl > REACH) continue;
+          // Prefer what the player pointed nearest, but never reach past them.
+          const fromPlayer = Math.hypot(cx - playerX, cy - playerY);
+          if (fromPlayer > 7.5) continue;
+          if (!best || dl < best.d) best = { d: dl, x: cx, y: cy };
+        }
+      }
+      if (best) { tileX = best.x; tileY = best.y; tile = this.world.getTile(tileX, tileY); }
+    }
     if (tile === TILES.TEMPLE_LEVER || tile === TILES.TEMPLE_LEVER_PULLED) {
       const playerX = Math.floor((this.player.x + this.player.width / 2) / TILE_SIZE);
       const playerY = Math.floor((this.player.y + this.player.height / 2) / TILE_SIZE);
@@ -7520,24 +7580,21 @@ class Game {
     if (this.player.invuln !== undefined) {
       this.player.invuln = Math.max(this.player.invuln || 0, 1.6);
     }
+    // ARRIVAL IS A SCOUTING TRIP, NOT THE FIGHT. The Megalodon used to greet
+    // the player the instant they landed on the abyssal planet, which punished
+    // curiosity (you got jumped the first time you explored) and made the
+    // Abyssal Horn pointless. It now matches the Sovereign's rite: the ocean
+    // arrives quiet, and the player CHOOSES to blow the horn inside the
+    // drowned colosseum. First entry leaves a hint so the ritual is discoverable.
     if (this.mp && this.mp.status !== 'idle') {
       this.showToast('This ocean-world expedition is solo-only.');
     }
-    // FIRST ARRIVAL IS ALWAYS THE FIGHT. The Megalodon greets the player the
-    // very first time they set foot on the abyssal planet — no horn required.
-    // After it is felled once, the sea stays quiet on re-entry and the only way
-    // back into the arena is to blow another Abyssal Horn.
-    if (!this.leviathanSlain && typeof Megalodon === 'function') {
-      const hp = Number.isFinite(this.leviathanHP) ? this.leviathanHP : 110000;
-      this.boss = new Megalodon(arena.bossX, arena.bossY, this);
-      this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, hp));
-      this.leviathanHP = null;
-      this.sound.isBoss = true;
-      document.getElementById('boss-panel')?.classList.remove('hidden');
-      this.showAnnouncement('🦈 THE MEGALODON RISES!');
-    } else {
-      this.boss = null;
-      this.showToast('🌊 The ocean planet is quiet. The Megalodon you defeated remains gone.');
+    if (this.leviathanSlain) {
+      this.showAnnouncement('🌊 THE ABYSSAL PLANET — the sea is quiet.');
+    } else if (!this._abyssRiteHintShown) {
+      this._abyssRiteHintShown = true;
+      this.showAnnouncement('🌊 THE ABYSSAL PLANET');
+      this.showToast('Something huge is asleep out here. Reach the drowned colosseum and blow an Abyssal Horn to call it.');
     }
     this.showToast('🫧 Keep your diving gear close. The Tide Gate behind you returns home.');
   }
@@ -8469,8 +8526,11 @@ this.player.dodgeTime = 0;
         // and the apex Hideplate are FIRST-KILL ONLY — a re-summoned predator
         // is fought for teeth, ore and trophies, never for the unique gear.
         if (this.boss.kind === 'kraken' && this.boss instanceof Megalodon) {
-          // Its teeth always drop: the fang-blade's whole recipe chain.
+          // Its teeth always drop: the fang-blade's whole recipe chain, plus the
+          // forge's Kraken Trophy — a Megalodon kill has to unlock the deep-sea
+          // recipe line, not only the first-kill collectables.
           this.drops.push(new DropItem(this.boss.x - 20, this.boss.y - 22, 'megalodon_tooth', 3));
+          this.drops.push(new DropItem(this.boss.x + 18, this.boss.y - 24, 'kraken_trophy', 1));
           if (megalodonFirstKill) {
             this._megalodonSlainOnce = true;
             this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
@@ -8692,10 +8752,14 @@ this.player.dodgeTime = 0;
         }
         this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
           knightWin ? 'cursed_edge' : 'guardian_trophy', 1));
-        // The Megalodon mounts its own trophy as well as the loot bag, and
-        // its FIRST win also gifts the reef sprite companion.
+        // The Megalodon mounts its own trophy as well as the loot bag, and its
+        // FIRST win also gifts the reef sprite companion. It also throws the
+        // forge's Kraken Trophy, which the deep-sea armour recipes need — the
+        // first Megalodon kill has to unlock the Ocean Armor line, not just a
+        // wall decoration.
         if (this.boss.kind === 'kraken') {
           this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
+          this.drops.push(new DropItem(this.boss.x - 10, this.boss.y - 20, 'kraken_trophy', 1));
           if (!this._megalodonSlainOnce) {
             this._megalodonSlainOnce = true;
             this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));

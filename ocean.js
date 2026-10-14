@@ -206,6 +206,67 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
       ctx.fillRect(sx + 19, sy + 4, 2, 8);
     }
   } else if (tile === OCEAN_TILES.PORTAL) {
+    // ---- The Tide Gate has TWO hand-drawn identities ----------------------
+    // Both are tile art because the gate is 4 tiles tall, but they are
+    // deliberately different worlds: the reef's gate in the overworld is a
+    // whirlpool throat cut into marble (matches its arch), while the gate in
+    // the abyssal planet — the one you came through to get home — is a torn
+    // kelp rift wrapped in bioluminescent fronds. Same tile, opposite sides of
+    // the same door, so a player always knows at a glance which way is home.
+    const homeGate = inOceanDim;
+    if (homeGate) {
+      // ---------- ABYSS RIFT: a kelp-wound tear in the water ----------
+      // Deep indigo core, a torn rim, and curling fronds with lit tips that
+      // breathe on a slow cycle. Nothing here resembles the reef's teal
+      // whirlpool, and nothing resembles the Ossuary's violet wormhole.
+      const t = Date.now() * 0.001;
+      const breathe = 0.5 + 0.5 * Math.sin(t * 1.3 + ty * 0.4);
+      // Water displaced around the rift: a soft dark halo.
+      ctx.fillStyle = 'rgba(4, 12, 26, 0.55)';
+      ctx.fillRect(sx + 1, sy, 22, TILE_SIZE);
+      // The tear itself.
+      ctx.fillStyle = '#0b1024';
+      ctx.beginPath();
+      ctx.ellipse(sx + 12, sy + 12, 7, 11, Math.sin(t * 0.6) * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      // Inner glow welling up from the deep: two rings, the inner hotter.
+      const g1 = ctx.createRadialGradient(sx + 12, sy + 12, 1, sx + 12, sy + 12, 9);
+      g1.addColorStop(0, `rgba(99, 102, 241, ${(0.5 + breathe * 0.3).toFixed(2)})`);
+      g1.addColorStop(0.6, 'rgba(30, 27, 75, 0.55)');
+      g1.addColorStop(1, 'rgba(4, 12, 26, 0)');
+      ctx.fillStyle = g1;
+      ctx.fillRect(sx + 2, sy + 1, 20, 22);
+      // Kelp fronds: four curving strands hugging the rim, lit at their tips.
+      for (let f = 0; f < 4; f++) {
+        const side = f % 2 === 0 ? -1 : 1;
+        const y0 = sy + 3 + f * 5;
+        const sway = Math.sin(t * 1.1 + f * 1.7) * 2.2;
+        ctx.strokeStyle = f === 1 ? '#0f766e' : '#115e59';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(sx + 12 + side * 8, y0);
+        ctx.quadraticCurveTo(sx + 12 + side * (11 + sway), y0 + 3, sx + 12 + side * 9, y0 + 7);
+        ctx.stroke();
+        // Bioluminescent tip, phased so the fronds shimmer independently.
+        ctx.fillStyle = `rgba(45, 212, 191, ${(0.45 + 0.45 * Math.sin(t * 2.2 + f)).toFixed(2)})`;
+        ctx.fillRect(sx + 12 + side * 9 - 1, y0 + 6, 2, 2);
+      }
+      // Motes drawn toward the rift: three dots drifting inward.
+      for (let m = 0; m < 3; m++) {
+        const p = (t * 0.5 + m / 3) % 1;
+        const ang = m * 2.1 + t * 0.4;
+        const mr = 9 - p * 6;
+        ctx.fillStyle = `rgba(153, 246, 228, ${(0.5 * (1 - p)).toFixed(2)})`;
+        ctx.fillRect(sx + 12 + Math.cos(ang) * mr, sy + 12 + Math.sin(ang) * mr * 1.4, 1, 1);
+      }
+      // A hard rim highlight so the tear reads as a surface, not a smudge.
+      ctx.strokeStyle = `rgba(94, 234, 212, ${(0.5 + breathe * 0.25).toFixed(2)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(sx + 12, sy + 12, 7, 11, 0, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.stroke();
+      return;
+    }
     ctx.fillStyle = '#071b2b';
     ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
     ctx.fillStyle = `rgba(8,145,178,${0.68 + pulse * 0.25})`;
@@ -1861,20 +1922,35 @@ World.prototype.generateOceanPlanet = function() {
   // nothing here can produce a floating tile.
   // A bigger archipelago: more mainland islands, spread across the whole sea so
   // the planet feels like an ocean world, not a tank with five rocks in it.
-  const islandCount = 9 + Math.floor(Math.random() * 4);
+  //
+  // WEST BIAS: the archipelago used to be spread evenly across the whole width,
+  // so sailing west from the spawn island ran out of land almost immediately and
+  // the left third of the map read as empty blue. Land is now weighted toward
+  // the west: the big islands' centres are pulled left by a power curve, they
+  // are larger, and the small islet scatter is denser out there too. The east
+  // still has open water (the colosseum and the ruins need room), it just is
+  // not the only thing out west.
+  const islandCount = 12 + Math.floor(Math.random() * 4);
   const islands = [];
-  const minGap = 26;
+  const minGap = 24;
   const margin = 20;
   const usable = Math.max(1, this.width - margin * 2);
   for (let i = 0; i < islandCount; i++) {
     // Evenly spaced with jitter, so no two islands ever merge into one blob.
-    const base = margin + (usable * (i + 0.5)) / islandCount;
+    const even = (i + 0.5) / islandCount;
+    // Bias the slot westward: even^1.45 compresses toward 0 (the map's left),
+    // so more slots land in the western half without ever leaving the right.
+    const biased = Math.pow(even, 1.45);
+    const base = margin + usable * biased;
     const jitter = (Math.random() - 0.5) * (usable / islandCount) * 0.6;
     const cx = Math.max(margin, Math.min(this.width - margin - 1,
       Math.round(base + jitter)));
     if (islands.some(other => Math.abs(other.cx - cx) < minGap)) continue;
-    const halfWidth = 8 + Math.floor(Math.random() * 9);
-    const height = 6 + Math.floor(Math.random() * 9);
+    // Bigger overall, and bigger still the further west you go.
+    const west = 1 - Math.min(1, Math.max(0, (cx - margin) / usable));
+    const sizeBoost = 0.75 + west * 0.7;
+    const halfWidth = Math.round((8 + Math.floor(Math.random() * 9)) * sizeBoost);
+    const height = Math.round((6 + Math.floor(Math.random() * 9)) * sizeBoost);
     islands.push({ cx, halfWidth, height });
   }
 
@@ -1912,11 +1988,16 @@ World.prototype.generateOceanPlanet = function() {
   // the same flat-table shape.
   for (let attempt = 0; attempt < this.width; attempt++) {
     const cx = margin + Math.floor(Math.random() * usable);
-    if (islands.some(o => Math.abs(o.cx - cx) < 16)) continue;
-    if (islets.some(o => Math.abs(o.cx - cx) < isletSpacing)) continue;
-    islets.push({ cx, halfWidth: 4 + Math.floor(Math.random() * 4),
+    // Same westward bias for the free-floating shoals: weight the roll toward
+    // the left third so the western sea is a proper archipelago to swim across
+    // instead of the long empty crossing it used to be.
+    const westRoll = Math.pow(Math.random(), 1.5);
+    const wcx = margin + Math.floor(usable * westRoll);
+    if (islands.some(o => Math.abs(o.cx - wcx) < 16)) continue;
+    if (islets.some(o => Math.abs(o.cx - wcx) < isletSpacing)) continue;
+    islets.push({ cx: wcx, halfWidth: 4 + Math.floor(Math.random() * 4),
       height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
-    if (islets.length >= 70) break;
+    if (islets.length >= 96) break;
   }
 
   const allIslands = islands.concat(islets);
@@ -3421,7 +3502,7 @@ class Megalodon {
       // Blood Frenzy opens with a live feeding-frenzy stack already running.
       if (phase >= 2) { this.frenzy = Math.max(this.frenzy, 1); this.frenzyT = 8; }
       // Apex phase begins with a roar that hangs it in the water for a beat.
-      if (phase === 3) { this.jawTarget = 1; this.attackTimer = Math.max(this.attackTimer, 1.6); }
+      if (phase === 3) { this.jawTarget = 1; this.attackTimer = Math.max(this.attackTimer, 2.2); }
     }
     if (this.hp <= 0) {
       this.dead = true;
@@ -3713,9 +3794,63 @@ class Megalodon {
       const sx = f.x - camera.x, sy = f.y - camera.y;
       // Ease: fast out, slow settle — every FX uses one curve family.
       const e = 1 - Math.pow(1 - k, 2.4);
+      // ====================================================================
+      // GLOBAL FX UPGRADE — every effect gets three things it used to lack:
+      //   1. a HORIZONTAL SHEAR. Water rings around a moving body squash
+      //      vertically and stretch along the travel direction, so a ring
+      //      spawned by a charge is an ellipse aligned to the charge, not a
+      //      circle. Every radial FX now reads f.ang as its major axis.
+      //   2. a CAUSTIC CORE: a soft additive glow at the origin that fades
+      //      faster than the ring, so impacts light the water around them
+      //      the way a real submerged detonation does.
+      //   3. LAYERED BUBBLES: a deterministic ring of small bubbles riding
+      //      the expanding front. This is the single detail that sells an
+      //      effect as water — the old FX had geometry but no air.
+      // ====================================================================
+      const shear = f.ang ? Math.cos(f.ang) : 1;
+      const shearPerp = f.ang ? Math.sin(f.ang) : 0;
+      const squash = 0.72 + 0.28 * Math.abs(shear);
+      const glowFor = (rad, strength, tint) => {
+        if (q < 0.4) return;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rad);
+        g.addColorStop(0, `rgba(${tint}, ${(strength * Math.pow(1 - k, 1.6)).toFixed(3)})`);
+        g.addColorStop(1, `rgba(${tint}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(sx, sy, rad, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      };
+      const bubblesOnRing = (r, count, tint, maxR) => {
+        if (q < 0.5) return;
+        const n = q > 0.75 ? count : Math.ceil(count * 0.6);
+        ctx.strokeStyle = `rgba(${tint}, ${(0.5 * (1 - k)).toFixed(3)})`;
+        ctx.lineWidth = 1.2;
+        for (let b = 0; b < n; b++) {
+          const a = (b / n) * Math.PI * 2 + (f.spin || 0) * k * 3;
+          const br = Math.max(0.8, maxR * (1 - k) * (0.55 + 0.45 * Math.sin(b * 2.3)));
+          const bx = sx + Math.cos(a) * r * shear + Math.sin(a) * r * 0.15;
+          const by = sy + Math.sin(a) * r * squash + Math.cos(a) * r * 0.15;
+          ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.stroke();
+        }
+      };
+      // Caustic core for anything that is an impact.
+      if (f.kind === 'burst' || f.kind === 'foam' || f.kind === 'splash' ||
+          f.kind === 'ring' || f.kind === 'collapse') {
+        glowFor((f.r1 || 140) * 0.5, 0.5, '148, 232, 253');
+      }
       if (f.kind === 'ring') {
         // ---- expanding pressure ring: thin, crisp, no fill ---------------
+        // SHEARED into the travel direction when the spawner has one, so a
+        // charge's pressure wave is an ellipse pointing along the charge.
         const r = f.r0 + (f.r1 - f.r0) * e;
+        ctx.save();
+        if (f.ang) {
+          ctx.translate(sx, sy);
+          ctx.rotate(f.ang);
+          ctx.scale(1, squash);
+          ctx.translate(-sx, -sy);
+        }
         ctx.strokeStyle = 'rgba(125, 211, 252, ' + (0.5 * (1 - k)).toFixed(3) + ')';
         ctx.lineWidth = Math.max(1, 3.4 * (1 - k * 0.55));
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
@@ -3738,6 +3873,8 @@ class Megalodon {
           ctx.lineTo(sx + Math.cos(a) * (r + l), sy + Math.sin(a) * (r + l));
           ctx.stroke();
         }
+        bubblesOnRing(r, 14, '224, 242, 254', 4.2);
+        ctx.restore();   // matches the ring's shear save()
       } else if (f.kind === 'arc') {
         // ---- a widening sweep (tail sweep): an arc ring, not a wedge -----
         const r = f.r0 + (f.r1 - f.r0) * e;
@@ -3913,7 +4050,7 @@ class Megalodon {
     const ph = this.phase;
     // Phase ladders: 1.0 -> 2.1 speed, 1.0 -> 2.3 damage, 1.0 -> 1.9 rate.
     const power = 1 + (ph - 1) * 0.55;
-    const dmgMul = 1 + (ph - 1) * 0.65;
+    const dmgMul = 1 + (ph - 1) * 0.5;
     const atkMul = (1 + (ph - 1) * 0.45) * this.waterAggression();
 
     // ---- Feeding frenzy: landing hits makes it faster and meaner ---------
@@ -4043,6 +4180,23 @@ class Megalodon {
             ang: Math.atan2(d.vy, d.vx),
             life: 0.34, spin: 0
           });
+          // ---- CHARGE UPGRADE: the wake is a SHOCKWAVE, not a stripe ---------
+          // A 2300-velocity body moving through water does not leave a line, it
+          // leaves a pressure-plume with a bow wave. Every wake step now also
+          // drops a foam bloom BELOW/behind the body (the displaced column) and
+          // a bubble cluster torn loose from the flank, so the charge carves a
+          // visible trough in the water with air curling up out of it.
+          this._fxSpawn('foam', this.x + this.width * 0.5 - this.faceDir * this.width * 0.16,
+            this.y + this.height * 0.5 + this.height * 0.2, {
+              r0: this.height * 0.22, r1: this.height * 0.55 + (this.surge || 0) * 20,
+              life: 0.4, ang: Math.atan2(d.vy, d.vx) + Math.PI
+            });
+          if (this._fxDetail() > 0.55) {
+            this._fxSpawn('bubbleCluster',
+              this.x + this.width * 0.5 - this.faceDir * this.width * 0.3,
+              this.y + this.height * 0.5 + this.height * 0.1,
+              { r0: 0, r1: 60, life: 0.7 });
+          }
         }
         // Flank spray, scaled by the game's own effects dial.
         const spray = this._fxDetail();
@@ -4059,10 +4213,21 @@ class Megalodon {
           && target && this.overlapsPlayer(target)) {
           d.hit = true;
           // EXECUTION: the impact is a compact burst at the contact point, not
-          // a screen-wide flash.
+          // a screen-wide flash. THE BITE, upgraded: a foam plume where the jaws
+          // close, a splash crown thrown out of the water, a column of bubbles,
+          // and a pressure ring that starts at the CONTACT point rather than the
+          // body centre — so the hit reads as "the teeth met you here".
           const mouth = this._mouthWorld();
           this._fxSpawn('burst', mouth.x, mouth.y,
             { r0: 24, r1: 96, life: 0.3, ang: Math.random() * 6.28 });
+          this._fxSpawn('foam', mouth.x, mouth.y,
+            { r0: 26, r1: 150, life: 0.45, ang: Math.random() * 6.28 });
+          this._fxSpawn('splash', mouth.x, mouth.y,
+            { r0: 28, r1: 120, life: 0.4, ang: Math.random() * 6.28 });
+          this._fxSpawn('bubbleCluster', mouth.x, mouth.y,
+            { r0: 0, r1: 85, life: 0.9 });
+          this._fxSpawn('ring', mouth.x, mouth.y,
+            { r0: 60, r1: 230 * (1 + (this.phase - 1) * 0.4), life: 0.45 });
           this.game.damagePlayer(Math.round(d.dmg), this.x + this.width / 2,
             'The Megalodon’s jaws closed around you!', true, this.y + this.height / 2);
           this.frenzy = Math.min(6, this.frenzy + 1);
@@ -4481,7 +4646,12 @@ class Megalodon {
       }
       // Base cooldown between skill picks; the ladders above scale it down.
       this.skillGlow = Math.max(this.skillGlow, 0.6 + ph * 0.2);
-      this.attackTimer = Math.max(1.1, (3.4 - ph * 0.55)) / Math.max(1, atkMul * frenzyMul * 0.9);
+      // NERF PASS: the shark's difficulty was not its damage, it was that it
+    // never stopped. The phase-3 minimum cooldown rises from 1.1s to 1.6s, the
+    // phase-3 terminal chain no longer re-arms itself instantly, and the attack
+    // cadence only ever scales TOWARD the base with the frenzy ladder instead of
+    // accelerating past it — so the fight leaves room to breathe and heal.
+    this.attackTimer = Math.max(1.6, (3.9 - ph * 0.6)) / Math.max(1, atkMul * frenzyMul * 0.55);
       if (sound && !this.pending) sound.playBossRoar();
     }
   }
@@ -4504,7 +4674,7 @@ class Megalodon {
     const ppx = player ? player.x + player.width / 2 : 0;
     const ppy = player ? player.y + player.height / 2 : 0;
     const ph = this.phase;
-    const dmgMul = 1 + (ph - 1) * 0.65;
+    const dmgMul = 1 + (ph - 1) * 0.5;
     const power = 1 + (ph - 1) * 0.55;
     const ccx = this.x + this.width * 0.5;
     const ccy = this.y + this.height * 0.5;
@@ -4719,7 +4889,7 @@ class Megalodon {
     const projs = projectiles || (this.game && this.game.projectiles);
     if (!projs || typeof Projectile !== 'function') return;
     const ph = this.phase;
-    const dmgMul = 1 + (ph - 1) * 0.65;
+    const dmgMul = 1 + (ph - 1) * 0.5;
     const cx = this.x + this.width * 0.5 + (this.faceDir || 1) * this.width * 0.36;
     const cy = this.y + this.height * 0.42;
     const px = target ? target.x + (target.width || 24) / 2 : cx + this.faceDir * 300;
@@ -5805,13 +5975,15 @@ class Megalodon {
       // a hair outside the hull line), so no background can show through
       // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
-      // DORSAL RESHAPE. The apex used to sit 30px back at 1.86 body-depths,
-      // with the root anchors pinched so the whole fin read as a short spike
-      // perched on the ridge. A real macropredator dorsal is TALL and clearly
-      // swept: apex ~2.6 body-depths up and well aft of the leading root, with
-      // a long convex leading edge that runs from the shoulder to the tip.
-      const finH = bodyHalf(0.43) * 2.6;
-      const tipX = base.x - 64 - (this.surge || 0) * 12 - (dashing ? 10 : 0);
+      // DORSAL RESHAPE (take two): 2.6 body-depths with the apex 64px aft made
+      // the fin dominate the whole silhouette — it was the first thing you saw
+      // and it swallowed the head. A macropredator's dorsal is tall but
+      // PROPORTIONATE: apex sits ~2.0 body-depths up and less far aft, with the
+      // leading edge still long and convex (that line is what reads "shark fin"
+      // from a mile off) and the base roots wide apart so the fin is clearly
+      // part of the back, not a spike stuck on it.
+      const finH = bodyHalf(0.43) * 2.0;
+      const tipX = base.x - 42 - (this.surge || 0) * 12 - (dashing ? 10 : 0);
       const tipY = base.y - finH + finTilt * 14;
       // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
       // the ridge cap) so the leading edge has room to run long and convex —
@@ -5897,7 +6069,7 @@ class Megalodon {
         const rF = spineAt(0.30, -0.86);
         const rB = spineAt(0.235, -0.9);
         const bb = spineAt(0.265, 0);
-        const tp = { x: bb.x - 16, y: bb.y - bodyHalf(0.265) * 1.28 + finTilt * 8 };
+        const tp = { x: bb.x - 16, y: bb.y - bodyHalf(0.265) * 1.12 + finTilt * 8 };
         const ridge = [];
         for (let u = 0.30; u >= 0.235; u -= 0.022) {
           const p = spineAt(u, -1.04);
@@ -5917,16 +6089,18 @@ class Megalodon {
         ctx.stroke();
       }
     }
-    // Pelvic + anal nubs: silhouette richness on the belly line.
+    // Pelvic + anal nubs: silhouette richness on the belly line. Both are
+    // short, blunt and hugging the flank — pointed fins jutting aft here
+    // cluttered the underside and tangled with the pectoral's tip.
     {
       const pelv = spineAt(0.35, 0.72);
       const pelvB = spineAt(0.29, 0.76);
       const pe = spineAt(0.32, 0);
-      const tp = { x: pe.x - 24, y: pe.y + bodyHalf(0.32) * 1.1 - droop * 8 };
+      const tp = { x: pe.x - 14, y: pe.y + bodyHalf(0.32) * 1.05 - droop * 8 };
       ctx.beginPath();
       ctx.moveTo(pelv.x, pelv.y);
-      ctx.quadraticCurveTo(pe.x - 14, pe.y + bodyHalf(0.32) * 0.9, tp.x, tp.y);
-      ctx.quadraticCurveTo(pe.x - 40, pe.y + bodyHalf(0.32) * 0.7, pelvB.x, pelvB.y);
+      ctx.quadraticCurveTo(pe.x - 8, pe.y + bodyHalf(0.32) * 0.92, tp.x, tp.y);
+      ctx.quadraticCurveTo(pe.x - 22, pe.y + bodyHalf(0.32) * 0.66, pelvB.x, pelvB.y);
       ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finDark;
       ctx.fill();
@@ -5937,11 +6111,11 @@ class Megalodon {
       const an = spineAt(0.17, 0.74);
       const anB = spineAt(0.12, 0.78);
       const ae = spineAt(0.145, 0);
-      const at = { x: ae.x - 18, y: ae.y + bodyHalf(0.145) * 1.05 - droop * 6 };
+      const at = { x: ae.x - 10, y: ae.y + bodyHalf(0.145) * 1.0 - droop * 6 };
       ctx.beginPath();
       ctx.moveTo(an.x, an.y);
-      ctx.quadraticCurveTo(ae.x - 10, ae.y + bodyHalf(0.145) * 0.85, at.x, at.y);
-      ctx.quadraticCurveTo(ae.x - 30, ae.y + bodyHalf(0.145) * 0.65, anB.x, anB.y);
+      ctx.quadraticCurveTo(ae.x - 6, ae.y + bodyHalf(0.145) * 0.82, at.x, at.y);
+      ctx.quadraticCurveTo(ae.x - 18, ae.y + bodyHalf(0.145) * 0.6, anB.x, anB.y);
       ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finDark;
       ctx.fill();
@@ -5968,8 +6142,13 @@ class Megalodon {
       // paddle. A pectoral is a LONG, NARROW, SWEPT-BACK wing: leading edge
       // runs clean from the belly to a pointed tip far aft, then a concave
       // trailing edge returns. Tearing only lives on the trailing edge.
-      const wTip = { x: mid.x - 148 - f(0.12) * 30, y: mid.y + wing * 1.30 + f(0.12) * 16 };
-      const trailingEnd = { x: mid.x - 62 - f(0.5) * 14, y: mid.y + wing * 0.70 + f(0.5) * 8 };
+      //
+      // The tip reach was 148px, which carried it right back over the pelvic
+      // and anal nubs on the same belly line: two swept shapes crossing each
+      // other is exactly what read as a messy tangle of bottom fins. 118 keeps
+      // the wing unmistakably long while leaving the nubs their own space.
+      const wTip = { x: mid.x - 118 - f(0.12) * 26, y: mid.y + wing * 1.26 + f(0.12) * 14 };
+      const trailingEnd = { x: mid.x - 52 - f(0.5) * 12, y: mid.y + wing * 0.68 + f(0.5) * 8 };
       const pts = [rootB, wTip]
         .concat(raggedEdge(wTip, trailingEnd, 3, 6 + tearAmp * 10, 81.7))
         .concat([rootA]);

@@ -1525,7 +1525,7 @@ class Player {
       ctx.rotate(0.2); // Rest angle
     }
 
-    // Render tool or weapon sprite
+    // ---- Render tool or weapon sprite ------------------------------------
     const isPrismatic = heldItem.id === 'prismatic_saber' || heldItem.id === 'aurora_blade';
     const isHellWeapon = ['hellstone_greatblade', 'soulfire_repeater', 'abyssal_staff', 'inferno_brand'].includes(heldItem.id);
     if (isHellWeapon) {
@@ -1575,83 +1575,36 @@ class Player {
       ctx.restore();
     }
     if (!isHellWeapon && !isPrismatic) {
-      // ---- REAL WEAPON SPRITES ------------------------------------------------
+      // ---- REAL ITEM SPRITES ------------------------------------------------
       // Held items used to be drawn as the item's emoji, which looked like a
       // sticker floating next to the player. Every weapon class is now drawn as
-      // a proper vector sprite anchored at the hand, so a sword looks like a
-      // sword, a pick like a pick, and a bow like a bow.
+      // a proper vector sprite anchored at the hand, and every NAMED weapon
+      // (and every tool) has its own model in WEAPON_SPRITES below: its blade
+      // profile, its metal, its guard, its glow. Two legendary swords are never
+      // the same silhouette with a colour swapped over it.
       const it = heldItem.id;
       const wt = itemData.weaponType;
       const isTool = itemData.type === 'tool';
       const isBlock = itemData.type === 'tile';
-      if (!isTool && !isBlock && (wt === 'melee' || wt === 'ranged' || wt === 'magic')) {
+      if (isTool || (wt === 'melee' || wt === 'ranged' || wt === 'magic')) {
         ctx.save();
-        if (wt === 'melee') {
-          // ---- MELEE: blade up, guard, grip, pommel. Proportions scale with
-          // the weapon's reach so a greatblade is visibly longer than a knife.
-          const reach = Math.max(34, Math.min(60, (itemData.range || 100) * 0.42));
-          const w = reach >= 48 ? 5 : 4;
-          // Blade: tapering steel with a bright edge and a dark spine.
-          ctx.fillStyle = '#94a3b8';
-          ctx.beginPath();
-          ctx.moveTo(-w, 0);
-          ctx.lineTo(-w * 0.55, -reach * 0.92);
-          ctx.lineTo(0, -reach);
-          ctx.lineTo(w * 0.55, -reach * 0.92);
-          ctx.lineTo(w, 0);
-          ctx.closePath();
-          ctx.fill();
-          ctx.fillStyle = '#e2e8f0';          // lit edge
-          ctx.fillRect(-w * 0.6, -reach * 0.9, w * 0.6, reach * 0.86);
-          ctx.fillStyle = '#475569';          // spine shadow
-          ctx.fillRect(w * 0.2, -reach * 0.9, w * 0.45, reach * 0.86);
-          // Guard + grip + pommel.
-          ctx.fillStyle = '#78350f';
-          ctx.fillRect(-w - 3, 0, w * 2 + 6, 3.5);
-          ctx.fillStyle = '#5b3a1a';
-          ctx.fillRect(-2, 3.5, 4, 9);
-          ctx.fillStyle = '#d4a017';
-          ctx.beginPath(); ctx.arc(0, 14, 2.4, 0, Math.PI * 2); ctx.fill();
-          // Per-weapon accent so each legendary reads as itself.
-          const accent = {
-            void_star_blade: '#818cf8', ossuary_blade: '#e2e8f0', inferno_brand: '#f97316',
-            megalodon_blade: '#67e8f9', aurora_blade: '#22d3ee', prismatic_saber: '#a855f7',
-            cursed_edge: '#a855f7', demon_soul_saber: '#ef4444', hellstone_greatblade: '#f97316'
-          }[it];
-          if (accent) {
-            ctx.strokeStyle = accent;
-            ctx.lineWidth = 1.6;
-            ctx.beginPath();
-            ctx.moveTo(-w * 0.7, -reach * 0.55);
-            ctx.quadraticCurveTo(0, -reach * 0.7, w * 0.7, -reach * 0.55);
-            ctx.stroke();
-          }
-        } else if (wt === 'ranged') {
-          // ---- RANGED: a real bow — curved limbs, string, grip wrap.
-          ctx.strokeStyle = '#8b5a2b';
-          ctx.lineWidth = 3.5;
-          ctx.beginPath();
-          ctx.arc(2, -6, 17, Math.PI * 0.62, Math.PI * 1.38);
-          ctx.stroke();
-          ctx.strokeStyle = '#e8e2d0';
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.moveTo(-9, -16); ctx.lineTo(-2, -6); ctx.lineTo(-9, 4);
-          ctx.stroke();
-          ctx.fillStyle = '#5b3a1a';
-          ctx.fillRect(0, -9, 4, 7);
-        } else {
-          // ---- MAGIC: a staff — shaft, wrapped head, glowing orb.
-          ctx.fillStyle = '#4a3623';
-          ctx.fillRect(-1.6, -22, 3.2, 34);
-          ctx.fillStyle = '#2f2318';
-          ctx.fillRect(-2.4, -22, 4.8, 5);
-          const oc = it === 'abyssal_staff' ? '#a855f7' : '#38bdf8';
-          ctx.fillStyle = oc;
-          ctx.beginPath(); ctx.arc(0, -26, 4.5, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = 'rgba(255,255,255,0.65)';
-          ctx.beginPath(); ctx.arc(-1.2, -27.5, 1.6, 0, Math.PI * 2); ctx.fill();
-        }
+        const M = WEAPON_SPRITES[it];
+        if (M && M.kind === 'blade') this._drawBladeModel(ctx, M);
+        else if (M && M.kind === 'bow') this._drawBowModel(ctx, M);
+        else if (M && M.kind === 'gun') this._drawGunModel(ctx, M);
+        else if (M && M.kind === 'staff') this._drawStaffModel(ctx, M);
+        else if (M && M.kind === 'tool') this._drawToolModel(ctx, M);
+        else if (wt === 'melee') this._drawBladeModel(ctx, {
+          reach: Math.max(34, Math.min(60, (itemData.range || 100) * 0.42)),
+          blade: '#94a3b8', edge: '#e2e8f0', spine: '#475569',
+          guard: '#78350f', pommel: '#d4a017', guardW: 6, shape: 'straight'
+        });
+        else if (wt === 'ranged') this._drawBowModel(ctx, {
+          limb: '#8b5a2b', string: '#e8e2d0', grip: '#5b3a1a', r: 17
+        });
+        else if (wt === 'magic') this._drawStaffModel(ctx, {
+          shaft: '#4a3623', wrap: '#2f2318', orb: it === 'abyssal_staff' ? '#a855f7' : '#38bdf8'
+        });
         ctx.restore();
       } else {
         // Non-weapon categories (materials, food, accessories…) keep the icon
@@ -1665,7 +1618,252 @@ class Player {
 
     ctx.restore();
   }
+
+  /**
+   * A sword model: blade profile (straight / broad / curved / kris / cleaver),
+   * metal colours, guard style and an optional emissive rune. `reach` scales
+   * every part together, so a dagger is the same weapon drawn small.
+   */
+  _drawBladeModel(ctx, M) {
+    const reach = M.reach || 44;
+    const w = (reach >= 48 ? 5 : 4) * (M.widthScale || 1);
+    const yTip = -reach;
+    const yMid = -reach * 0.62;
+    const shape = M.shape || 'straight';
+    const drawBlade = () => {
+      ctx.beginPath();
+      if (shape === 'curved' || shape === 'kris') {
+        // A curved edge: the spine bows back less than the edge, giving the
+        // classic scimitar/kris asymmetry.
+        const bow = shape === 'kris' ? w * 1.7 : w * 0.9;
+        ctx.moveTo(-w * 0.75, 0);
+        ctx.quadraticCurveTo(-w + bow, yMid, w * 0.2, yTip);
+        ctx.quadraticCurveTo(w + bow * 0.5, yMid, w, 0);
+      } else if (shape === 'broad') {
+        // A cleaver: a wide belly that narrows only at the very tip.
+        ctx.moveTo(-w * 1.25, 0);
+        ctx.lineTo(-w * 1.2, yMid);
+        ctx.lineTo(w * 0.1, yTip);
+        ctx.lineTo(w * 1.25, yMid);
+        ctx.lineTo(w * 1.25, 0);
+      } else {
+        ctx.moveTo(-w, 0);
+        ctx.lineTo(-w * 0.55, -reach * 0.92);
+        ctx.lineTo(0, yTip);
+        ctx.lineTo(w * 0.55, -reach * 0.92);
+        ctx.lineTo(w, 0);
+      }
+      ctx.closePath();
+      ctx.fill();
+    };
+    // Emissive aura under the blade for the glowing weapons.
+    if (M.glow) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.2 + Math.sin(Date.now() * 0.01) * 0.06;
+      ctx.fillStyle = M.glow;
+      ctx.fillRect(-w * 2.4, -reach - 4, w * 4.8, reach + 8);
+      ctx.restore();
+    }
+    ctx.fillStyle = M.blade || '#94a3b8';
+    drawBlade();
+    // Lit edge down the leading side, spine shadow down the back.
+    ctx.fillStyle = M.edge || '#e2e8f0';
+    ctx.fillRect(-w * 0.62, -reach * 0.9, w * 0.55, reach * 0.86);
+    ctx.fillStyle = M.spine || '#475569';
+    ctx.fillRect(w * 0.2, -reach * 0.9, w * 0.45, reach * 0.86);
+    // Fullers / runes: a darker channel down the middle for broad blades, or a
+    // glowing seam for the magical ones.
+    if (M.rune) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55 + Math.sin(Date.now() * 0.009) * 0.2;
+      ctx.fillStyle = M.rune;
+      ctx.fillRect(-1, -reach * 0.86, 2, reach * 0.8);
+      ctx.restore();
+    }
+    // Grip, guard, pommel — the guard is what most distinguishes two swords at
+    // this scale, so it is per-model.
+    ctx.fillStyle = M.guard || '#78350f';
+    if (M.guardStyle === 'disc') {
+      ctx.beginPath(); ctx.arc(0, 0, w + 3, 0, Math.PI * 2); ctx.fill();
+    } else if (M.guardStyle === 'wings') {
+      ctx.fillRect(-w - 7, -1.5, w + 7, 3);
+      ctx.fillRect(2, -1.5, w + 7, 3);
+      ctx.fillRect(-w - 6, -5, 2.5, 4);
+      ctx.fillRect(w + 3.5, -5, 2.5, 4);
+    } else {
+      ctx.fillRect(-(w + 3), 0, (w + 3) * 2, 3.5);
+    }
+    ctx.fillStyle = M.grip || '#5b3a1a';
+    ctx.fillRect(-2, 3.5, 4, 9);
+    ctx.fillStyle = M.pommel || '#d4a017';
+    if (M.pommelStyle === 'gem') {
+      ctx.fillRect(-2.6, 13, 5.2, 3.4);
+      ctx.fillStyle = M.pommel;
+      ctx.fillRect(-1.4, 13.6, 2.8, 1.6);
+    } else {
+      ctx.beginPath(); ctx.arc(0, 14, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  /** A bow model: limb colour, radius and whether it carries a nock/arrow. */
+  _drawBowModel(ctx, M) {
+    ctx.strokeStyle = M.limb || '#8b5a2b';
+    ctx.lineWidth = M.lineW || 3.5;
+    ctx.beginPath();
+    ctx.arc(2, -6, M.r || 17, Math.PI * 0.62, Math.PI * 1.38);
+    ctx.stroke();
+    ctx.strokeStyle = M.string || '#e8e2d0';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-9, -16); ctx.lineTo(-2, -6); ctx.lineTo(-9, 4);
+    ctx.stroke();
+    ctx.fillStyle = M.grip || '#5b3a1a';
+    ctx.fillRect(0, -9, 4, 7);
+    if (M.arrow) {
+      ctx.fillStyle = M.arrow;
+      ctx.fillRect(-2, -7, 22, 2);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(19, -8.5, 4, 5);
+    }
+  }
+
+  /** A gun / repeater / launcher: body, barrel, magazine,燃烧 core. */
+  _drawGunModel(ctx, M) {
+    ctx.fillStyle = M.body || '#334155';
+    ctx.fillRect(-4, -12, M.bodyW || 12, 6);
+    ctx.fillRect(-4, -6, 5, 14);
+    ctx.fillStyle = M.barrel || '#64748b';
+    ctx.fillRect(M.bodyW - 8, -10, M.barrelLen || 20, 3);
+    if (M.underBarrel) ctx.fillRect(M.bodyW - 12, -6, 10, 4);
+    if (M.mag) {
+      ctx.fillStyle = M.mag;
+      ctx.fillRect(1, -5, 5, M.magLen || 9);
+    }
+    if (M.core) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.5 + Math.sin(Date.now() * 0.012) * 0.25;
+      ctx.fillStyle = M.core;
+      ctx.fillRect(M.bodyW + (M.barrelLen || 20) - 12, -11, 3, 5);
+      ctx.restore();
+    }
+    ctx.fillStyle = M.grip || '#1e293b';
+    ctx.fillRect(-6, 7, 5, 7);
+  }
+
+  /** A staff: shaft, wrapped head, orb. */
+  _drawStaffModel(ctx, M) {
+    ctx.fillStyle = M.shaft || '#4a3623';
+    ctx.fillRect(-1.6, -22, 3.2, 34);
+    ctx.fillStyle = M.wrap || '#2f2318';
+    ctx.fillRect(-2.4, -22, 4.8, 5);
+    if (M.horns) {
+      ctx.fillStyle = M.shaft;
+      ctx.fillRect(-6, -26, 3, 6);
+      ctx.fillRect(3, -26, 3, 6);
+    }
+    if (M.ring) {
+      ctx.strokeStyle = M.ring;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0, M.orbY || -26, M.ringR || 8, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = M.orb || '#38bdf8';
+    ctx.beginPath(); ctx.arc(0, M.orbY || -26, M.orbR || 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.beginPath(); ctx.arc(-1.2, (M.orbY || -26) - 1.5, M.orbR ? M.orbR * 0.36 : 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /** Tools: pickaxe, axe, hammer, fishing rod — each its own head and shaft. */
+  _drawToolModel(ctx, M) {
+    const shaft = M.shaft || '#8b5a2b';
+    const shaftLen = M.shaftLen || 30;
+    ctx.save();
+    ctx.translate(0, -shaftLen * 0.35);
+    ctx.rotate(M.shaftAngle || 0.5);
+    ctx.fillStyle = shaft;
+    ctx.fillRect(-1.6, -shaftLen, 3.4, shaftLen + 8);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(0, -shaftLen * 0.55);
+    ctx.rotate(M.headAngle == null ? -0.7 : M.headAngle);
+    ctx.fillStyle = M.head || '#94a3b8';
+    if (M.toolKind === 'pick') {
+      ctx.fillRect(-14, -3, 28, 4);
+      ctx.fillStyle = M.headDark || '#64748b';
+      ctx.fillRect(-14, -3, 28, 1.4);
+      ctx.fillStyle = M.edge || '#e2e8f0';
+      ctx.fillRect(-13, -4.2, 7, 1.6);
+      ctx.fillRect(6, -4.2, 7, 1.6);
+    } else if (M.toolKind === 'axe') {
+      ctx.fillRect(-3, -8, 20, 9);
+      ctx.fillStyle = M.headDark || '#64748b';
+      ctx.fillRect(-3, -8, 20, 2.5);
+      ctx.fillStyle = M.edge || '#e2e8f0';
+      ctx.fillRect(15, -8.5, 3.5, 10);
+    } else if (M.toolKind === 'hammer') {
+      ctx.fillRect(-13, -7, 26, 9);
+      ctx.fillStyle = M.headDark || '#64748b';
+      ctx.fillRect(-13, 0, 26, 2);
+      ctx.fillStyle = M.edge || '#e2e8f0';
+      ctx.fillRect(-13, -7, 26, 2);
+    } else if (M.toolKind === 'rod') {
+      ctx.fillRect(2, -4, 26, 2.2);
+      ctx.strokeStyle = 'rgba(226,232,240,0.75)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(27, -2.8); ctx.quadraticCurveTo(30, 2, 27, 8); ctx.stroke();
+      ctx.fillStyle = M.head || '#f87171';
+      ctx.fillRect(25, 8, 4, 2.5);
+    }
+    ctx.restore();
+    if (M.grip) {
+      ctx.fillStyle = M.grip;
+      ctx.fillRect(-2, 0, 4, 5);
+    }
+  }
 }
+
+// ============================================================================
+// HELD-ITEM MODELS — one entry per weapon and tool that appears in the hotbar.
+//
+// Each entry is a drawing recipe, not a tint: a different blade PROFILE (a
+// kris waves, a cleaver is broad, a rapier is needle-thin), a different guard
+// (a disc, wings, or a plain crossbar), a different grip and pommel, and where
+// the weapon earns it a glow and a rune. Two legendary swords therefore read as
+// two different objects before you even look at the colour.
+//
+// Keys: kind | reach | shape | blade/edge/spine | guard/guardStyle/grip/pommel
+//       | glow/rune | (tools) toolKind/head/headDark/shaft/shaftLen
+// ============================================================================
+const WEAPON_SPRITES = {
+  // ---- Tools ---------------------------------------------------------------
+  copper_pickaxe: { kind: 'tool', toolKind: 'pick', head: '#c2703a', headDark: '#8a4a1e', edge: '#f0b98a', shaft: '#8b5a2b', shaftLen: 28, grip: '#3f3226' },
+  fishing_rod: { kind: 'tool', toolKind: 'rod', shaft: '#a16207', shaftLen: 26, head: '#f87171', grip: '#1e293b' },
+  // ---- Starting / craftable weapons ---------------------------------------
+  copper_sword: { kind: 'blade', reach: 40, shape: 'straight', blade: '#c2703a', edge: '#f0b98a', spine: '#8a4a1e', guard: '#8a4a1e', grip: '#5b3a1a', pommel: '#c2703a' },
+  iron_broadsword: { kind: 'blade', reach: 47, shape: 'broad', widthScale: 1.15, blade: '#d8dee8', edge: '#ffffff', spine: '#7c8899', guard: '#64748b', grip: '#3f3226', pommel: '#cbd5e1', guardStyle: 'disc' },
+  starlight_bow: { kind: 'bow', limb: '#fde68a', string: '#fff7cc', grip: '#5b3a1a', r: 17, lineW: 3.6, arrow: '#fef3c7' },
+  forest_wand: { kind: 'staff', shaft: '#7c5a3a', wrap: '#3f5129', orb: '#4ade80', orbR: 4.4, ring: '#86efac', ringR: 7.5 },
+  silver_saber: { kind: 'blade', reach: 52, shape: 'curved', blade: '#e5ecf5', edge: '#ffffff', spine: '#94a3b8', guard: '#cbd5e1', grip: '#3f3226', pommel: '#e2e8f0', guardStyle: 'wings' },
+  crystal_spear: { kind: 'blade', reach: 64, shape: 'straight', widthScale: 0.55, blade: '#c7b5f5', edge: '#ffffff', spine: '#7c3aed', guard: '#4c1d95', grip: '#2e1065', pommel: '#ddd6fe', glow: '#a78bfa', rune: '#f5d0fe', guardStyle: 'disc' },
+  ember_bow: { kind: 'bow', limb: '#b45309', string: '#fcd34d', grip: '#42240c', r: 18, lineW: 4, arrow: '#fb923c' },
+  moon_staff: { kind: 'staff', shaft: '#57534e', wrap: '#1e293b', orb: '#e2e8f0', orbR: 4.6, ring: '#bfdbfe', ringR: 9 },
+  diamond_blade: { kind: 'blade', reach: 56, shape: 'straight', blade: '#8ee6f5', edge: '#ecfeff', spine: '#0e7490', guard: '#155e75', grip: '#0f2c3d', pommel: '#a5f3fc', glow: '#67e8f9', guardStyle: 'wings' },
+  // ---- The Megalodon's own blade: a razor crescent, pale as a tooth -------
+  megalodon_blade: { kind: 'blade', reach: 58, shape: 'curved', blade: '#dbeafe', edge: '#ffffff', spine: '#3b5b78', guard: '#1e3a5f', grip: '#0f2338', pommel: '#67e8f9', glow: '#22d3ee', rune: '#a5f3fc', guardStyle: 'wings' },
+  // ---- Cursed chapel: a dark broad cleaver ---------------------------------
+  cursed_edge: { kind: 'blade', reach: 56, shape: 'broad', widthScale: 1.15, blade: '#7c6f9c', edge: '#ddd6fe', spine: '#3b2d5c', guard: '#2e1065', grip: '#1b0f36', pommel: '#a78bfa', glow: '#7c3aed', rune: '#c4b5fd', guardStyle: 'disc' },
+  ossuary_blade: { kind: 'blade', reach: 58, shape: 'broad', widthScale: 1.1, blade: '#e7e5e4', edge: '#ffffff', spine: '#57534e', guard: '#292524', grip: '#1c1917', pommel: '#f5f5f4', guardStyle: 'wings' },
+  inferno_brand: { kind: 'blade', reach: 59, shape: 'curved', blade: '#ea580c', edge: '#fed7aa', spine: '#7c2d12', guard: '#431407', grip: '#27100a', pommel: '#fb923c', glow: '#f97316', rune: '#fed7aa', guardStyle: 'wings' },
+  hellstone_greatblade: { kind: 'blade', reach: 66, shape: 'broad', widthScale: 1.3, blade: '#7f1d1d', edge: '#fca5a5', spine: '#450a0a', guard: '#1c0707', grip: '#26100a', pommel: '#f97316', glow: '#dc2626', guardStyle: 'disc' },
+  void_star_blade: { kind: 'blade', reach: 62, shape: 'straight', widthScale: 0.8, blade: '#1e1b4b', edge: '#c7d2fe', spine: '#312e81', guard: '#1e1b4b', grip: '#0b0a1f', pommel: '#818cf8', glow: '#6366f1', rune: '#e0e7ff', guardStyle: 'disc' },
+  ban_hammer: { kind: 'tool', toolKind: 'hammer', head: '#475569', headDark: '#1e293b', edge: '#e2e8f0', shaft: '#7c5a3a', shaftLen: 24, grip: '#0f172a' },
+  // ---- Bows, guns, staves --------------------------------------------------
+  soulfire_repeater: { kind: 'gun', body: '#451a03', bodyW: 18, barrel: '#78350f', barrelLen: 26, mag: '#7f1d1d', magLen: 14, grip: '#26100a', core: '#fb923c' },
+  abyssal_staff: { kind: 'staff', shaft: '#3b2a4d', wrap: '#241a33', orb: '#a855f7', orbR: 5, ring: '#c084fc', ringR: 9, horns: true }
+};
+
 
 // ==========================================
 // MONSTER ENEMIES (Zombie, Demon Eye, Wraith)
