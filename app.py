@@ -41,6 +41,24 @@ GITHUB_FALLBACK = "https://radit-smpaha.github.io/terraria-javascript/terraria.h
 INLINED_URL = (
     "https://radit-smpaha.github.io/terraria-javascript/terraria.inlined.html"
 )
+# CACHE-BUSTER. This is the bug that made Streamlit look frozen: st.iframe()
+# hands the browser a plain URL with no version token, so the browser serves its
+# CACHED copy of terraria.inlined.html forever. GitHub Pages would publish a new
+# build (verified: 200 OK, fresh Last-Modified) and the player would still see
+# the OLD game - which reads as "my update never deployed". Browsers key their
+# cache on the full URL, so any change to the query string forces a real refetch.
+# The token is derived from the size of the inlined build that ships in THIS
+# deploy, so it is stable across reruns (no needless re-download mid-session) but
+# automatically different on every rebuild - meaning once this file is fixed, all
+# future game updates show up with no extra work. CACHE_FORCE is a manual knob to
+# bust the cache by hand if a hotfix ever needs it.
+CACHE_FORCE = "v1"
+try:
+    _inlined = BASE / "terraria.inlined.html"
+    CACHE_TOKEN = "%s-%d" % (CACHE_FORCE, _inlined.stat().st_size)
+except Exception:
+    CACHE_TOKEN = "%s-unknown" % CACHE_FORCE
+INLINED_URL = "%s?v=%s" % (INLINED_URL, CACHE_TOKEN)
 # The game fills 100vh of whatever frame it is given, so the frame has to be
 # sized to the WINDOW, not to a fixed pixel count. 850px was taller than a
 # laptop viewport, which put the bottom of the arena - the hotbar - below the
@@ -213,3 +231,14 @@ if _debug:
 # stale-per-file the way terraria.html could (Pages once served an old
 # entities.js against a new terraria.js -> "Player is not defined").
 st.iframe(INLINED_URL, height=GAME_HEIGHT)
+
+# Visible build stamp. If the game ever looks stale again, compare this size
+# against GitHub Pages - equal numbers mean the deploy is fine and the problem
+# is the browser cache, not the repo.
+try:
+    st.caption(
+        "build %s - %s - if you see an old game, hard-refresh (Ctrl+F5)"
+        % (CACHE_TOKEN, INLINED_URL)
+    )
+except Exception:
+    pass
