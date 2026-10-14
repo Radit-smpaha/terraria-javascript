@@ -54,8 +54,15 @@ INLINED_URL = (
 # bust the cache by hand if a hotfix ever needs it.
 CACHE_FORCE = "v1"
 try:
-    _inlined = BASE / "terraria.inlined.html"
-    CACHE_TOKEN = "%s-%d" % (CACHE_FORCE, _inlined.stat().st_size)
+    # Hash (not size) so a future edit that happens to keep the same byte count
+    # still busts the cache.
+    import hashlib
+
+    _blob = (BASE / "terraria.inlined.html").read_bytes()
+    CACHE_TOKEN = "%s-%s" % (
+        CACHE_FORCE,
+        hashlib.md5(_blob).hexdigest()[:10],
+    )
 except Exception:
     CACHE_TOKEN = "%s-unknown" % CACHE_FORCE
 INLINED_URL = "%s?v=%s" % (INLINED_URL, CACHE_TOKEN)
