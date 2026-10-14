@@ -7880,9 +7880,14 @@ class World {
   }
 
   /**
-   * Sea haze across the reef's waterline seams. Draws a soft gradient over
-   * each border column where the open ocean begins, so the clipped land
-   * scenery dissolves into the water instead of ending on a vertical line.
+   * Sea haze across the reef's waterline seams.
+   *
+   * FIX: this used to be ONE full-height fillRect per seam, so wherever the
+   * camera sat near a border a long hard-edged rectangle was painted over the
+   * backdrop — the "long rectangle dividing the snow and ocean". It is now a
+   * two-axis wash: horizontally it eases out symmetrically on BOTH sides of
+   * the seam (so no edge exists anywhere), and vertically it fades to nothing
+   * toward the zenith, the way real atmospheric haze only sits near a horizon.
    */
   _paintReefSeamHaze(ctx, camera, w, h) {
     const rb = this.reefBounds;
@@ -7891,21 +7896,56 @@ class World {
       rb.left * TILE_SIZE - camera.x,     // reef's west edge (open sea)
       rb.right * TILE_SIZE - camera.x     // reef's east edge (meets the snow)
     ];
-    const reach = 170;
-    const haze = (x0, x1) => {
-      const left = Math.max(0, x0);
-      const right = Math.min(w, x1);
-      if (right - left < 2) return;
-      const grad = ctx.createLinearGradient(left, 0, right, 0);
-      grad.addColorStop(0, 'rgba(17, 62, 100, 0.72)');
-      grad.addColorStop(0.55, 'rgba(20, 70, 110, 0.34)');
-      grad.addColorStop(1, 'rgba(20, 70, 110, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(left, 0, right - left, h);
-    };
+    const reach = 240;
+    // Vertical profile: zero at the top (zenith is clear), peaking near the
+    // horizon line, easing again toward the ground fog at the bottom.
+    const gradV = ctx.createLinearGradient(0, 0, 0, h);
+    gradV.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradV.addColorStop(0.42, 'rgba(0, 0, 0, 0.55)');
+    gradV.addColorStop(0.60, 'rgba(0, 0, 0, 0.75)');
+    gradV.addColorStop(0.80, 'rgba(0, 0, 0, 0.45)');
+    gradV.addColorStop(1, 'rgba(0, 0, 0, 0)');
     for (const seam of seams) {
       if (seam < -reach || seam > w + reach) continue;
-      haze(seam - reach, seam + reach * 0.35);
+      // Symmetric span around the seam, clamped to the frame.
+      const x0 = Math.max(0, seam - reach);
+      const x1 = Math.min(w, seam + reach);
+      if (x1 - x0 < 2) continue;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, 0, x1 - x0, h);
+      ctx.clip();
+      // Mask: black at the centre, transparent at the clip edges, then the
+      // vertical profile turns that into a horizon-weighted haze.
+      const mask = ctx.createLinearGradient(x0, 0, x1, 0);
+      mask.addColorStop(0, 'rgba(0,0,0)');
+      mask.addColorStop(0.32, 'rgba(0,0,0,0.45)');
+      mask.addColorStop(0.5, 'rgba(0,0,0,1)');
+      mask.addColorStop(0.68, 'rgba(0,0,0,0.45)');
+      mask.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalCompositeOperation = 'source-over';
+      // Layer 1: the vertical profile, tinted deep-sea blue.
+      ctx.fillStyle = 'rgba(18, 66, 104, 1)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.save();
+      // Paint tint * profile by drawing the tint then multiplying alpha with
+      // a second pass is overkill — instead paint the profile shape directly
+      // in tint colour, reading stops off the same curve.
+      const tint = ctx.createLinearGradient(0, 0, 0, h);
+      tint.addColorStop(0, 'rgba(18, 66, 104, 0)');
+      tint.addColorStop(0.42, 'rgba(18, 66, 104, 0.20)');
+      tint.addColorStop(0.60, 'rgba(18, 66, 104, 0.30)');
+      tint.addColorStop(0.80, 'rgba(18, 66, 104, 0.14)');
+      tint.addColorStop(1, 'rgba(18, 66, 104, 0)');
+      ctx.fillStyle = tint;
+      ctx.fillRect(x0, 0, x1 - x0, h);
+      // Layer 2: multiply the horizontal mask in with 'destination-in' so the
+      // wash fades to nothing at BOTH clip edges — no seam edge survives.
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.fillStyle = mask;
+      ctx.fillRect(x0, 0, x1 - x0, h);
+      ctx.restore();
+      ctx.restore();
     }
   }
 
@@ -7913,6 +7953,10 @@ class World {
   // position/hash style as the landscape layers, so props never pop or drift
   // when the camera moves.
   renderBiomeDecor(ctx, camera, biome, w, h, t, night) {
+    // The reef is open water: the old code fell through to the swamp's
+    // reeds/stumps branch, which planted reeds and drowned stumps floating
+    // above the sea in the ocean-reef view. Land props belong on land only.
+    if (biome === 'reef' || this.dimension === 'ocean' || this.dimension === 'space') return;
     ctx.save();
     const propOffset = camera.x * 0.58;
     const start = Math.floor(propOffset / 190) - 1;
@@ -12918,11 +12962,93 @@ class Player {
       }
       ctx.restore();
     }
-    if (!isHellWeapon) {
-      ctx.font = "18px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(itemData.icon, 8, -6);
+    if (!isHellWeapon && !isPrismatic) {
+      // ---- REAL WEAPON SPRITES ------------------------------------------------
+      // Held items used to be drawn as the item's emoji, which looked like a
+      // sticker floating next to the player. Every weapon class is now drawn as
+      // a proper vector sprite anchored at the hand, so a sword looks like a
+      // sword, a pick like a pick, and a bow like a bow.
+      const it = heldItem.id;
+      const wt = itemData.weaponType;
+      const isTool = itemData.type === 'tool';
+      const isBlock = itemData.type === 'tile';
+      if (!isTool && !isBlock && (wt === 'melee' || wt === 'ranged' || wt === 'magic')) {
+        ctx.save();
+        if (wt === 'melee') {
+          // ---- MELEE: blade up, guard, grip, pommel. Proportions scale with
+          // the weapon's reach so a greatblade is visibly longer than a knife.
+          const reach = Math.max(34, Math.min(60, (itemData.range || 100) * 0.42));
+          const w = reach >= 48 ? 5 : 4;
+          // Blade: tapering steel with a bright edge and a dark spine.
+          ctx.fillStyle = '#94a3b8';
+          ctx.beginPath();
+          ctx.moveTo(-w, 0);
+          ctx.lineTo(-w * 0.55, -reach * 0.92);
+          ctx.lineTo(0, -reach);
+          ctx.lineTo(w * 0.55, -reach * 0.92);
+          ctx.lineTo(w, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = '#e2e8f0';          // lit edge
+          ctx.fillRect(-w * 0.6, -reach * 0.9, w * 0.6, reach * 0.86);
+          ctx.fillStyle = '#475569';          // spine shadow
+          ctx.fillRect(w * 0.2, -reach * 0.9, w * 0.45, reach * 0.86);
+          // Guard + grip + pommel.
+          ctx.fillStyle = '#78350f';
+          ctx.fillRect(-w - 3, 0, w * 2 + 6, 3.5);
+          ctx.fillStyle = '#5b3a1a';
+          ctx.fillRect(-2, 3.5, 4, 9);
+          ctx.fillStyle = '#d4a017';
+          ctx.beginPath(); ctx.arc(0, 14, 2.4, 0, Math.PI * 2); ctx.fill();
+          // Per-weapon accent so each legendary reads as itself.
+          const accent = {
+            void_star_blade: '#818cf8', ossuary_blade: '#e2e8f0', inferno_brand: '#f97316',
+            megalodon_blade: '#67e8f9', aurora_blade: '#22d3ee', prismatic_saber: '#a855f7',
+            cursed_edge: '#a855f7', demon_soul_saber: '#ef4444', hellstone_greatblade: '#f97316'
+          }[it];
+          if (accent) {
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(-w * 0.7, -reach * 0.55);
+            ctx.quadraticCurveTo(0, -reach * 0.7, w * 0.7, -reach * 0.55);
+            ctx.stroke();
+          }
+        } else if (wt === 'ranged') {
+          // ---- RANGED: a real bow — curved limbs, string, grip wrap.
+          ctx.strokeStyle = '#8b5a2b';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(2, -6, 17, Math.PI * 0.62, Math.PI * 1.38);
+          ctx.stroke();
+          ctx.strokeStyle = '#e8e2d0';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(-9, -16); ctx.lineTo(-2, -6); ctx.lineTo(-9, 4);
+          ctx.stroke();
+          ctx.fillStyle = '#5b3a1a';
+          ctx.fillRect(0, -9, 4, 7);
+        } else {
+          // ---- MAGIC: a staff — shaft, wrapped head, glowing orb.
+          ctx.fillStyle = '#4a3623';
+          ctx.fillRect(-1.6, -22, 3.2, 34);
+          ctx.fillStyle = '#2f2318';
+          ctx.fillRect(-2.4, -22, 4.8, 5);
+          const oc = it === 'abyssal_staff' ? '#a855f7' : '#38bdf8';
+          ctx.fillStyle = oc;
+          ctx.beginPath(); ctx.arc(0, -26, 4.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.65)';
+          ctx.beginPath(); ctx.arc(-1.2, -27.5, 1.6, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      } else {
+        // Non-weapon categories (materials, food, accessories…) keep the icon
+        // glyph — a raw fish or a pearl reads BETTER as a pictogram.
+        ctx.font = "18px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(itemData.icon, 8, -6);
+      }
     }
 
     ctx.restore();
@@ -20277,7 +20403,15 @@ const OCEAN_TILES = {
   // rather than a decorative prop. WRECK_MAST is a climbable mast (platform).
   WRECK_PLANK: 83,
   WRECK_HULL: 84,
-  WRECK_MAST: 85
+  WRECK_MAST: 85,
+  // ---- Abyssal sea ores. Four tiers of ocean-themed metal, found ONLY in the
+  // rock UNDER the abyssal planet's seabed. Rarer and richer the deeper you
+  // dig: brine (shallow) -> abyssal -> tidesteel -> leviathan (bottom). Each is
+  // placeable and drops its material when mined. --------------------------
+  BRINE_ORE: 86,
+  ABYSS_ORE: 87,
+  TIDE_ORE: 88,
+  LEVIATHAN_ORE: 89
 };
 const OCEAN_TILE_SET = new Set(Object.values(OCEAN_TILES));
 const OCEAN_WATER_TILE_CACHE = [];
@@ -20319,6 +20453,10 @@ TILES.TEMPLE_DOOR = OCEAN_TILES.TEMPLE_DOOR;
 TILES.WRECK_PLANK = OCEAN_TILES.WRECK_PLANK;
 TILES.WRECK_HULL = OCEAN_TILES.WRECK_HULL;
 TILES.WRECK_MAST = OCEAN_TILES.WRECK_MAST;
+TILES.BRINE_ORE = OCEAN_TILES.BRINE_ORE;
+TILES.ABYSS_ORE = OCEAN_TILES.ABYSS_ORE;
+TILES.TIDE_ORE = OCEAN_TILES.TIDE_ORE;
+TILES.LEVIATHAN_ORE = OCEAN_TILES.LEVIATHAN_ORE;
 
 Object.assign(TILE_PROPERTIES, {
   // Sacred Pearl: light was 11, which turned every pearl into a lighthouse
@@ -20338,7 +20476,13 @@ Object.assign(TILE_PROPERTIES, {
   // wreck is the ocean's ore seam), and the mast is climbable and gives wood.
   [OCEAN_TILES.WRECK_PLANK]: { solid: true, light: 0, color: '#5b4636', name: 'Rotten Plank', drops: { id: 'wood', count: 2 } },
   [OCEAN_TILES.WRECK_HULL]: { solid: true, light: 0, color: '#3f3226', name: 'Barnacled Hull', drops: { id: 'iron_ore', count: 2 } },
-  [OCEAN_TILES.WRECK_MAST]: { solid: false, light: 0, color: '#7c5a3a', name: 'Broken Mast', isPlatform: true, drops: { id: 'wood', count: 3 } }
+  [OCEAN_TILES.WRECK_MAST]: { solid: false, light: 0, color: '#7c5a3a', name: 'Broken Mast', isPlatform: true, drops: { id: 'wood', count: 3 } },
+  // The abyssal sea ores. Leviathan ore glows faintly so the bottom of the
+  // mine is findable; the rest are lit by the player's own light.
+  [OCEAN_TILES.BRINE_ORE]: { solid: true, light: 0, color: '#cbd5e1', name: 'Brine Ore', drops: { id: 'brine_ore', count: 1 } },
+  [OCEAN_TILES.ABYSS_ORE]: { solid: true, light: 1, color: '#312e81', name: 'Abyssal Ore', drops: { id: 'abyss_ore', count: 1 } },
+  [OCEAN_TILES.TIDE_ORE]: { solid: true, light: 2, color: '#0ea5e9', name: 'Tidesteel Ore', drops: { id: 'tide_ore', count: 1 } },
+  [OCEAN_TILES.LEVIATHAN_ORE]: { solid: true, light: 3, color: '#67e8f9', name: 'Leviathan Ore', drops: { id: 'leviathan_ore', count: 1 } }
 });
 
 const OCEAN_BASE_DRAW_TILE = World.prototype.drawTileGraphic;
@@ -20585,6 +20729,53 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     ctx.fillStyle = '#2f5f4a';
     ctx.fillRect(sx + 18, sy + 20, 3, 3);
     ctx.fillRect(sx + 3, sy + 1, 2, 3);
+  } else if (tile === OCEAN_TILES.BRINE_ORE || tile === OCEAN_TILES.ABYSS_ORE
+      || tile === OCEAN_TILES.TIDE_ORE || tile === OCEAN_TILES.LEVIATHAN_ORE) {
+    // ---- THE ABYSSAL SEA ORES. Each is drawn as the abyssal stone with a
+    // cluster of crystal nodules in its own colour, and the richer tiers get a
+    // self-lit glow so a deep seam is findable in the dark.
+    const isLevi = tile === OCEAN_TILES.LEVIATHAN_ORE;
+    const isTide = tile === OCEAN_TILES.TIDE_ORE;
+    const isAbyss = tile === OCEAN_TILES.ABYSS_ORE;
+    // Base: the same dark seabed stone the ocean dimension uses.
+    ctx.fillStyle = '#141d26';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    if (exposedTop) {
+      ctx.fillStyle = '#1f2c38';
+      ctx.fillRect(sx, sy, TILE_SIZE, 3);
+    }
+    const oreCol = isLevi ? '#67e8f9' : isTide ? '#0ea5e9'
+      : isAbyss ? '#4338ca' : '#e2e8f0';
+    const oreLit = isLevi ? '#cffafe' : isTide ? '#7dd3fc'
+      : isAbyss ? '#818cf8' : '#ffffff';
+    // A soft glow halo on the two richest tiers.
+    if (isLevi || isTide) {
+      ctx.fillStyle = isLevi
+        ? `rgba(103,232,249,${(0.10 + pulse * 0.10).toFixed(3)})`
+        : `rgba(14,165,233,${(0.07 + pulse * 0.06).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(sx + 12, sy + 12, 11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Nodule cluster: three or four chunky crystals, deterministic per tile.
+    const nodes = [
+      [(tx * 5 + ty * 3) % 8 + 5, (tx * 3 + ty * 7) % 8 + 4, 4],
+      [(tx * 7 + ty * 11) % 9 + 11, (tx * 13 + ty * 5) % 8 + 6, 3],
+      [(tx * 11 + ty * 2) % 8 + 4, (tx * 5 + ty * 13) % 7 + 13, 3]
+    ];
+    if (isLevi) nodes.push([(tx * 3 + ty * 9) % 7 + 13, (tx * 7 + ty * 3) % 6 + 14, 2]);
+    for (const [ox, oy, rr] of nodes) {
+      ctx.fillStyle = oreCol;
+      ctx.beginPath();
+      ctx.moveTo(sx + ox, sy + oy - rr);
+      ctx.lineTo(sx + ox + rr, sy + oy);
+      ctx.lineTo(sx + ox, sy + oy + rr);
+      ctx.lineTo(sx + ox - rr, sy + oy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = oreLit;
+      ctx.fillRect(sx + ox - 1, sy + oy - 1, 2, 2);
+    }
   } else if (tile === OCEAN_TILES.WRECK_MAST) {
     // A leaning, splintered mast you can stand on — an actual platform tile.
     ctx.fillStyle = 'rgba(0,0,0,0)';
@@ -21428,6 +21619,25 @@ World.prototype.generateReef = function() {
       const nat = this.naturalTerrainTiles[idx];
       if (this.tiles[idx] !== nat || nat === TILES.AIR) continue;
       if (veg.has(nat) || y >= natSurf) this.tiles[idx] = TILES.AIR;
+    }
+  }
+  // HARD SWEEP above the waterline. The snapshot shave above only clears
+  // tiles that still MATCH the natural generation, so trees/houses from an
+  // older worldgen (or a player build) survived inside the reef band and
+  // floated over open water. Anything solid and non-temple above seaY in the
+  // reef columns is now removed outright — the reef is open sea.
+  for (let x = left; x < edgeRight; x++) {
+    for (let y = 1; y < seaY; y++) {
+      const idx = y * this.width + x;
+      const t = this.tiles[idx];
+      if (t === TILES.AIR || t === TILES.WATER) continue;
+      if (t === TILES.OCEAN_PORTAL || t === TILES.DORMANT_OCEAN_PORTAL) continue;
+      if (t === TILES.TEMPLE_DOOR || t === TILES.TEMPLE_LEVER || t === TILES.TEMPLE_LEVER_PULLED) continue;
+      if (t === TILES.SACRED_PEARL) continue; // shrine architecture keeps its pearls
+      // Leave the tide-temple superstructure alone (stone-brick/marble walls
+      // inside the temple bounds); clear everything else.
+      if (typeof this.isInsideReefTemple === 'function' && this.isInsideReefTemple(x, y)) continue;
+      this.tiles[idx] = TILES.AIR;
     }
   }
 
@@ -22291,10 +22501,22 @@ World.prototype.generateOceanPlanet = function() {
   }
   // Ore + crystals dress the cavern floors: iron and gold in the stone, and a
   // vein of glowing crystal so the deep abyss is lit and worth diving for.
+  //
+  // THIS is also where the OCEAN-THEMED ORES live. They are found nowhere else
+  // in the game: the rock under the abyssal seabed is the only source of brine,
+  // abyssal, tidesteel and leviathan ore — the materials the Megalodon's
+  // fang-blade is forged from. Each tier owns a DEPTH BAND, so the deeper you
+  // dig the richer the seam: brine just under the seabed, leviathan near the
+  // map floor. The band fraction is measured from the local seabed down to the
+  // bottom, so even a shallow column still yields brine at its own floor.
   for (let x = 2; x < this.width - 2; x++) {
-    for (let y = duneFloor[x] + 5; y < this.height - 2; y++) {
+    const top = duneFloor[x];
+    const span = Math.max(1, this.height - 2 - top);
+    for (let y = top + 5; y < this.height - 2; y++) {
       const tile = this.getTile(x, y);
       if (tile !== TILES.STONE) continue;
+      // 0 at the seabed, 1 at the map floor.
+      const depth = (y - top) / span;
       const roll = Math.random();
       if (roll < 0.012) this.setTile(x, y, TILES.IRON_ORE);
       else if (roll < 0.018) this.setTile(x, y, TILES.GOLD_ORE);
@@ -22302,6 +22524,29 @@ World.prototype.generateOceanPlanet = function() {
       // A crystal stuck to a cavern ceiling sparkles the whole chamber.
       else if (roll < 0.024 && this.getTile(x, y - 1) === TILES.AIR) {
         this.setTile(x, y, TILES.CRYSTAL);
+      }
+      // ---- Ocean-themed ore bands. The common ore of each band gets a wide
+      // share; the rarer ore above it is a thin seam, so a seam feels found.
+      else if (roll < 0.033) {
+        // Brine: the shallow band, commonest near the seabed.
+        if (depth < 0.55) this.setTile(x, y, TILES.BRINE_ORE);
+        else if (roll < 0.028) this.setTile(x, y, TILES.BRINE_ORE);
+        else this.setTile(x, y, TILES.ABYSS_ORE);
+      } else if (roll < 0.042) {
+        // Abyssal: the middle band.
+        if (depth > 0.30 && depth < 0.82) this.setTile(x, y, TILES.ABYSS_ORE);
+        else if (roll < 0.037) this.setTile(x, y, TILES.BRINE_ORE);
+        else this.setTile(x, y, TILES.TIDE_ORE);
+      } else if (roll < 0.049) {
+        // Tidesteel: the deep band, below the middle.
+        if (depth > 0.55) this.setTile(x, y, TILES.TIDE_ORE);
+        else if (roll < 0.045) this.setTile(x, y, TILES.ABYSS_ORE);
+        else this.setTile(x, y, TILES.TIDE_ORE);
+      } else if (roll < 0.0535) {
+        // Leviathan: the very bottom of the planet, rare everywhere else.
+        if (depth > 0.78) this.setTile(x, y, TILES.LEVIATHAN_ORE);
+        else if (roll < 0.051) this.setTile(x, y, TILES.TIDE_ORE);
+        else this.setTile(x, y, TILES.LEVIATHAN_ORE);
       }
     }
   }
@@ -22908,6 +23153,50 @@ World.prototype.enterOceanDimension = function() {
   this.surfaceHeights = new Int16Array(this.width);
   this.dimension = 'ocean';
   const arena = this.generateOceanPlanet();
+  // ---- ABYSSAL ORE MIGRATION --------------------------------------------
+  // Ores only generate during generateOceanPlanet(), so any ocean world made
+  // before they existed is stone from seabed to bedrock — no brine, no abyssal,
+  // no tidesteel, no leviathan, and therefore NO Fang of the Last Predator.
+  // Seed the seams into any stone that has never been carved by the player.
+  if (!this._abyssOreSeeded) {
+    const O = OCEAN_TILES;
+    const oceanTiers = [
+      { id: O.BRINE_ORE, weight: 0.055 },   // shallow band
+      { id: O.ABYSS_ORE, weight: 0.040 },   // middle band
+      { id: O.TIDE_ORE, weight: 0.028 },    // deep band
+      { id: O.LEVIATHAN_ORE, weight: 0.012 } // bottom of the world
+    ];
+    const totalW = oceanTiers.reduce((s, t) => s + t.weight, 0);
+    let seeded = 0;
+    for (let x = 2; x < this.width - 2; x++) {
+      // Find the seabed: the first solid non-sand/stone cap from above, or fall
+      // back to the surface height for this column.
+      let top = this.surfaceHeights[x];
+      const span = Math.max(1, this.height - 2 - top);
+      for (let y = top + 4; y < this.height - 2; y++) {
+        const i = y * this.width + x;
+        if (this.tiles[i] !== TILES.STONE) continue;
+        const depth = (y - top) / span;
+        const roll = Math.random() * totalW;
+        let pick = null;
+        for (const t of oceanTiers) {
+          roll -= t.weight;
+          if (roll <= 0) { pick = t.id; break; }
+        }
+        if (pick === null) continue;
+        // Band gating: brine shallow, leviathan deep, so migration matches the
+        // fresh-generation distribution.
+        if (pick === O.BRINE_ORE && depth > 0.62) continue;
+        if (pick === O.LEVIATHAN_ORE && depth < 0.62) continue;
+        this.tiles[i] = pick;
+        seeded++;
+      }
+    }
+    this._abyssOreSeeded = true;
+    if (seeded > 0 && typeof console !== 'undefined') {
+      console.log('[terra-migrate] abyssal ore seams seeded into this ocean world: ' + seeded);
+    }
+  }
   return arena;
 };
 
@@ -25400,7 +25689,7 @@ class Megalodon {
   }
 
 
-﻿  /**
+  /**
    * A shark with a spine.
    *
    * The body is never drawn as one frozen silhouette: the whole animal is
@@ -25677,15 +25966,14 @@ class Megalodon {
       const rootB = spineAt(0.575, 0.62);
       const mid   = spineAt(0.635, 0);
       const drop  = bodyHalf(0.635) * 0.95 + pecFlap(0.5) * 22;
-      // The wing's outer edge is chewed: same raggedEdge treatment, so the
-      // torn silhouette holds up at every phase.
-      const wingTip = { x: mid.x - 108 - pecFlap(0.12) * 30, y: mid.y + drop * 1.18 + pecFlap(0.12) * 16 };
-      const pts = [
-        rootB,
-        { x: mid.x - 66 - pecFlap(0.3) * 20, y: mid.y + drop * 0.92 + pecFlap(0.3) * 10 }
-      ].concat(raggedEdge({ x: mid.x - 66 - pecFlap(0.3) * 20, y: mid.y + drop * 0.92 + pecFlap(0.3) * 10 },
-        wingTip, 3, 7 + tearAmp * 11, 71.3))
-        .concat([{ x: mid.x - 66 - pecFlap(0.5) * 14, y: mid.y + drop * 0.78 + pecFlap(0.5) * 8 }])
+      // Same swept-wing silhouette as the near pectoral, tucked smaller and
+      // darker behind the body — a clean leading edge out to a pointed tip,
+      // concave torn trailing edge back to the flank.
+      const wingTip = { x: mid.x - 128 - pecFlap(0.12) * 26, y: mid.y + drop * 1.24 + pecFlap(0.12) * 14 };
+      const backEnd = { x: mid.x - 56 - pecFlap(0.5) * 12, y: mid.y + drop * 0.68 + pecFlap(0.5) * 8 };
+      const pts = [rootB]
+        .concat(raggedEdge(rootB, wingTip, 2, 5 + tearAmp * 8, 71.3))
+        .concat(raggedEdge(wingTip, backEnd, 3, 6 + tearAmp * 9, 72.9))
         .concat([rootA]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finDark;
@@ -25899,16 +26187,21 @@ class Megalodon {
       // a hair outside the hull line), so no background can show through
       // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
-      const tipX = base.x - 30 - (this.surge || 0) * 18 - (dashing ? 12 : 0);
-      const tipY = base.y - bodyHalf(0.43) * 1.86 + finTilt * 14;
-      // ---- Edge dressing: a HEALTHY dorsal is one of the cleanest shapes in
-      // the ocean — a smooth swept crescent. Ragged bites only appear as the
-      // animal is wounded; the old code tore even a phase-1 fin (amp 6-7px on
-      // every other segment), which is what made it read as a messy blob
-      // instead of a fin.
-      const edgeTear = Math.max(0, tearAmp - 0.25) * 18;
-      const rootB = { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.45 };
-      const rootF = { x: rootFront.x + 2, y: rootFront.y - bodyHalf(0.43) * 0.30 };
+      // DORSAL RESHAPE. The apex used to sit 30px back at 1.86 body-depths,
+      // with the root anchors pinched so the whole fin read as a short spike
+      // perched on the ridge. A real macropredator dorsal is TALL and clearly
+      // swept: apex ~2.6 body-depths up and well aft of the leading root, with
+      // a long convex leading edge that runs from the shoulder to the tip.
+      const finH = bodyHalf(0.43) * 2.6;
+      const tipX = base.x - 64 - (this.surge || 0) * 12 - (dashing ? 10 : 0);
+      const tipY = base.y - finH + finTilt * 14;
+      // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
+      // the ridge cap) so the leading edge has room to run long and convex —
+      // the line that actually reads "shark fin" from a mile off.
+      const rootFrontL = spineAt(0.62, -0.86);
+      const edgeTear = Math.max(0, tearAmp - 0.25) * 14;
+      const rootB = { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.40 };
+      const rootF = { x: rootFrontL.x + 2, y: rootFrontL.y - bodyHalf(0.43) * 0.22 };
       const sampleQuad = (p0, pc, p1, n) => {
         const out = [];
         for (let i = 0; i <= n; i++) {
@@ -25921,18 +26214,19 @@ class Megalodon {
         return out;
       };
       const tipP = { x: tipX, y: tipY };
-      // Rear slope (root -> tip): bows out and back so the fin has a full
-      // crescent back instead of a straight tent-pole edge.
+      // Rear slope (root -> tip): SHORT and concave — the fin's trailing edge
+      // drops from the apex quickly, which is what makes the shape read as a
+      // triangle instead of a sail.
       const midRear = { x: (rootB.x + tipX) / 2, y: (rootB.y + tipY) / 2 };
       const leading = edgeTear > 1.5
-        ? raggedEdge(rootB, tipP, 6, edgeTear, 61.7)
-        : sampleQuad(rootB, { x: midRear.x - 9, y: midRear.y - 5 }, tipP, 9);
-      // Front slope (tip -> front root): the long convex edge — the line that
-      // actually reads "shark fin" from a mile off.
+        ? raggedEdge(rootB, tipP, 5, edgeTear, 61.7)
+        : sampleQuad(rootB, { x: midRear.x + 7, y: midRear.y + 10 }, tipP, 7);
+      // Front slope (tip -> front root): the LONG convex leading edge. The
+      // control point is pushed forward and down so the edge bows outward.
       const midFront = { x: (tipX + rootF.x) / 2, y: (tipY + rootF.y) / 2 };
       const trailing = edgeTear > 1.5
-        ? raggedEdge(tipP, rootF, 7, edgeTear, 63.1)
-        : sampleQuad(tipP, { x: midFront.x - 6, y: midFront.y - 11 }, rootF, 11);
+        ? raggedEdge(tipP, rootF, 6, edgeTear, 63.1)
+        : sampleQuad(tipP, { x: midFront.x + 14, y: midFront.y - 4 }, rootF, 10);
       // Base: ride the actual back ridge so the fin is one piece with the hull.
       const baseLine = [];
       for (let u = 0.62; u >= 0.235; u -= 0.035) {
@@ -25961,15 +26255,15 @@ class Megalodon {
       // Three rays fanning root -> tip: fin structure, not clutter.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(rootFront.x - 6, rootFront.y - 10 - r * 3);
-        ctx.lineTo(tipX + 8 + r * 5, tipY + 16 + r * 13);
+        ctx.moveTo(rootFrontL.x - 2 - r * 6, rootFrontL.y - 8 - r * 6);
+        ctx.lineTo(tipX + 6 + r * 9, tipY + 22 + r * 24);
         ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(206, 224, 255, 0.30)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(rootFront.x + 2, rootFront.y);
-      ctx.quadraticCurveTo(rootFront.x - 22, rootFront.y - bodyHalf(0.43) * 0.52, tipX, tipY - 2);
+      ctx.moveTo(rootFrontL.x + 2, rootFrontL.y);
+      ctx.quadraticCurveTo((rootFrontL.x + tipX) / 2 + 12, (rootFrontL.y + tipY) / 2 - 4, tipX, tipY - 2);
       ctx.stroke();
       ctx.restore();
       // Apex: the dorsal is notched and torn.
@@ -26051,11 +26345,15 @@ class Megalodon {
       const mid   = spineAt(0.635, 0);
       const f = pecFlap;
       const wing = bodyHalf(0.635) * 1.5 + swing * 0.05;
-      const wMid = { x: mid.x - 74 - f(0.3) * 26, y: mid.y + wing * 0.9 + f(0.3) * 12 };
-      const wTip = { x: mid.x - 122 - f(0.12) * 34, y: mid.y + wing * 1.22 + f(0.12) * 18 };
-      const pts = [rootB, wMid]
-        .concat(raggedEdge(wMid, wTip, 3, 8 + tearAmp * 12, 81.7))
-        .concat([{ x: mid.x - 76 - f(0.5) * 18, y: mid.y + wing * 0.8 + f(0.5) * 10 }])
+      // PECTORAL RESHAPE. The wing used to be built from [rootB, wMid, wTip]
+      // with wMid only 74px out at 0.9 wing-depth — a fat, nearly vertical
+      // paddle. A pectoral is a LONG, NARROW, SWEPT-BACK wing: leading edge
+      // runs clean from the belly to a pointed tip far aft, then a concave
+      // trailing edge returns. Tearing only lives on the trailing edge.
+      const wTip = { x: mid.x - 148 - f(0.12) * 30, y: mid.y + wing * 1.30 + f(0.12) * 16 };
+      const trailingEnd = { x: mid.x - 62 - f(0.5) * 14, y: mid.y + wing * 0.70 + f(0.5) * 8 };
+      const pts = [rootB, wTip]
+        .concat(raggedEdge(wTip, trailingEnd, 3, 6 + tearAmp * 10, 81.7))
         .concat([rootA]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#ffe4e6' : finLite;
@@ -26069,19 +26367,21 @@ class Megalodon {
       // hanging off the fin rather than as membrane structure.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
       ctx.lineWidth = 1.8;
-      // Rays: three clean strokes across the wing, not five scribbled lines.
+      // Rays: three clean strokes fanning along the swept wing.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 5);
-        ctx.quadraticCurveTo(mid.x - 34, mid.y + wing * 0.78 + r * 6,
-          mid.x - 58 - f(0.2) * 12, mid.y + wing * 0.92 + r * 5);
+        ctx.moveTo(rootB.x + 2, rootB.y - 3 + r * 3);
+        ctx.quadraticCurveTo(mid.x - 58, mid.y + wing * 0.82 + r * 6,
+          wTip.x + 22 + r * 11, wTip.y - 12 - r * 8);
         ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.4)';
+      // The lit leading edge, running root -> tip along the sweep.
+      ctx.strokeStyle = 'rgba(206, 224, 255, 0.28)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(mid.x - 70, mid.y + wing * 0.86);
-      ctx.quadraticCurveTo(mid.x - 96, mid.y + wing * 1.04, mid.x - 104 - f(0.15) * 12, mid.y + wing * 1.16);
+      ctx.moveTo(rootB.x, rootB.y - 2);
+      ctx.quadraticCurveTo((rootB.x + wTip.x) / 2 - 6, (rootB.y + wTip.y) / 2 + wing * 0.10,
+        wTip.x, wTip.y);
       ctx.stroke();
     }
 
@@ -26182,6 +26482,93 @@ class Megalodon {
         }
       }
     }
+
+      // ---- Richer hide-wear pass. The single-slash loop above is kept, and
+      // these additional scar families layer over it so the animal reads as a
+      // scarred veteran rather than a cleanly sketched silhouette.
+      const seed = this.scarSeed || 0;
+      // (a) TOOTH-RAKE TRIPLES: three parallel scratches from one rival's
+      //     swipe — always a tight cluster of exactly three.
+      const rakes = 2 + Math.floor(this._hash01(seed * 5.7) * 3);
+      for (let rk = 0; rk < rakes; rk++) {
+        const rs = rk * 13.31 + seed * 0.9;
+        const u = 0.22 + this._hash01(rs) * 0.6;
+        const p = spineAt(u, -0.74 + this._hash01(rs * 1.4) * 0.55);
+        const baseA = 0.55 + this._hash01(rs * 2.1) * 0.6 + spineBend(u) * 0.35;
+        const len = 20 + this._hash01(rs * 2.8) * 26;
+        for (let t = -1; t <= 1; t++) {
+          const a = baseA + t * 0.14;
+          const off = t * 5.5;
+          ctx.strokeStyle = 'rgba(206, 214, 228, ' + (0.34 + injury * 0.2).toFixed(2) + ')';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.sin(baseA) * off, p.y + Math.cos(baseA) * off);
+          ctx.lineTo(p.x + Math.sin(baseA) * off + Math.cos(a) * len,
+            p.y + Math.cos(baseA) * off + Math.sin(a) * len);
+          ctx.stroke();
+        }
+      }
+      // (b) HEALED BITE HOLES: paired pockmarks with a raised pale rim.
+      const holes = 2 + Math.floor(this._hash01(seed * 3.9) * 3);
+      for (let hIdx = 0; hIdx < holes; hIdx++) {
+        const hs = hIdx * 8.61 + seed * 3.4;
+        const u = 0.20 + this._hash01(hs) * 0.64;
+        const p = spineAt(u, -0.72 + this._hash01(hs * 1.6) * 0.5);
+        const rr = 3.4 + this._hash01(hs * 2.3) * 4.4;
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.55)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(226, 234, 252, 0.35)';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.45)';
+        ctx.beginPath(); ctx.arc(p.x - rr * 2.2, p.y + rr * 0.8, rr * 0.5, 0, Math.PI * 2); ctx.fill();
+      }
+      // (c) BARNACLE RINGS: pale encrusted clusters from its slow years.
+      const barns = 4 + Math.floor(this._hash01(seed * 7.1) * 4);
+      for (let bIdx = 0; bIdx < barns; bIdx++) {
+        const bs = bIdx * 4.773 + seed * 2.1;
+        const u = 0.30 + this._hash01(bs) * 0.56;
+        const p = spineAt(u, -0.9 + this._hash01(bs * 1.7) * 0.45);
+        const rr = 2.2 + this._hash01(bs * 2.3) * 3.2;
+        ctx.strokeStyle = 'rgba(216, 226, 244, 0.42)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(180, 195, 220, 0.28)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(240, 246, 255, 0.28)';
+        ctx.beginPath(); ctx.arc(p.x - rr * 0.3, p.y - rr * 0.3, rr * 0.3, 0, Math.PI * 2); ctx.fill();
+      }
+      // (d) DAPPLE COAT: faint two-tone speckle along the whole flank, bigger
+      //     and denser than before but low-contrast — texture, never noise.
+      const dapples = 30 + Math.floor(injury * 14);
+      for (let d = 0; d < dapples; d++) {
+        const ds = d * 3.317 + seed * 0.31;
+        const u = 0.10 + this._hash01(ds) * 0.86;
+        const p = spineAt(u, -0.95 + this._hash01(ds * 1.9) * 1.55);
+        const rr = 2.6 + this._hash01(ds * 2.7) * 6;
+        const upper = this._hash01(ds * 1.9) < 0.55;
+        ctx.fillStyle = upper ? 'rgba(210, 230, 255, 0.07)' : 'rgba(6, 10, 20, 0.06)';
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, rr, rr * 0.58, this._hash01(ds * 4.1) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // (e) CROSS-HATCHED SCAR WEBS: long-healed wounds crossed by older ones.
+      const webs = 1 + Math.floor(this._hash01(seed * 9.9) * 2);
+      for (let wIdx = 0; wIdx < webs; wIdx++) {
+        const ws = wIdx * 17.43 + seed * 2.6;
+        const u = 0.30 + this._hash01(ws) * 0.46;
+        const p = spineAt(u, -0.66 + this._hash01(ws * 1.3) * 0.5);
+        const arm = 12 + this._hash01(ws * 2.4) * 14;
+        ctx.strokeStyle = 'rgba(224, 232, 250, 0.26)';
+        ctx.lineWidth = 1.2;
+        for (const a of [0.7, 2.15, 3.5, 4.9]) {
+          const aa = a + this._hash01(ws * 3.1) * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x - Math.cos(aa) * arm, p.y - Math.sin(aa) * arm * 0.7);
+          ctx.lineTo(p.x + Math.cos(aa) * arm, p.y + Math.sin(aa) * arm * 0.7);
+          ctx.stroke();
+        }
+      }
 
     // ======================================================================
     // 8. THE HEAD â€” blunt snout, heavy brow, burning eye. The head carries
@@ -31334,23 +31721,39 @@ const NEW_ITEMS = {
   fish_angler: { id: 'fish_angler', name: 'Abyssal Anglerfish', type: 'material', icon: '🐟', stackMax: 256 },
   sacred_pearl: { id: 'sacred_pearl', name: 'Sacred Pearl', type: 'material', icon: '🫧', stackMax: 256 },
   coral_fragment: { id: 'coral_fragment', name: 'Coral Fragment', type: 'material', icon: '🪸', stackMax: 256 },
-  sea_scale: { id: 'sea_scale', name: 'Kraken Scale', type: 'material', icon: '🔹', stackMax: 256 },
-  kraken_trophy: { id: 'kraken_trophy', name: 'Kraken Trophy', type: 'material', icon: '🦑', stackMax: 1 },
-  leviathan_trident: { id: 'leviathan_trident', name: 'Kraken Trident', type: 'weapon', weaponType: 'melee', damage: 142, range: 132, useTime: 0.28, icon: '🔱', stackMax: 1 },
-  // The Kraken's signature ranged drop: no ammo, ink tendrils that lash on
-  // hit and sometimes lock the target stiff (stun-ink proc on monster hits,
-  // see the projectile→monster path in Game.update).
-  tentacle_gun: {
-    id: 'tentacle_gun', name: 'Tentacle Gun', type: 'weapon', weaponType: 'ranged',
-    damage: 96, projectile: 'ink_tentacle', speed: 16, useTime: 0.16, critBonus: 0.10,
-    usesAmmo: false, stunChance: 0.35, stunDuration: 1.4, icon: '🐙', stackMax: 1
+  // ==========================================================================
+  // THE ABYSSAL SEA — ocean-themed ores, carved from the rock UNDER the seabed
+  // of the abyssal planet. Four tiers of mythic sea-metal, deepest = richest.
+  // ==========================================================================
+  brine_ore: {
+    id: 'brine_ore', name: 'Brine Ore', type: 'material', icon: '🧂', stackMax: 999,
+    desc: 'Salt-crusted metal dredged from the shallow rock just beneath the seabed.'
+  },
+  abyss_ore: {
+    id: 'abyss_ore', name: 'Abyssal Ore', type: 'material', icon: '🌑', stackMax: 999,
+    desc: 'Pitch-black metal veined with cold light. Found deep in the abyssal underworld.'
+  },
+  tide_ore: {
+    id: 'tide_ore', name: 'Tidesteel Ore', type: 'material', icon: '🌊', stackMax: 999,
+    desc: 'Blue ore that hums like a trapped current. Rarer than abyssal ore, deeper still.'
+  },
+  leviathan_ore: {
+    id: 'leviathan_ore', name: 'Leviathan Ore', type: 'material', icon: '💠', stackMax: 999,
+    desc: 'Primordial metal from the very bottom of the abyssal planet — the rarest sea ore.'
+  },
+  // The Megalodon's fangs, torn from its jaws on death and used to forge its
+  // signature weapon. Deliberately NOT the trophy, so the trophy recipe chain
+  // and the weapon chain never compete for one unique item.
+  megalodon_tooth: {
+    id: 'megalodon_tooth', name: "Megalodon's Tooth", type: 'material', icon: '🦷', stackMax: 999,
+    desc: 'A serrated slab of enamel longer than your forearm. Still warm.'
   },
   diving_gear_1: { id: 'diving_gear_1', name: 'Reef Diver Set', type: 'material', icon: '🤿', oxygen: 18, stackMax: 1 },
   diving_gear_2: { id: 'diving_gear_2', name: 'Tidecaller Set', type: 'material', icon: '🤿', oxygen: 38, stackMax: 1 },
   diving_gear_3: { id: 'diving_gear_3', name: 'Abyssal Suit', type: 'material', icon: '🫧', oxygen: 75, stackMax: 1 },
   swim_fins_1: { id: 'swim_fins_1', name: 'Reef Swim Fins', type: 'material', icon: '🩴', swimSpeed: 1.18, stackMax: 1 },
   swim_fins_2: { id: 'swim_fins_2', name: 'Current fins', type: 'material', icon: '🩴', swimSpeed: 1.34, stackMax: 1 },
-  swim_fins_3: { id: 'swim_fins_3', name: 'Kraken Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
+  swim_fins_3: { id: 'swim_fins_3', name: 'Tidecaller Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
   sunken_boot: {
     id: 'sunken_boot', name: 'Sunken Boot', type: 'material',
     icon: '🥾', stackMax: 99
@@ -31412,6 +31815,31 @@ const NEW_ITEMS = {
     // every tier stays a distinct step on a small hit.
     id: 'demon_armor', name: 'Demonplate Armor', type: 'armor', defense: 32, reduction: 0.44,
     icon: '👹', stackMax: 1
+  },
+  // ---- ABYSSAL APEX GEAR ----------------------------------------------------
+  // The Megalodon's own hide, torn off the last predator and worn as a suit.
+  // Deliberately the strongest plate in the game RIGHT NOW: 52% reduction and
+  // the highest flat defense, one clear rung above the Ossuary plate. It also
+  // grants a swim-speed bonus and a big oxygen reserve, so it doubles as the
+  // endgame diving suit. The 1 HP damage floor still applies, so it never
+  // becomes literally invulnerable.
+  megalodon_armor: {
+    id: 'megalodon_armor', name: 'Megalodon Hideplate', type: 'armor',
+    defense: 40, reduction: 0.52, swimSpeed: 1.4, oxygen: 120,
+    icon: '🦈', stackMax: 1,
+    desc: 'The dread hideplate of the last predator. The most powerful armour known to Terracraft.'
+  },
+  // The Megalodon's fang-blade, forged from its own teeth and the abyssal sea
+  // ores. A heavy melee weapon with a wide arc and sweeping crit, and a small
+  // lifesteal: killing with it feeds you, the way the predator fed on the sea.
+  megalodon_blade: {
+    id: 'megalodon_blade', name: 'Fang of the Last Predator', type: 'weapon', weaponType: 'melee',
+    // The apex weapon: a notch above the Voidstar Cleaver (214 dmg / 0.27s /
+    // 24% crit / 7% lifesteal) in every stat, but not a runaway — it hits
+    // harder, faster and deeper while keeping the same lifesteal family.
+    damage: 232, range: 150, useTime: 0.25, critBonus: 0.27, lifesteal: 0.09,
+    icon: '🦷', stackMax: 1,
+    desc: 'A serrated fang-blade of tooth and abyssal ore. The sharpest thing ever pulled from the sea.'
   }
 };
 
@@ -31432,8 +31860,9 @@ for (const item of Object.values(ITEMS)) item.stackMax = 256;
 // armour still lets most of a big hit through.
 // ============================================================
 const ARMOR_TIERS = [
-  'ossuary_armor',      // 1st - 47%  (pried off the Ossuary Sovereign itself)
-  'demon_armor',        // 2nd - 44%  (forged from the Demon himself)
+  'megalodon_armor',    // 1st - 52%  (the last predator's hide; the game's apex plate)
+  'ossuary_armor',      // 2nd - 47%  (pried off the Ossuary Sovereign itself)
+  'demon_armor',        // 3rd - 44%  (forged from the Demon himself)
   'voidscale_armor',    // 3rd - 43% at less defence (nerfed: see the item)
   'fallen_star_armor',  // 4th - 40%
   'rainbow_armor',      // 5th - 32%
@@ -31681,7 +32110,7 @@ const RECIPES = [
   // what lives at the bottom of it.
   {
     result: { id: 'abyss_horn', count: 1 },
-    materials: [{ id: 'coral_fragment', count: 24 }, { id: 'sacred_pearl', count: 1 }, { id: 'sea_scale', count: 6 }, { id: 'iron_ore', count: 8 }],
+    materials: [{ id: 'coral_fragment', count: 24 }, { id: 'sacred_pearl', count: 1 }, { id: 'brine_ore', count: 6 }, { id: 'iron_ore', count: 8 }],
     name: 'Abyssal Horn'
   },
   // ---- Fishing gear ----
@@ -31695,13 +32124,21 @@ const RECIPES = [
   { result: { id: 'diving_gear_3', count: 1 }, materials: [{ id: 'diving_gear_2', count: 1 }, { id: 'diamond', count: 8 }, { id: 'sacred_pearl', count: 2 }, { id: 'fish_angler', count: 3 }], name: 'Abyssal Suit (75s oxygen)' },
   { result: { id: 'swim_fins_1', count: 1 }, materials: [{ id: 'wool', count: 4 }, { id: 'fish_turtle', count: 2 }], name: 'Reef Swim Fins' },
   { result: { id: 'swim_fins_2', count: 1 }, materials: [{ id: 'swim_fins_1', count: 1 }, { id: 'fish_turtle', count: 2 }, { id: 'coral_fragment', count: 12 }], name: 'Current Fins' },
-  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Kraken Fins' },
-  { result: { id: 'leviathan_trident', count: 1 }, materials: [{ id: 'sea_scale', count: 18 }, { id: 'sacred_pearl', count: 4 }], name: 'Kraken Trident' },
-  // Tentacle Gun: the trophy rebuilds a lost gun (the drop is the primary
-  // source; the trophy is the backup — same pattern as the Sovereign's gear).
-  // The trophy is unique per save, so the trident was retargeted to pure
-  // reef materials: both recipes stay reachable with one trophy in hand.
-  { result: { id: 'tentacle_gun', count: 1 }, materials: [{ id: 'kraken_trophy', count: 1 }, { id: 'sea_scale', count: 15 }, { id: 'fish_manta', count: 3 }], name: 'Tentacle Gun' },
+  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Tidecaller Fins' },
+  // ---- ABYSSAL APEX GEAR ----
+  // The weapon: Megalodon teeth (dropped by the beast) + the ocean-themed ores
+  // mined under the abyssal seabed. The armour has no recipe at all — it is
+  // dropped ONCE, off the Megalodon itself, and never anything else.
+  {
+    result: { id: 'megalodon_blade', count: 1 },
+    materials: [
+      { id: 'megalodon_tooth', count: 6 },
+      { id: 'leviathan_ore', count: 8 },
+      { id: 'tide_ore', count: 12 },
+      { id: 'abyss_ore', count: 16 }
+    ],
+    name: 'Fang of the Last Predator'
+  },
   {
     result: { id: 'anglers_charm', count: 1 },
     materials: [{ id: 'gold_ore', count: 6 }, { id: 'crystal', count: 3 }, { id: 'fish_koi', count: 2 }],
@@ -37561,10 +37998,8 @@ class Game {
       const pMidY = this.player.y + this.player.height / 2;
       const angle = Math.atan2(mouseWorldY - pMidY, mouseWorldX - pMidX);
       // Bowstring release: a quick fan of sparks off the bow, tinted per bow.
-      // The Tentacle Gun spits violet ink sparks instead of a bowstring flash.
-      const isTentacleGun = held.id === 'tentacle_gun';
-      const bowTint = isTentacleGun ? '#a855f7'
-        : held.id === 'soulfire_repeater' ? '#fb7185' : held.id === 'ember_bow' ? '#fb923c' : '#bae6fd';
+      const bowTint = held.id === 'soulfire_repeater' ? '#fb7185'
+        : held.id === 'ember_bow' ? '#fb923c' : '#bae6fd';
       for (let i = 0; i < 7; i++) {
         const a = angle + (Math.random() - 0.5) * 0.9;
         const spd = 1.5 + Math.random() * 3;
@@ -38055,7 +38490,7 @@ class Game {
     this.showAnnouncement(intent === 'space'
       ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
       : intent === 'ocean'
-        ? '🌊 THE TIDE GATE OPENS — THE KRAKEN STIRS.'
+        ? '🌊 THE TIDE GATE OPENS — THE DEEP STIRS.'
         : tideGate
           ? '🌊 THE ABYSS LETS GO — THE TIDE GATE TURNS HOME.'
           : '🕳️ THE WAY HOME OPENS.');
@@ -38371,27 +38806,31 @@ class Game {
     this.player.vx = 0;
     this.player.vy = 0;
     this.oxygen = this.oxygenMax;
-    // Arrival grace: the Kraken is live the instant you land and its first
-    // telegraphed shot can be mid-flight. A short invulnerability window means
-    // entering the ocean is never an instant death, whichever way you arrived
-    // (the Tide Gate's own cutscene, or a creative teleport straight onto it).
+    // Arrival grace: the last predator is live the instant you land and its
+    // first telegraphed lunge can be mid-flight. A short invulnerability window
+    // means entering the ocean is never an instant death, whichever way you
+    // arrived (the Tide Gate's own cutscene, or a creative teleport).
     if (this.player.invuln !== undefined) {
       this.player.invuln = Math.max(this.player.invuln || 0, 1.6);
     }
     if (this.mp && this.mp.status !== 'idle') {
       this.showToast('This ocean-world expedition is solo-only.');
     }
-    if (!this.leviathanSlain && typeof Kraken === 'function') {
+    // FIRST ARRIVAL IS ALWAYS THE FIGHT. The Megalodon greets the player the
+    // very first time they set foot on the abyssal planet — no horn required.
+    // After it is felled once, the sea stays quiet on re-entry and the only way
+    // back into the arena is to blow another Abyssal Horn.
+    if (!this.leviathanSlain && typeof Megalodon === 'function') {
       const hp = Number.isFinite(this.leviathanHP) ? this.leviathanHP : 110000;
-      this.boss = new Kraken(arena.bossX, arena.bossY, this);
+      this.boss = new Megalodon(arena.bossX, arena.bossY, this);
       this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, hp));
       this.leviathanHP = null;
       this.sound.isBoss = true;
       document.getElementById('boss-panel')?.classList.remove('hidden');
-      this.showAnnouncement('🐙 THE ABYSSAL KRAKEN RISES!');
+      this.showAnnouncement('🦈 THE MEGALODON RISES!');
     } else {
       this.boss = null;
-      this.showToast('🌊 The ocean planet is quiet. The Kraken you defeated remains gone.');
+      this.showToast('🌊 The ocean planet is quiet. The Megalodon you defeated remains gone.');
     }
     this.showToast('🫧 Keep your diving gear close. The Tide Gate behind you returns home.');
   }
@@ -38481,7 +38920,7 @@ class Game {
       this.player.y + this.player.height / 2 - this.camera.viewportHeight / 2));
     this.showToast(fromOcean
       ? (Number.isFinite(this.leviathanHP)
-        ? '🌊 Back at the reef. The Kraken remembers the damage it took.'
+        ? '🌊 Back at the reef. The Megalodon remembers the damage it took.'
         : '🌊 Back at the reef, with the Tide Gate still behind you.')
       : Number.isFinite(this.dragonHP)
         ? '🕳️ The rift closes. It is still in there, and it remembers every hit.'
@@ -39276,7 +39715,7 @@ this.player.dodgeTime = 0;
       this._bossKinds[bossKey] = true;
       if (firstTime) {
         this.logDiscovery(`boss_${bossKey}`,
-          defeatedKraken ? '🐙 First Abyssal Kraken Defeated!'
+          defeatedKraken ? '🦈 First Megalodon Defeated!'
             : defeatedDragon ? '🌌 First Ossuary Sovereign Defeated!'
               : defeatedDemon ? '🔥 First Hellbound Demon Defeated!'
                 : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!',
@@ -39286,7 +39725,7 @@ this.player.dodgeTime = 0;
       if (bossPanel) bossPanel.classList.add('hidden');
       this.sound.isBoss = false;
       this.showAnnouncement(defeatedKraken
-        ? '🐙 THE ABYSSAL KRAKEN HAS FALLEN!'
+        ? '🦈 THE MEGALODON — LAST PREDATOR — HAS FALLEN!'
         : defeatedDragon
         ? '🌌 THE OSSUARY SOVEREIGN HAS FALLEN!'
         : defeatedDemon
@@ -39295,8 +39734,12 @@ this.player.dodgeTime = 0;
       this.feel.slow(defeatedKraken ? 2.8 : defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6,
         defeatedKraken ? 0.15 : defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
       this.feel.shake(defeatedKraken ? 2.2 : defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
+      // A re-summoned Megalodon (via the Abyssal Horn) is worth killing for its
+      // TEETH and its loot bag, but it never drops the unique trophy mount or
+      // the apex plate again — those are the FIRST kill's only rewards.
+      const megalodonFirstKill = defeatedKraken && !this._megalodonSlainOnce;
       const rewardIds = defeatedKraken
-        ? ['sea_scale', 'coral_fragment', 'fish_manta', 'fish_angler', 'sacred_pearl']
+        ? ['abyss_ore', 'tide_ore', 'leviathan_ore', 'brine_ore', 'megalodon_tooth', 'coral_fragment']
         : defeatedDragon
         ? ['dragonbone', 'meteor_shard', 'nebula_crystal', 'crystal', 'life_crystal', 'mana_crystal']
         : defeatedDemon
@@ -39310,26 +39753,28 @@ this.player.dodgeTime = 0;
           defeatedKraken ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
         this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-          defeatedKraken ? 'kraken_trophy'
-            : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
-              : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
-        // The Megalodon is its own trophy: a mount you place on the wall, so
-        // the last predator leaves a permanent mark on the player's base. It
-        // drops IN ADDITION to the Kraken Trophy, which the forge recipes
-        // still need — add a first-kill reef sprite so the win has a
-        // companion attached to it as well.
+          defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
+            : defeatedKnight ? 'cursed_edge'
+              : defeatedKraken ? 'megalodon_tooth' : 'guardian_trophy',
+          defeatedKraken ? 3 : 1));
+        // THE MEGALODON. Every kill gives teeth (the weapon material) and a
+        // generous bag of abyssal ores. The trophy mount, the reef-sprite pet
+        // and the apex Hideplate are FIRST-KILL ONLY — a re-summoned predator
+        // is fought for teeth, ore and trophies, never for the unique gear.
         if (this.boss.kind === 'kraken' && this.boss instanceof Megalodon) {
-          this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
-          if (!this._megalodonSlainOnce) {
+          // Its teeth always drop: the fang-blade's whole recipe chain.
+          this.drops.push(new DropItem(this.boss.x - 20, this.boss.y - 22, 'megalodon_tooth', 3));
+          if (megalodonFirstKill) {
             this._megalodonSlainOnce = true;
+            this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
             this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));
+            // THE APEX ARMOUR: dropped once, never again.
+            this.drops.push(new DropItem(this.boss.x + 22, this.boss.y - 26, 'megalodon_armor', 1));
           }
         }
       if (defeatedKraken) {
-        // Both weapons drop straight off the corpse: the trident for melee,
-        // the Tentacle Gun for range. The forge recipes are rebuild backups.
-        this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'leviathan_trident', 1));
-        this.drops.push(new DropItem(this.boss.x - 16, this.boss.y - 26, 'tentacle_gun', 1));
+        // The Megalodon's fight is banked-and-cleared: mark the world so a
+        // re-entry is quiet until the player blows another Abyssal Horn.
         this.leviathanHP = null;
         this.leviathanSlain = true;
       }
@@ -39362,8 +39807,10 @@ this.player.dodgeTime = 0;
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
       if (defeatedKraken) {
-        if (vTitle) vTitle.textContent = '🐙 THE ABYSSAL KRAKEN IS BROKEN!';
-        if (vLead) vLead.textContent = 'The Kraken’s mantle lies still and the ink cloud thins. The Tide Gate remains open, and the ocean planet is yours to explore. Gather Kraken Scales, take the trident and the Tentacle Gun, and craft spares from its trophy.';
+        if (vTitle) vTitle.textContent = '🦈 THE MEGALODON IS BROKEN!';
+        if (vLead) vLead.textContent = megalodonFirstKill
+          ? 'The last predator rolls belly-up and the deep goes quiet. The sea is yours to explore, its seabed veined with abyssal ore — and its teeth are yours to forge. Only the first kill leaves the trophy and the dread Hideplate behind.'
+          : 'The Megalodon sinks for the second time. Teeth and abyssal ore scatter in its wake, but the trophy and the Hideplate are a first-kill prize only.';
       } else if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
         if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it — and they will never fall again, because there is only one of each. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and another Rite of Waking read on them will bring another; it will cost you far more than the first.';
