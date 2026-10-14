@@ -4793,6 +4793,81 @@ class World {
       lightCtx.fillRect(0, 0, w, h);
     }
 
+    // ---- Sky occlusion: shadows inside buildings, under overhangs, in caves.
+    // The ambient term above only knows the CLOCK, so every roof, hut and dirt
+    // mound was lit edge-to-edge at noon and interiors read as flat outdoor
+    // daylight. This walks each tile column top-down with a cheap 1-D light
+    // model — solid tiles punch the sky light down hard, open tiles let it
+    // bleed back sideways — and darkens only the OPEN tiles that ended up
+    // shaded. The read is exactly what the eye wants: dark rooms under their
+    // roofs, shadow pooled under overhangs and dirt huts, while the sky and
+    // the sunlit ground outside stay bright. Torches and the player's own
+    // aura still carve straight through it in the pass below.
+    if (!inTemple && !(typeof this.isInSpace === 'function' && this.isInSpace())) {
+      const occX0 = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+      const occX1 = Math.min(this.width - 1, Math.ceil((camera.x + w) / TILE_SIZE));
+      const occY0 = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+      const occY1 = Math.min(this.height - 1, Math.ceil((camera.y + h) / TILE_SIZE));
+      const cols = occX1 - occX0 + 1;
+      const rows = occY1 - occY0 + 1;
+      if (cols > 1 && rows > 1) {
+        const buf = (this._occBuf && this._occBuf.length >= cols * rows)
+          ? this._occBuf : (this._occBuf = new Float32Array(cols * rows));
+        for (let cx = 0; cx < cols; cx++) {
+          const x = occX0 + cx;
+          const surf = this.surfaceHeights ? (this.surfaceHeights[x] | 0) : 0;
+          // Sky light at the top edge of the screen: full when the column is
+          // open to the sky up there, nearly none when the view starts
+          // underground (the rock above has already eaten the daylight).
+          let sky = occY0 <= surf - 1 ? 1 : 0.07;
+          for (let cy = 0; cy < rows; cy++) {
+            const tile = this.tiles[(occY0 + cy) * this.width + x];
+            const props = TILE_PROPERTIES[tile];
+            const solid = !!(props && props.solid && !props.isPlatform);
+            if (solid) sky *= 0.40;               // rock/roof: eat the light
+            else sky += (1 - sky) * 0.10;         // open air: bleed sideways back
+            buf[cy * cols + cx] = solid ? -1 : (1 - sky);
+          }
+        }
+        lightCtx.save();
+        lightCtx.fillStyle = 'rgb(6, 10, 26)';
+        const occA = 0.62;                        // darkness of a fully shaded room
+        const px0 = occX0 * TILE_SIZE - camera.x;
+        for (let cx = 0; cx < cols; cx++) {
+          // Horizontal 3-tap smooth so a single column never reads as a
+          // stripe; solid neighbours contribute nothing (they are ground).
+          const shadeAt = (cy) => {
+            const raw = buf[cy * cols + cx];
+            if (raw < 0) return 0;
+            const l = cx > 0 ? buf[cy * cols + cx - 1] : -1;
+            const r = cx < cols - 1 ? buf[cy * cols + cx + 1] : -1;
+            const v = ((l < 0 ? 0 : l) + 2 * raw + (r < 0 ? 0 : r)) / 4;
+            return v < 0.05 ? 0 : Math.round(v * 8) / 8;   // quantize: fewer runs
+          };
+          let runStart = -1;
+          let runVal = 0;
+          const flush = (endRow) => {
+            if (runStart < 0) return;
+            const a = runVal * occA;
+            if (a > 0.03) {
+              lightCtx.globalAlpha = a;
+              lightCtx.fillRect(px0 + cx * TILE_SIZE,
+                (occY0 + runStart) * TILE_SIZE - camera.y,
+                TILE_SIZE, (endRow - runStart) * TILE_SIZE);
+            }
+            runStart = -1;
+          };
+          for (let cy = 0; cy <= rows; cy++) {
+            const v = cy < rows ? shadeAt(cy) : 0;
+            if (v <= 0) { flush(cy); continue; }
+            if (runStart < 0) { runStart = cy; runVal = v; }
+            else if (Math.abs(v - runVal) > 0.13) { flush(cy); runStart = cy; runVal = v; }
+          }
+        }
+        lightCtx.restore();
+      }
+    }
+
     // Now carve out radial lights with 'destination-out' or radial gradients
     lightCtx.save();
     lightCtx.globalCompositeOperation = 'destination-out';

@@ -1203,6 +1203,22 @@ class Player {
         ctx.scale(-1, 1);
         ctx.translate(-this.width, 0);
       }
+      // ---- Stride bob + forward lean, applied to body, armour AND held item
+      // together so nothing drifts apart. Terraria's player bobs a pixel with
+      // each stride and tips into a run; without both, a well-drawn sprite
+      // reads as a sticker sliding across the world. The cadence is the same
+      // wall-clock the body uses, so the bob lands exactly on stride peaks.
+      this.animClock = (this.animClock || 0) + (Date.now() - (this.animClockLast || Date.now()));
+      this.animClockLast = Date.now();
+      const bodyT = this.animClock * 0.001;
+      const bodyMoving = Math.abs(this.vx) > 0.2;
+      const bodyCad = bodyMoving ? Math.sin(bodyT * 11) : 0;
+      ctx.save();
+      ctx.translate(0, bodyMoving && Math.abs(bodyCad) > 0.65 ? -1 : 0);
+      ctx.translate(this.width / 2, 24);
+      ctx.rotate(bodyMoving ? 0.05 : 0);
+      ctx.translate(-this.width / 2, -24);
+
       // Wings go behind the body so the plate and held item stay readable.
       if (this.hasWings) this.renderWings(ctx, 0, 0);
       this.drawPlayerBody(ctx, 0, 0);
@@ -1212,6 +1228,7 @@ class Player {
       if (heldItem && heldItem.id !== 'empty') {
         this.renderHeldItem(ctx, heldItem);
       }
+      ctx.restore();
     }
 
     ctx.restore();
@@ -1348,15 +1365,24 @@ class Player {
     ctx.fillStyle = hi;
     ctx.fillRect(ox + 4, oy + 5, 6, 1);         // brow light
     // Eyes: two pixels with a lit catchlight; the far eye is one short of the
-    // near one, which is what makes a 3/4 pixel face read as turned.
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(ox + 8, oy + 7, 2, 3);
-    ctx.fillRect(ox + 11, oy + 7, 2, 3);
-    ctx.fillStyle = '#1e3a8a';
-    ctx.fillRect(ox + 9, oy + 7, 2, 3);
-    ctx.fillRect(ox + 12, oy + 8, 1, 2);
-    ctx.fillStyle = '#0b1220';
-    ctx.fillRect(ox + 9, oy + 8, 1, 1);
+    // near one, which is what makes a 3/4 pixel face read as turned. A blink
+    // passes over every couple of seconds — one frame of eyelid is all it
+    // takes for a pixel face to feel alive instead of printed.
+    const blink = (t % 2.7) < 0.1;
+    if (!blink) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(ox + 8, oy + 7, 2, 3);
+      ctx.fillRect(ox + 11, oy + 7, 2, 3);
+      ctx.fillStyle = '#1e3a8a';
+      ctx.fillRect(ox + 9, oy + 7, 2, 3);
+      ctx.fillRect(ox + 12, oy + 8, 1, 2);
+      ctx.fillStyle = '#0b1220';
+      ctx.fillRect(ox + 9, oy + 8, 1, 1);
+    } else {
+      ctx.fillStyle = skinDeep;
+      ctx.fillRect(ox + 9, oy + 9, 2, 1);
+      ctx.fillRect(ox + 11, oy + 9, 2, 1);
+    }
     // Nose + mouth: two mid pixels, no more.
     ctx.fillStyle = skinDeep;
     ctx.fillRect(ox + 10, oy + 9, 1, 2);

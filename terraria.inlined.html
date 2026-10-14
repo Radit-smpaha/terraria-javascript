@@ -10342,6 +10342,81 @@ class World {
       lightCtx.fillRect(0, 0, w, h);
     }
 
+    // ---- Sky occlusion: shadows inside buildings, under overhangs, in caves.
+    // The ambient term above only knows the CLOCK, so every roof, hut and dirt
+    // mound was lit edge-to-edge at noon and interiors read as flat outdoor
+    // daylight. This walks each tile column top-down with a cheap 1-D light
+    // model — solid tiles punch the sky light down hard, open tiles let it
+    // bleed back sideways — and darkens only the OPEN tiles that ended up
+    // shaded. The read is exactly what the eye wants: dark rooms under their
+    // roofs, shadow pooled under overhangs and dirt huts, while the sky and
+    // the sunlit ground outside stay bright. Torches and the player's own
+    // aura still carve straight through it in the pass below.
+    if (!inTemple && !(typeof this.isInSpace === 'function' && this.isInSpace())) {
+      const occX0 = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+      const occX1 = Math.min(this.width - 1, Math.ceil((camera.x + w) / TILE_SIZE));
+      const occY0 = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+      const occY1 = Math.min(this.height - 1, Math.ceil((camera.y + h) / TILE_SIZE));
+      const cols = occX1 - occX0 + 1;
+      const rows = occY1 - occY0 + 1;
+      if (cols > 1 && rows > 1) {
+        const buf = (this._occBuf && this._occBuf.length >= cols * rows)
+          ? this._occBuf : (this._occBuf = new Float32Array(cols * rows));
+        for (let cx = 0; cx < cols; cx++) {
+          const x = occX0 + cx;
+          const surf = this.surfaceHeights ? (this.surfaceHeights[x] | 0) : 0;
+          // Sky light at the top edge of the screen: full when the column is
+          // open to the sky up there, nearly none when the view starts
+          // underground (the rock above has already eaten the daylight).
+          let sky = occY0 <= surf - 1 ? 1 : 0.07;
+          for (let cy = 0; cy < rows; cy++) {
+            const tile = this.tiles[(occY0 + cy) * this.width + x];
+            const props = TILE_PROPERTIES[tile];
+            const solid = !!(props && props.solid && !props.isPlatform);
+            if (solid) sky *= 0.40;               // rock/roof: eat the light
+            else sky += (1 - sky) * 0.10;         // open air: bleed sideways back
+            buf[cy * cols + cx] = solid ? -1 : (1 - sky);
+          }
+        }
+        lightCtx.save();
+        lightCtx.fillStyle = 'rgb(6, 10, 26)';
+        const occA = 0.62;                        // darkness of a fully shaded room
+        const px0 = occX0 * TILE_SIZE - camera.x;
+        for (let cx = 0; cx < cols; cx++) {
+          // Horizontal 3-tap smooth so a single column never reads as a
+          // stripe; solid neighbours contribute nothing (they are ground).
+          const shadeAt = (cy) => {
+            const raw = buf[cy * cols + cx];
+            if (raw < 0) return 0;
+            const l = cx > 0 ? buf[cy * cols + cx - 1] : -1;
+            const r = cx < cols - 1 ? buf[cy * cols + cx + 1] : -1;
+            const v = ((l < 0 ? 0 : l) + 2 * raw + (r < 0 ? 0 : r)) / 4;
+            return v < 0.05 ? 0 : Math.round(v * 8) / 8;   // quantize: fewer runs
+          };
+          let runStart = -1;
+          let runVal = 0;
+          const flush = (endRow) => {
+            if (runStart < 0) return;
+            const a = runVal * occA;
+            if (a > 0.03) {
+              lightCtx.globalAlpha = a;
+              lightCtx.fillRect(px0 + cx * TILE_SIZE,
+                (occY0 + runStart) * TILE_SIZE - camera.y,
+                TILE_SIZE, (endRow - runStart) * TILE_SIZE);
+            }
+            runStart = -1;
+          };
+          for (let cy = 0; cy <= rows; cy++) {
+            const v = cy < rows ? shadeAt(cy) : 0;
+            if (v <= 0) { flush(cy); continue; }
+            if (runStart < 0) { runStart = cy; runVal = v; }
+            else if (Math.abs(v - runVal) > 0.13) { flush(cy); runStart = cy; runVal = v; }
+          }
+        }
+        lightCtx.restore();
+      }
+    }
+
     // Now carve out radial lights with 'destination-out' or radial gradients
     lightCtx.save();
     lightCtx.globalCompositeOperation = 'destination-out';
@@ -12472,6 +12547,22 @@ class Player {
         ctx.scale(-1, 1);
         ctx.translate(-this.width, 0);
       }
+      // ---- Stride bob + forward lean, applied to body, armour AND held item
+      // together so nothing drifts apart. Terraria's player bobs a pixel with
+      // each stride and tips into a run; without both, a well-drawn sprite
+      // reads as a sticker sliding across the world. The cadence is the same
+      // wall-clock the body uses, so the bob lands exactly on stride peaks.
+      this.animClock = (this.animClock || 0) + (Date.now() - (this.animClockLast || Date.now()));
+      this.animClockLast = Date.now();
+      const bodyT = this.animClock * 0.001;
+      const bodyMoving = Math.abs(this.vx) > 0.2;
+      const bodyCad = bodyMoving ? Math.sin(bodyT * 11) : 0;
+      ctx.save();
+      ctx.translate(0, bodyMoving && Math.abs(bodyCad) > 0.65 ? -1 : 0);
+      ctx.translate(this.width / 2, 24);
+      ctx.rotate(bodyMoving ? 0.05 : 0);
+      ctx.translate(-this.width / 2, -24);
+
       // Wings go behind the body so the plate and held item stay readable.
       if (this.hasWings) this.renderWings(ctx, 0, 0);
       this.drawPlayerBody(ctx, 0, 0);
@@ -12481,6 +12572,7 @@ class Player {
       if (heldItem && heldItem.id !== 'empty') {
         this.renderHeldItem(ctx, heldItem);
       }
+      ctx.restore();
     }
 
     ctx.restore();
@@ -12617,15 +12709,24 @@ class Player {
     ctx.fillStyle = hi;
     ctx.fillRect(ox + 4, oy + 5, 6, 1);         // brow light
     // Eyes: two pixels with a lit catchlight; the far eye is one short of the
-    // near one, which is what makes a 3/4 pixel face read as turned.
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(ox + 8, oy + 7, 2, 3);
-    ctx.fillRect(ox + 11, oy + 7, 2, 3);
-    ctx.fillStyle = '#1e3a8a';
-    ctx.fillRect(ox + 9, oy + 7, 2, 3);
-    ctx.fillRect(ox + 12, oy + 8, 1, 2);
-    ctx.fillStyle = '#0b1220';
-    ctx.fillRect(ox + 9, oy + 8, 1, 1);
+    // near one, which is what makes a 3/4 pixel face read as turned. A blink
+    // passes over every couple of seconds — one frame of eyelid is all it
+    // takes for a pixel face to feel alive instead of printed.
+    const blink = (t % 2.7) < 0.1;
+    if (!blink) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(ox + 8, oy + 7, 2, 3);
+      ctx.fillRect(ox + 11, oy + 7, 2, 3);
+      ctx.fillStyle = '#1e3a8a';
+      ctx.fillRect(ox + 9, oy + 7, 2, 3);
+      ctx.fillRect(ox + 12, oy + 8, 1, 2);
+      ctx.fillStyle = '#0b1220';
+      ctx.fillRect(ox + 9, oy + 8, 1, 1);
+    } else {
+      ctx.fillStyle = skinDeep;
+      ctx.fillRect(ox + 9, oy + 9, 2, 1);
+      ctx.fillRect(ox + 11, oy + 9, 2, 1);
+    }
     // Nose + mouth: two mid pixels, no more.
     ctx.fillStyle = skinDeep;
     ctx.fillRect(ox + 10, oy + 9, 1, 2);
@@ -20549,11 +20650,13 @@ World.prototype.renderReefTemplePortal = function(ctx, camera) {
 
   const cx = (x + 0.5) * TILE_SIZE - camera.x;
   const cy = (y + 0.5) * TILE_SIZE - camera.y;
-  const pulse = 0.72 + Math.sin(Date.now() * 0.003) * 0.18;
+  const t = Date.now() * 0.001;
+  const pulse = 0.72 + Math.sin(t * 3) * 0.18;
   const rx = TILE_SIZE * 1.25;
   const ry = TILE_SIZE * 1.8;
   ctx.save();
   ctx.globalAlpha = active ? 1 : 0.92;
+  // Arch silhouette — the dark stone column the gate is cut into.
   ctx.fillStyle = '#071b2b';
   ctx.beginPath();
   ctx.moveTo(cx - rx, cy + ry);
@@ -20564,47 +20667,122 @@ World.prototype.renderReefTemplePortal = function(ctx, camera) {
   ctx.closePath();
   ctx.fill();
 
-  const portalGradient = ctx.createLinearGradient(cx - rx, cy, cx + rx, cy);
   if (active) {
-    portalGradient.addColorStop(0, '#075985');
-    portalGradient.addColorStop(0.5, '#22d3ee');
-    portalGradient.addColorStop(1, '#164e63');
+    // ---- ACTIVE: a whirlpool throat, not a flat teal gradient. ----
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
+    ctx.clip();
+    const throat = ctx.createRadialGradient(cx, cy, 2, cx, cy, rx * 0.9);
+    throat.addColorStop(0, '#01060e');
+    throat.addColorStop(0.55, '#063252');
+    throat.addColorStop(1, '#0a4a68');
+    ctx.fillStyle = throat;
+    ctx.fillRect(cx - rx * 2, cy - ry * 2, rx * 4, ry * 4);
+    // Caustic light sinking through the water column.
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const band = (t * 0.35 + i * 0.21) % 1;
+      ctx.globalAlpha = 0.16 * Math.sin(band * Math.PI);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(cx - rx * 2, cy - ry + band * ry * 2, rx * 4, 3);
+    }
+    // Three spiral arms winding INTO the centre — the gate is always turning.
+    for (let arm = 0; arm < 3; arm++) {
+      const base = t * 1.6 + (arm / 3) * Math.PI * 2;
+      ctx.globalAlpha = arm === 1 ? 0.6 : 0.42;
+      ctx.strokeStyle = arm === 1 ? '#a5f3fc' : '#67e8f9';
+      ctx.lineWidth = arm === 1 ? 3 : 2;
+      ctx.beginPath();
+      for (let s = 0; s <= 1.0001; s += 0.04) {
+        const ang = base + s * 3.4;
+        const rad = (1 - s * 0.82) * rx * 0.7;
+        const px2 = cx + Math.cos(ang) * rad;
+        const py2 = cy + Math.sin(ang) * rad * 1.14;
+        if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+      }
+      ctx.stroke();
+    }
+    // Foam streaks skating round the rim of the whirl.
+    ctx.globalAlpha = 0.5 + Math.sin(t * 5) * 0.2;
+    ctx.strokeStyle = 'rgba(236, 254, 255, 0.75)';
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < 6; i++) {
+      const a0 = t * 0.9 + i * 1.05;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rx * 0.55, a0, a0 + 0.5);
+      ctx.stroke();
+    }
+    // Pearl bloom at the heart.
+    const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx * 0.55);
+    bloom.addColorStop(0, `rgba(207,250,254,${(0.35 + Math.sin(t * 4) * 0.12).toFixed(3)})`);
+    bloom.addColorStop(1, 'rgba(34,211,238,0)');
+    ctx.fillStyle = bloom;
+    ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+    ctx.restore();
+
+    // ---- Rim: foam-crest arch stroke + inner whirl lines (was one stroke).
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = `rgba(103,232,249,${pulse})`;
+    ctx.beginPath();
+    ctx.moveTo(cx - rx, cy + ry);
+    ctx.lineTo(cx - rx, cy - ry * 0.38);
+    ctx.quadraticCurveTo(cx - rx, cy - ry, cx, cy - ry);
+    ctx.quadraticCurveTo(cx + rx, cy - ry, cx + rx, cy - ry * 0.38);
+    ctx.lineTo(cx + rx, cy + ry);
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = `rgba(255,255,255,${pulse})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = `rgba(165,243,252,${0.45 + Math.sin(t * 6) * 0.25})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.58, ry * 0.7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Corner shrine lights, breathing.
+    for (const [dx, dy] of [[0, -ry + 8], [-rx + 5, 0], [rx - 5, 0], [0, ry - 6]]) {
+      ctx.globalAlpha = 0.6 + Math.sin(t * 4 + dx * 0.2) * 0.35;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx + dx - 2, cy + dy - 2, 4, 4);
+    }
+    ctx.globalAlpha = 1;
   } else {
+    // ---- DORMANT: a sealed slate door. It should read as "not yet". ----
+    const portalGradient = ctx.createLinearGradient(cx - rx, cy, cx + rx, cy);
     portalGradient.addColorStop(0, '#0f172a');
     portalGradient.addColorStop(0.5, '#1e293b');
     portalGradient.addColorStop(1, '#0f172a');
-  }
-  ctx.fillStyle = portalGradient;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = active ? `rgba(103,232,249,${pulse})` : '#94a3b8';
-  ctx.beginPath();
-  ctx.moveTo(cx - rx, cy + ry);
-  ctx.lineTo(cx - rx, cy - ry * 0.38);
-  ctx.quadraticCurveTo(cx - rx, cy - ry, cx, cy - ry);
-  ctx.quadraticCurveTo(cx + rx, cy - ry, cx + rx, cy - ry * 0.38);
-  ctx.lineTo(cx + rx, cy + ry);
-  ctx.stroke();
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = active ? `rgba(255,255,255,${pulse})` : '#0e7490';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = active ? '#ffffff' : '#cbd5e1';
-  for (const [dx, dy] of [[0, -ry + 8], [-rx + 5, 0], [rx - 5, 0], [0, ry - 6]]) {
-    ctx.fillRect(cx + dx - 2, cy + dy - 2, 4, 4);
-  }
-  if (active) {
-    ctx.fillStyle = `rgba(207,250,254,${pulse * 0.55})`;
+    ctx.fillStyle = portalGradient;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, rx * 0.45, ry * 0.55, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(cx - 2, cy - ry * 0.55, 4, 8);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.moveTo(cx - rx, cy + ry);
+    ctx.lineTo(cx - rx, cy - ry * 0.38);
+    ctx.quadraticCurveTo(cx - rx, cy - ry, cx, cy - ry);
+    ctx.quadraticCurveTo(cx + rx, cy - ry, cx + rx, cy - ry * 0.38);
+    ctx.lineTo(cx + rx, cy + ry);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0e7490';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.72, ry * 0.82, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // The sealed seam down the middle.
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - ry * 0.6);
+    ctx.lineTo(cx, cy + ry * 0.7);
+    ctx.stroke();
+    ctx.fillStyle = '#cbd5e1';
+    for (const [dx, dy] of [[0, -ry + 8], [-rx + 5, 0], [rx - 5, 0], [0, ry - 6]]) {
+      ctx.fillRect(cx + dx - 2, cy + dy - 2, 4, 4);
+    }
   }
   ctx.restore();
 };
@@ -20816,7 +20994,12 @@ class AbyssalGateFX {
       }
     }
   }
-  /** World-space draw: the maelstrom mouth itself. */
+  /**
+   * World-space draw, in strict hierarchy so it never reads as clutter:
+   * bloom → geyser → tendrils → whirlpool throat → ripples/bubbles →
+   * updraft sheets → foam crest. One focal point (the spinning throat), one
+   * silhouette (the scalloped crest), everything else supports them.
+   */
   render(ctx, camera) {
     if (this.radius <= 0.5) return;
     const cx = this.x - camera.x;
@@ -20828,21 +21011,98 @@ class AbyssalGateFX {
 
     ctx.save();
 
-    // 1. Wet halo — a wide teal bloom breathing around the gate.
+    // 1. Wet halo — one wide teal bloom so the gate reads from off-screen.
     ctx.globalCompositeOperation = 'lighter';
-    const halo = ctx.createRadialGradient(cx, cy, R * 0.3, cx, cy, R * 2.4);
-    halo.addColorStop(0, `rgba(34,211,238,${(0.42 + Math.sin(t * 2.4) * 0.12).toFixed(3)})`);
-    halo.addColorStop(0.45, 'rgba(8,145,178,0.22)');
+    const halo = ctx.createRadialGradient(cx, cy, R * 0.3, cx, cy, R * 2.3);
+    halo.addColorStop(0, `rgba(34,211,238,${(0.5 + Math.sin(t * 2.4) * 0.12).toFixed(3)})`);
+    halo.addColorStop(0.45, 'rgba(8,145,178,0.24)');
     halo.addColorStop(1, 'rgba(2,6,23,0)');
     ctx.fillStyle = halo;
-    ctx.fillRect(cx - R * 2.4, cy - R * 2.4, R * 4.8, R * 4.8);
+    ctx.fillRect(cx - R * 2.3, cy - R * 2.3, R * 4.6, R * 4.6);
 
-    // 2. Foam ripples spreading AWAY from the mouth.
+    // 2. Open-phase geyser: the gate doesn't just appear — it BLOWS a column
+    //    of water skyward as it tears open, then the column collapses into
+    //    the mouth. This is the moment that sells the crossing.
+    if (this.phase === 'open') {
+      const k = Math.min(1, this.timer / this.durations.open);
+      const colH = R * 2.6 * (1 - Math.pow(1 - k, 3));
+      const colW = R * 0.75 * (1 - k * 0.4);
+      for (let i = -2; i <= 2; i++) {
+        const off = i * colW * 0.42;
+        ctx.globalAlpha = (1 - k) * 0.55;
+        ctx.strokeStyle = i === 0 ? '#e0f9ff' : '#67e8f9';
+        ctx.lineWidth = i === 0 ? 7 : 4;
+        ctx.beginPath();
+        ctx.moveTo(cx + off, cy - R * 0.4);
+        ctx.quadraticCurveTo(cx + off * 1.6, cy - colH * 0.6, cx + off * 2.4, cy - colH);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // 3. Ink tendrils, BEHIND the throat: their inner halves disappear into
+    //    the gate, so they read as swimming out from behind it.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 2; i++) {
+      const dir = i ? -1 : 1;
+      const phase = t * 0.62 * dir + i * 2.4;
+      this._tendril(ctx, cx, cy, R, phase, dir, 'rgba(4,10,26,0.5)', 0.22);
+      this._tendril(ctx, cx, cy, R, phase, dir, 'rgba(56,189,248,0.3)', 0.07);
+    }
+
+    // 4. THE THROAT: a rotating whirlpool in the same language as the static
+    //    Tide Gate — watching the door and stepping through it are one idea.
+    ctx.save();
+    this._mouthPath(ctx, cx, cy, rx, ry, t);
+    ctx.clip();
+    const throat = ctx.createRadialGradient(cx, cy, 2, cx, cy, rx);
+    throat.addColorStop(0, '#01060e');
+    throat.addColorStop(0.55, '#063252');
+    throat.addColorStop(1, '#0a4a68');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = throat;
+    ctx.fillRect(cx - rx * 1.6, cy - ry * 1.6, rx * 3.2, ry * 3.2);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const band = (t * 0.5 + i * 0.2) % 1;
+      ctx.globalAlpha = 0.2 * Math.sin(band * Math.PI);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(cx - rx * 1.6, cy - ry + band * ry * 2, rx * 3.2,
+        3 + Math.sin(t * 3 + i) * 2);
+    }
+    // Four spiral arms winding INTO the centre — visibly faster while the
+    // current is hauling.
+    const spin = this.phase === 'suck' ? 2.4 : 1.5;
+    for (let arm = 0; arm < 4; arm++) {
+      const base = t * spin + (arm / 4) * Math.PI * 2;
+      ctx.globalAlpha = arm % 2 ? 0.55 : 0.36;
+      ctx.strokeStyle = arm % 2 ? '#a5f3fc' : '#67e8f9';
+      ctx.lineWidth = arm % 2 ? 3.5 : 2;
+      ctx.beginPath();
+      for (let s = 0; s <= 1.0001; s += 0.04) {
+        const ang = base + s * 3.2;
+        const rad = (1 - s * 0.85) * rx * 0.95;
+        const px = cx + Math.cos(ang) * rad;
+        const py = cy + Math.sin(ang) * rad * 1.12;
+        if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx * 0.6);
+    bloom.addColorStop(0, `rgba(207,250,254,${(0.55 + Math.sin(t * 4) * 0.15).toFixed(3)})`);
+    bloom.addColorStop(1, 'rgba(34,211,238,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = bloom;
+    ctx.fillRect(cx - rx * 1.6, cy - ry * 1.6, rx * 3.2, ry * 3.2);
+    ctx.restore();
+    // 5. Outward foam ripples: water answering the wound by spreading it.
+    ctx.globalCompositeOperation = 'lighter';
     for (const rp of this.ripples) {
       const k = 1 - rp.life / rp.maxLife;
-      ctx.globalAlpha = Math.max(0, (1 - k) * 0.6);
+      ctx.globalAlpha = Math.max(0, (1 - k) * 0.5);
       ctx.strokeStyle = k < 0.5 ? '#e0f9ff' : '#67e8f9';
-      ctx.lineWidth = Math.max(0.6, 4 * (1 - k));
+      ctx.lineWidth = Math.max(0.6, 3.2 * (1 - k));
       ctx.beginPath();
       for (let s = 0; s <= 64; s++) {
         const a = (s / 64) * Math.PI * 2;
@@ -20855,46 +21115,7 @@ class AbyssalGateFX {
       ctx.stroke();
     }
 
-    // 3. Ink tendrils: slow abyss whips curling round the rim. The throat (4)
-    // covers their inner ends, so they appear to swim out from behind it.
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-    for (let i = 0; i < 3; i++) {
-      const dir = i === 1 ? -1 : 1;
-      const phase = t * (0.5 + i * 0.18) * dir + i * 2.1;
-      this._tendril(ctx, cx, cy, R, phase, dir, `rgba(4,10,26,${0.62 - i * 0.12})`, 0.24);
-      this._tendril(ctx, cx, cy, R, phase, dir, 'rgba(56,189,248,0.35)', 0.075);
-    }
-
-    // 4. The throat: a deep teal well with caustic light rippling across it —
-    // deliberately NOT the wormhole's black core.
-    ctx.save();
-    this._mouthPath(ctx, cx, cy, rx, ry, t);
-    ctx.clip();
-    const throat = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
-    throat.addColorStop(0, '#0a3550');
-    throat.addColorStop(0.5, '#062a42');
-    throat.addColorStop(1, '#031b2c');
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = throat;
-    ctx.fillRect(cx - rx * 1.6, cy - ry * 1.6, rx * 3.2, ry * 3.2);
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 5; i++) {
-      const band = (t * 0.45 + i * 0.2) % 1;
-      ctx.globalAlpha = 0.18 * Math.sin(band * Math.PI);
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(cx - rx * 1.6, cy - ry + band * ry * 2, rx * 3.2,
-        3 + Math.sin(t * 3 + i) * 2.5);
-    }
-    const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.85);
-    bloom.addColorStop(0, `rgba(207,250,254,${(0.5 + Math.sin(t * 4) * 0.14).toFixed(3)})`);
-    bloom.addColorStop(1, 'rgba(34,211,238,0)');
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = bloom;
-    ctx.fillRect(cx - rx * 1.6, cy - ry * 1.6, rx * 3.2, ry * 3.2);
-    ctx.restore();
-
-    // 5. Bubbles climbing out of the water, over the throat.
+    // 6. Bubbles climbing out, over the throat.
     ctx.globalCompositeOperation = 'source-over';
     for (const b of this.bubbles) {
       const bx = b.x - camera.x + Math.sin(b.sway) * b.swayAmp;
@@ -20916,19 +21137,46 @@ class AbyssalGateFX {
       ctx.fill();
     }
 
-    // 6. Foam rim: the rippling silhouette itself, pulsing bright.
+    // 7. UPDRAFT SHEETS: ribbons of water streaming past the gate — pulled
+    //    upward while it opens, dragged inward once the current takes over.
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.7 + Math.sin(t * 6) * 0.22;
-    ctx.strokeStyle = '#ecfeff';
-    ctx.lineWidth = 3;
-    this._mouthPath(ctx, cx, cy, rx, ry, t);
-    ctx.stroke();
-    ctx.globalAlpha = 0.4;
-    ctx.strokeStyle = '#67e8f9';
-    ctx.lineWidth = 1.5;
-    this._mouthPath(ctx, cx, cy, rx * 0.86, ry * 0.9, t + 1.3);
-    ctx.stroke();
+    for (let i = 0; i < 6; i++) {
+      const side = i % 2 ? 1 : -1;
+      const lane = side * (R * (0.78 + (i % 3) * 0.26));
+      const flow = (t * (120 + i * 26) + i * 53) % (R * 2.4);
+      const y0 = cy + R * 1.2 - flow;
+      ctx.globalAlpha = 0.3;
+      ctx.strokeStyle = i % 2 ? '#a5f3fc' : '#e0f9ff';
+      ctx.lineWidth = 2 + (i % 3);
+      ctx.beginPath();
+      ctx.moveTo(cx + lane + Math.sin(t * 3 + i) * 4, y0);
+      ctx.lineTo(cx + lane * 1.05, y0 - R * 0.7);
+      ctx.stroke();
+    }
 
+    // 8. FOAM CREST: the scalloped, breathing rim — the one silhouette that
+    //    says "water" from any distance, with foam beads riding it.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.85 + Math.sin(t * 6) * 0.15;
+    ctx.strokeStyle = '#f0fdfe';
+    ctx.lineWidth = 4;
+    this._mouthPath(ctx, cx, cy, rx * 1.02, ry * 1.02, t);
+    ctx.stroke();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#67e8f9';
+    ctx.lineWidth = 2;
+    this._mouthPath(ctx, cx, cy, rx * 0.88, ry * 0.9, t + 1.7);
+    ctx.stroke();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 7; i++) {
+      const a = t * 0.8 + i * 0.9;
+      const wob = 1 + Math.sin(a * 3 + t * 2.6) * 0.055 + Math.sin(a * 5 - t * 3.4) * 0.035;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rx * wob, cy + Math.sin(a) * ry * wob,
+        1.6 + (i % 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -23814,7 +24062,7 @@ class Megalodon {
             const a = Math.atan2(
               (target ? target.y + target.height / 2 : this.y) - (this.y + this.height / 2),
               (target ? target.x + target.width / 2 : this.x) - (this.x + this.width / 2));
-            this.startDash(Math.cos(a) * 1500 * power, Math.sin(a) * 1500 * power,
+            this.startDash(Math.cos(a) * 1240 * power, Math.sin(a) * 1240 * power,
               0.5, (120 + ph * 30) * dmgMul, 'hunt_dash');
             if (sound) sound.playBossRoar();
           } else if (step.act === 'sweep') {
@@ -23859,7 +24107,7 @@ class Megalodon {
       this.y = Math.max(this.y - 300, Math.min(this.y + 300, fromY - this.height / 2));
       const a = Math.atan2(pcy - (this.y + this.height / 2), pcx - (this.x + this.width / 2));
       this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
-      this.startDash(Math.cos(a) * 1400 * power, Math.sin(a) * 1400 * power,
+      this.startDash(Math.cos(a) * 1150 * power, Math.sin(a) * 1150 * power,
         0.45, (95 + ph * 25) * dmgMul, 'frenzy');
       if (sound) sound.playHit();
     }
@@ -24363,8 +24611,11 @@ class Megalodon {
       const a = Math.atan2(ty, tx);
       this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
       this.jawTarget = 0.8;
-      this.startDash(Math.cos(a) * (1250 + ph * 130) * power,
-        Math.sin(a) * (1250 + ph * 130) * power,
+      // Committed a touch slower than the old (1250 + ph*130): it still
+      // closes an arena gap fast and still out-runs a fleeing player, but a
+      // strafing dodge now has a real window — without turning it into a crawl.
+      const dashSp = (1030 + ph * 105) * (1 + (ph - 1) * 0.35);
+      this.startDash(Math.cos(a) * dashSp, Math.sin(a) * dashSp,
         0.75, (100 + ph * 26) * dmgMul, 'dash');
       // EXECUTION: a burst at the jaws the instant it commits. No screen flash.
       this._fxSpawn('burst', mouth.x, mouth.y,
@@ -24380,7 +24631,7 @@ class Megalodon {
         this._fxSpawn('bubbleCluster', mouth.x, mouth.y,
           { r0: 0, r1: 90, life: 0.9, ang: a });
       }
-      this.skillFX(particles, ccx, ccy, 'charge', {});
+      this.skillFX(particles, ccx, ccy, 'charge', { ang: a });
       if (sound) sound.playBossRoar();
     } else if (p.type === 'crushing_bite') {
       // A short, vicious lunge: the maw itself is the hit.
@@ -24389,7 +24640,7 @@ class Megalodon {
       const a = Math.atan2(ty, tx);
       this.faceDir = Math.cos(a) >= 0 ? 1 : -1;
       this.jawTarget = 1;
-      this.startDash(Math.cos(a) * 820 * power, Math.sin(a) * 820 * power,
+      this.startDash(Math.cos(a) * 760 * power, Math.sin(a) * 760 * power,
         0.42, (150 + ph * 34) * dmgMul, 'bite');
       // EXECUTION + AFTERMATH: a compact burst at the jaws, then a pressure
       // ring that stays where the lunge began.
@@ -24401,7 +24652,7 @@ class Megalodon {
       this._fxSpawn('bubbleCluster', mouth.x, mouth.y,
         { r0: 0, r1: 70, life: 1.0, ang: a });
       this._fxSpawn('ring', ccx, ccy, { r0: 70, r1: 200 * power, life: 0.45 });
-      this.skillFX(particles, ccx, ccy, 'bite', {});
+      this.skillFX(particles, ccx, ccy, 'bite', { ang: a });
       this.skillImpact('bite', 0.6);
       if (player && Math.hypot(ppx - (ccx + Math.cos(a) * 130), ppy - ccy) <= p.radius) {
         this.game.damagePlayer(Math.round((130 + ph * 30) * dmgMul), ccx,
@@ -24426,7 +24677,7 @@ class Megalodon {
       this._fxSpawn('splash', ccx, ccy, {
         r0: 30, r1: (p.radius || 220) * 0.55, life: 0.4, ang: p.angle || 0
       });
-      this.skillFX(particles, ccx, ccy, 'sweep', { radius: p.radius, angle: p.angle });
+      this.skillFX(particles, ccx, ccy, 'sweep', { radius: p.radius, ang: p.angle });
       this.skillImpact('sweep', 0.5);
       if (player) {
         const dx = ppx - ccx, dy = ppy - ccy;
@@ -24496,8 +24747,9 @@ class Megalodon {
       const dir = (this.apexLane && this.apexLane.x1 >= this.apexLane.x0) ? 1 : -1;
       this.faceDir = dir;
       this.jawTarget = 1;
-      this.startDash(dir * 2300, 0, 1.1, (190 + this.phase * 40) * dmgMul, 'apex');
-      this.skillFX(particles, this.x + this.width / 2, this.y + this.height / 2, 'charge', {});
+      this.startDash(dir * 1950, 0, 1.1, (190 + this.phase * 40) * dmgMul, 'apex');
+      this.skillFX(particles, this.x + this.width / 2, this.y + this.height / 2,
+        'charge', { ang: dir > 0 ? 0 : Math.PI });
       this.skillImpact('apex', 0.9);
       if (sound) sound.playExplosion();
     } else if (p.type === 'devouring_maw') {
@@ -24528,7 +24780,7 @@ class Megalodon {
       });
       this._fxSpawn('ring', ccx, ccy,
         { r0: 90, r1: 260 + ph * 60, life: 0.55, ang: a });
-      this.skillFX(particles, ccx, ccy, 'maw', {});
+      this.skillFX(particles, ccx, ccy, 'maw', { ang: a });
       this.skillImpact('maw', 0.85);
       if (player && Math.hypot(ppx - ccx, ppy - ccy) <= p.radius) {
         this.game.damagePlayer(Math.round((120 + ph * 30) * dmgMul), ccx,
@@ -24599,34 +24851,88 @@ class Megalodon {
     const power = 1 + (ph - 1) * 0.55;
     const radius = (opts.radius || 90) * power;
     // Palette: sea-foam white/cyan for water force, crimson for the jaws.
-    const wet = chord === 'charge' || chord === 'spin' || chord === 'rumble';
+    const wet = chord === 'charge' || chord === 'spin' || chord === 'rumble' ||
+      chord === 'suction' || chord === 'undertow';
     const tint = wet ? '#7dd3fc' : chord === 'teeth' ? '#e2e8f0' : '#f87171';
-    // Core flash.
-    for (let i = 0; i < n(4 + ph * 2); i++) {
-      particles.addParticle(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20,
-        (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6,
-        i % 2 ? tint : 'rgba(255, 255, 255, 0.8)',
-        3 + Math.random() * 3, 0.4, 0, true);
+    const foam = '#e0f9ff';
+    const ang = opts.ang != null ? opts.ang : Math.random() * Math.PI * 2;
+
+    // ---- 1. CORE: a white-hot spark heart that blooms and dies.
+    for (let i = 0; i < n(6 + ph * 3); i++) {
+      particles.addParticle(x + (Math.random() - 0.5) * 16, y + (Math.random() - 0.5) * 16,
+        (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7,
+        i % 3 === 0 ? 'rgba(255, 255, 255, 0.9)' : tint,
+        3.5 + Math.random() * 3.5, 0.38, 0, true);
     }
-    // Racing ring of spray.
-    const rings = 1 + (ph > 2 && q > 0.6 ? 1 : 0);
-    for (let r = 0; r < rings; r++) {
-      const c = n(10 + ph * 4);
+
+    // ---- 2. LAYERED SHOCK RINGS: staggered speeds, so the impact has a
+    //      beginning, a middle and an afterglow instead of a single pop.
+    const ringCount = q > 0.6 ? 3 : 2;
+    for (let r = 0; r < ringCount; r++) {
+      const c = n(14 + ph * 5);
+      const rr = radius * (0.35 + r * 0.42);
       for (let i = 0; i < c; i++) {
-        const a = (i / c) * Math.PI * 2 + r * 0.3;
-        particles.addParticle(x + Math.cos(a) * radius * 0.3,
-          y + Math.sin(a) * radius * 0.3,
-          Math.cos(a) * (4 + ph * 2), Math.sin(a) * (4 + ph * 2),
-          tint, 2.4, 0.55, 0, true);
+        const a = (i / c) * Math.PI * 2 + r * 0.42;
+        particles.addParticle(x + Math.cos(a) * rr * 0.25, y + Math.sin(a) * rr * 0.25,
+          Math.cos(a) * (4.5 + ph * 2.2 + r * 1.6), Math.sin(a) * (4.5 + ph * 2.2 + r * 1.6),
+          r === 1 ? foam : tint, 2.6 - r * 0.4, 0.6 + r * 0.18, 0, true);
       }
     }
-    // Arcing spray.
-    for (let i = 0; i < n(6 + ph * 3); i++) {
-      particles.addParticle(x, y,
-        (Math.random() - 0.5) * 12, -Math.random() * 8 - 2,
-        'rgba(186, 230, 253, 0.7)', 2.6, 0.7, 0.14, true);
+
+    // ---- 3. DIRECTIONAL FOAM JET: water force and jaws both blow a cone of
+    //      spray along the skill's facing (plus a smaller backwash), so every
+    //      effect has a DIRECTION — the old radial-only puff read the same on
+    //      every skill.
+    if (wet || chord === 'bite' || chord === 'maw' || chord === 'apex' ||
+        chord === 'hunt') {
+      const cone = n(10 + ph * 4);
+      for (let i = 0; i < cone; i++) {
+        const spread = (Math.random() - 0.5) * 1.1;
+        const sp = 7 + Math.random() * 7;
+        particles.addParticle(x, y,
+          Math.cos(ang + spread) * sp, Math.sin(ang + spread) * sp,
+          i % 2 ? foam : tint, 3 + Math.random() * 2, 0.55, 0.06, true);
+      }
+      for (let i = 0; i < n(5); i++) {
+        const spread = (Math.random() - 0.5) * 0.9;
+        particles.addParticle(x, y,
+          -Math.cos(ang + spread) * (3 + Math.random() * 3),
+          -Math.sin(ang + spread) * (3 + Math.random() * 3),
+          'rgba(186, 230, 253, 0.65)', 2.4, 0.7, 0.04, true);
+      }
     }
-    if (q > 0.5) particles.magicSparkle(x, y, tint, Math.round(n(5 + ph * 3)));
+
+    // ---- 4. RISING BUBBLE COLUMN: water force always drags air upward, and
+    //      the wobble sells it as WATER rather than a generic explosion.
+    if (wet) {
+      for (let i = 0; i < n(7 + ph * 3); i++) {
+        particles.addParticle(x + (Math.random() - 0.5) * radius * 0.8,
+          y + (Math.random() - 0.5) * 20,
+          (Math.random() - 0.5) * 1.4, -1.5 - Math.random() * 3,
+          'rgba(224, 249, 255, 0.85)', 1.8 + Math.random() * 2.2, 1.0, -0.05, true);
+      }
+    }
+
+    // ---- 5. VECTOR LAYER: pooled shapes that stay crisp in the water after
+    //      the particles fade. Charges ring out, jaws SNAP inward (the same
+    //      collapse the telegraph promised — anticipation and payoff share one
+    //      shape), currents spin.
+    if (chord === 'charge' || chord === 'apex') {
+      this._fxSpawn('ring', x, y, { r0: radius * 0.3, r1: radius * 1.7, life: 0.5 });
+      this._fxSpawn('foam', x, y, { r0: 30, r1: radius * 1.4, life: 0.6, ang });
+      if (q > 0.55) this._fxSpawn('bubbleCluster', x, y, { r0: 0, r1: radius, life: 1.0, ang });
+    } else if (chord === 'bite' || chord === 'maw' || chord === 'teeth') {
+      this._fxSpawn('collapse', x, y, { r0: radius * 0.4, r1: radius * 1.6, life: 0.3 });
+      this._fxSpawn('burst', x, y, { r0: 16, r1: radius, life: 0.28, ang });
+    } else if (chord === 'spin' || chord === 'rumble' || chord === 'suction') {
+      this._fxSpawn('arc', x, y,
+        { r0: radius * 0.5, r1: radius * 1.8, wide: 2.6, ang, life: 0.55, spin: 3 });
+      this._fxSpawn('ring', x, y, { r0: radius * 0.2, r1: radius * 1.5, life: 0.7 });
+    } else {
+      this._fxSpawn('ring', x, y, { r0: radius * 0.3, r1: radius * 1.5, life: 0.45 });
+    }
+
+    if (q > 0.5) particles.magicSparkle(x, y, tint, Math.round(n(6 + ph * 4)));
     // The heavier the hit, the harder the screen flinches.
     if (chord === 'maw' || chord === 'apex' || chord === 'bite') {
       this.skillImpact(chord, 0.7);
@@ -25594,14 +25900,39 @@ class Megalodon {
       // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
       const tipX = base.x - 30 - (this.surge || 0) * 18 - (dashing ? 12 : 0);
-      const tipY = base.y - bodyHalf(0.43) * 1.80 + finTilt * 14;
-      // Leading edge: rear root sweeps up and forward to the tip.
-      const leading = raggedEdge(
-        { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.45 },
-        { x: tipX, y: tipY }, 4, 6 + tearAmp * 10, 61.7);
-      // Trailing edge: tip falls back to the front root.
-      const trailing = raggedEdge({ x: tipX, y: tipY },
-        { x: rootFront.x + 2, y: rootFront.y - bodyHalf(0.43) * 0.30 }, 4, 7 + tearAmp * 12, 63.1);
+      const tipY = base.y - bodyHalf(0.43) * 1.86 + finTilt * 14;
+      // ---- Edge dressing: a HEALTHY dorsal is one of the cleanest shapes in
+      // the ocean — a smooth swept crescent. Ragged bites only appear as the
+      // animal is wounded; the old code tore even a phase-1 fin (amp 6-7px on
+      // every other segment), which is what made it read as a messy blob
+      // instead of a fin.
+      const edgeTear = Math.max(0, tearAmp - 0.25) * 18;
+      const rootB = { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.45 };
+      const rootF = { x: rootFront.x + 2, y: rootFront.y - bodyHalf(0.43) * 0.30 };
+      const sampleQuad = (p0, pc, p1, n) => {
+        const out = [];
+        for (let i = 0; i <= n; i++) {
+          const t = i / n, mt = 1 - t;
+          out.push({
+            x: mt * mt * p0.x + 2 * mt * t * pc.x + t * t * p1.x,
+            y: mt * mt * p0.y + 2 * mt * t * pc.y + t * t * p1.y
+          });
+        }
+        return out;
+      };
+      const tipP = { x: tipX, y: tipY };
+      // Rear slope (root -> tip): bows out and back so the fin has a full
+      // crescent back instead of a straight tent-pole edge.
+      const midRear = { x: (rootB.x + tipX) / 2, y: (rootB.y + tipY) / 2 };
+      const leading = edgeTear > 1.5
+        ? raggedEdge(rootB, tipP, 6, edgeTear, 61.7)
+        : sampleQuad(rootB, { x: midRear.x - 9, y: midRear.y - 5 }, tipP, 9);
+      // Front slope (tip -> front root): the long convex edge — the line that
+      // actually reads "shark fin" from a mile off.
+      const midFront = { x: (tipX + rootF.x) / 2, y: (tipY + rootF.y) / 2 };
+      const trailing = edgeTear > 1.5
+        ? raggedEdge(tipP, rootF, 7, edgeTear, 63.1)
+        : sampleQuad(tipP, { x: midFront.x - 6, y: midFront.y - 11 }, rootF, 11);
       // Base: ride the actual back ridge so the fin is one piece with the hull.
       const baseLine = [];
       for (let u = 0.62; u >= 0.235; u -= 0.035) {
@@ -25619,11 +25950,15 @@ class Megalodon {
       ctx.strokeStyle = outline;
       ctx.lineWidth = 4;
       ctx.stroke();
-      // Membrane rays + leading-edge highlight.
+      // Membrane rays + leading-edge highlight, CLIPPED to the fin silhouette.
+      // They used to be stroked unchecked, so both ends hung over the edges as
+      // loose scratches — the other half of the "messy fin" read.
+      ctx.save();
+      ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
+      ctx.clip();
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.28)';
       ctx.lineWidth = 1.5;
-      // Membrane rays: a FEW clean strokes, not a fan of 5 that scribbles the
-      // fin. Three read as fin structure; five read as clutter at game scale.
+      // Three rays fanning root -> tip: fin structure, not clutter.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
         ctx.moveTo(rootFront.x - 6, rootFront.y - 10 - r * 3);
@@ -25636,6 +25971,7 @@ class Megalodon {
       ctx.moveTo(rootFront.x + 2, rootFront.y);
       ctx.quadraticCurveTo(rootFront.x - 22, rootFront.y - bodyHalf(0.43) * 0.52, tipX, tipY - 2);
       ctx.stroke();
+      ctx.restore();
       // Apex: the dorsal is notched and torn.
       if (ph === 3 || (ph === 2 && injury > 0.4)) {
         ctx.fillStyle = flash ? '#ffe4e6' : hideMid;
@@ -26048,33 +26384,41 @@ class Megalodon {
           ctx.beginPath(); traceSmooth(ctx, lit); ctx.closePath();
           ctx.fillStyle = mouthLit;
           ctx.fill();
-          // Throat rings receding into the gullet.
+          // Throat rings receding into the gullet. Control points are sampled
+          // BETWEEN the lip and jaw (the old `p.x - 12*rr` dragged them a
+          // fixed 24px sideways and they streaked out of the gape when open).
           ctx.strokeStyle = 'rgba(74, 10, 24, 0.55)';
           ctx.lineWidth = 2;
           for (let rr = 0; rr < 3; rr++) {
             const f0 = 0.12 + rr * 0.11;
             const p = lipPt(f0), q = jawPt(f0);
+            const at = (s) => ({ x: p.x + (q.x - p.x) * s, y: p.y + (q.y - p.y) * s });
+            const a = at(0.3), b = at(0.5), c = at(0.7);
             ctx.beginPath();
-            ctx.moveTo(p.x + (q.x - p.x) * 0.3, p.y + (q.y - p.y) * 0.3);
-            ctx.quadraticCurveTo(p.x - 12 * rr, p.y + (q.y - p.y) * 0.5,
-              p.x + (q.x - p.x) * 0.7, p.y + (q.y - p.y) * 0.7);
+            ctx.moveTo(a.x, a.y);
+            ctx.quadraticCurveTo(b.x, b.y, c.x, c.y);
             ctx.stroke();
           }
-          // Tongue: a muscular curl riding the floor of the mouth.
-          {
+          // Tongue: a muscular curl riding the floor of the mouth. Sized by
+          // the GAPE — the old fixed 26x7 ellipse overflowed the lips at small
+          // openings and smeared a red blob across the snout.
+          if (open01 > 0.16) {
             const t0 = jawPt(0.34), t1 = jawPt(0.62);
+            const tg = jawTangent(0.5);
             ctx.fillStyle = '#8f1220';
             ctx.beginPath();
-            ctx.ellipse((t0.x + t1.x) / 2, (t0.y + t1.y) / 2 + 4,
-              26 + open01 * 10, 7 + open01 * 5, jawTangent(0.5).y * 0.5, 0, Math.PI * 2);
+            ctx.ellipse((t0.x + t1.x) / 2, (t0.y + t1.y) / 2 + 3,
+              8 + open01 * 26, 2.5 + open01 * 8, Math.atan2(tg.y, tg.x), 0, Math.PI * 2);
             ctx.fill();
           }
           // The heat of the gullet, phase 2+: skill glow bleeds out of it.
-          if (ph >= 2 && this.skillGlow > 0) {
+          // Also gaped — a fixed 26x10 disc spilled over the jawline shut.
+          if (ph >= 2 && this.skillGlow > 0 && open01 > 0.2) {
             const g0 = lipPt(0.2), g1 = jawPt(0.2);
             ctx.fillStyle = 'rgba(251, 146, 60, ' + Math.min(0.35, this.skillGlow * 0.22).toFixed(2) + ')';
             ctx.beginPath();
-            ctx.ellipse((g0.x + g1.x) / 2, (g0.y + g1.y) / 2, 26, 10 + open01 * 12, 0, 0, Math.PI * 2);
+            ctx.ellipse((g0.x + g1.x) / 2, (g0.y + g1.y) / 2,
+              6 + open01 * 20, 3 + open01 * 9, 0, 0, Math.PI * 2);
             ctx.fill();
           }
         }
@@ -26084,9 +26428,10 @@ class Megalodon {
       {
         const slab = [];
         for (let i = 0; i <= 8; i++) slab.push(jawPt(i / 8));
-        // Jaw depth: a slab, not a block. Slim enough that the lower jaw reads
-        // as anatomy attached to the head rather than a floating triangle.
-        const jowl = (f) => 13 + open01 * 8 + Math.sin(f * Math.PI) * 7;
+        // Jaw depth: a slab, not a block. Kept slim even at full gape — the
+        // old `13 + open*8` grew the slab to 28px wide and, swung open, it
+        // dragged across the gill/pectoral area and read as a mess.
+        const jowl = (f) => 11 + open01 * 3 + Math.sin(f * Math.PI) * 6;
         for (let i = 8; i >= 0; i--) {
           const f = i / 8;
           const t = jawTangent(f);
