@@ -2203,43 +2203,82 @@ World.prototype.generateOceanPlanet = function() {
   // dig the richer the seam: brine just under the seabed, leviathan near the
   // map floor. The band fraction is measured from the local seabed down to the
   // bottom, so even a shallow column still yields brine at its own floor.
+  //
+  // TWO FIXES HERE:
+  //   1. ISLAND BLEED. `duneFloor` is the flat seabed line, so the ore loop ran
+  //      straight under the islands: digging into a small island's rock gave
+  //      you abyssal ore without ever touching the seabed, and the islands
+  //      looked studded with it. Ore is now skipped entirely under any column
+  //      that is not open seabed (a column sitting under an island has stone
+  //      tiles ABOVE the seabed line), and the band starts a few tiles below
+  //      the true seabed so you have to dig for it.
+  //   2. TOO FREQUENT. Roll cut-offs were 1.2%/4.2%/... per stone tile, which
+  //      is a LOT on a planet the size of the map. Every band is now scaled by
+  //      one ORE_RATE constant, tuned down to roughly a third.
+  const ORE_RATE = 0.34;
+  const cut = (base) => base * ORE_RATE;
   for (let x = 2; x < this.width - 2; x++) {
     const top = duneFloor[x];
     const span = Math.max(1, this.height - 2 - top);
-    for (let y = top + 5; y < this.height - 2; y++) {
+    // The column's true top solid tile: if anything solid sits above the
+    // seabed line, this column is inside an island (or its roots), and ore is
+    // not allowed to bleed into it.
+    let columnTop = -1;
+    for (let y = 2; y < this.height - 2; y++) {
+      const above = this.getTile(x, y);
+      if (above !== TILES.AIR && above !== TILES.WATER) { columnTop = y; break; }
+    }
+    // Islands stand ABOVE the seabed line, so a column is an island column when
+    // its top solid tile is well above `top` (the local seabed). A column solid
+    // at the seabed with no open water below it is an island's root mass.
+    if (columnTop >= 0 && columnTop < top) continue;      // island body — no ore
+    {
+      const atSeabed = this.getTile(x, top);
+      if (atSeabed !== TILES.AIR && atSeabed !== TILES.WATER) {
+        let openBelow = 0;
+        for (let y = top + 1; y < Math.min(this.height - 2, top + 6); y++) {
+          const b = this.getTile(x, y);
+          if (b === TILES.AIR || b === TILES.WATER) openBelow++;
+        }
+        if (openBelow < 4) continue;                      // solid root column
+      }
+    }
+    // Ore only begins a few tiles under the seabed it belongs to.
+    const oreStart = top + 4;
+    for (let y = oreStart; y < this.height - 2; y++) {
       const tile = this.getTile(x, y);
       if (tile !== TILES.STONE) continue;
       // 0 at the seabed, 1 at the map floor.
       const depth = (y - top) / span;
       const roll = Math.random();
-      if (roll < 0.012) this.setTile(x, y, TILES.IRON_ORE);
-      else if (roll < 0.018) this.setTile(x, y, TILES.GOLD_ORE);
-      else if (roll < 0.0205) this.setTile(x, y, TILES.CRYSTAL);
+      if (roll < cut(0.012)) this.setTile(x, y, TILES.IRON_ORE);
+      else if (roll < cut(0.018)) this.setTile(x, y, TILES.GOLD_ORE);
+      else if (roll < cut(0.0205)) this.setTile(x, y, TILES.CRYSTAL);
       // A crystal stuck to a cavern ceiling sparkles the whole chamber.
-      else if (roll < 0.024 && this.getTile(x, y - 1) === TILES.AIR) {
+      else if (roll < cut(0.024) && this.getTile(x, y - 1) === TILES.AIR) {
         this.setTile(x, y, TILES.CRYSTAL);
       }
       // ---- Ocean-themed ore bands. The common ore of each band gets a wide
       // share; the rarer ore above it is a thin seam, so a seam feels found.
-      else if (roll < 0.033) {
+      else if (roll < cut(0.033)) {
         // Brine: the shallow band, commonest near the seabed.
         if (depth < 0.55) this.setTile(x, y, TILES.BRINE_ORE);
-        else if (roll < 0.028) this.setTile(x, y, TILES.BRINE_ORE);
+        else if (roll < cut(0.028)) this.setTile(x, y, TILES.BRINE_ORE);
         else this.setTile(x, y, TILES.ABYSS_ORE);
-      } else if (roll < 0.042) {
+      } else if (roll < cut(0.042)) {
         // Abyssal: the middle band.
         if (depth > 0.30 && depth < 0.82) this.setTile(x, y, TILES.ABYSS_ORE);
-        else if (roll < 0.037) this.setTile(x, y, TILES.BRINE_ORE);
+        else if (roll < cut(0.037)) this.setTile(x, y, TILES.BRINE_ORE);
         else this.setTile(x, y, TILES.TIDE_ORE);
-      } else if (roll < 0.049) {
+      } else if (roll < cut(0.049)) {
         // Tidesteel: the deep band, below the middle.
         if (depth > 0.55) this.setTile(x, y, TILES.TIDE_ORE);
-        else if (roll < 0.045) this.setTile(x, y, TILES.ABYSS_ORE);
+        else if (roll < cut(0.045)) this.setTile(x, y, TILES.ABYSS_ORE);
         else this.setTile(x, y, TILES.TIDE_ORE);
-      } else if (roll < 0.0535) {
+      } else if (roll < cut(0.0535)) {
         // Leviathan: the very bottom of the planet, rare everywhere else.
         if (depth > 0.78) this.setTile(x, y, TILES.LEVIATHAN_ORE);
-        else if (roll < 0.051) this.setTile(x, y, TILES.TIDE_ORE);
+        else if (roll < cut(0.051)) this.setTile(x, y, TILES.TIDE_ORE);
         else this.setTile(x, y, TILES.LEVIATHAN_ORE);
       }
     }
@@ -2863,9 +2902,50 @@ World.prototype.enterOceanDimension = function() {
     const totalW = oceanTiers.reduce((s, t) => s + t.weight, 0);
     let seeded = 0;
     for (let x = 2; x < this.width - 2; x++) {
+      // ---- ISLAND BLEED, same fix as the generator -----------------------
+      // This migration ran over EVERY stone tile below the seabed line, which
+      // includes the rock inside and under every island: a small island's
+      // underside came out studded with ore. The seabed here is the ocean
+      // arena's floor line (`surfaceHeights` is left at the sea surface by the
+      // dimension swap, so it cannot be used), and a column whose topmost solid
+      // tile is ABOVE that line is an island column and gets no seam here.
+      const seabed = this.oceanArena ? this.oceanArena.floorY : this.surfaceHeights[x];
+      let columnTop = -1;
+      for (let y = 2; y < this.height - 2; y++) {
+        const above = this.tiles[y * this.width + x];
+        if (above !== TILES.AIR && above !== TILES.WATER) { columnTop = y; break; }
+      }
+      // An island's ROOT mass can sit below the seabed line, so the column-top
+      // test alone is not enough: a column whose first solid tile is ABOVE the
+      // seabed (island body) or whose column is solid AT the seabed (island
+      // roots sitting in it) is island rock, not open seabed. Open-seabed
+      // columns have water at the seabed line, so this only skips islands.
+      // An island's root/beach mass reaches down to the seabed, so a column
+      // can be solid AT the seabed line and still be island rock. The robust
+      // test is the column's own first-solid tile: anything solid above the
+      // seabed line means island, and any ore below that is root rock.
+      // Open-seabed columns have their first solid tile AT the seabed.
+      const firstSolid = this.tiles.find ? null : null;
+      let fsY = -1;
+      for (let y = 2; y < this.height - 2; y++) {
+        const above = this.tiles[y * this.width + x];
+        if (above !== TILES.AIR && above !== TILES.WATER) { fsY = y; break; }
+      }
+      if (fsY >= 0 && fsY < seabed) continue;                 // island body
+      if (fsY === seabed) {
+        // Solid exactly at the seabed line: check whether there is open seabed
+        // in this column at all (a beach/island-root column is solid straight
+        // down, an open column is water at the line and solid only below).
+        let openBelow = 0;
+        for (let y = seabed + 1; y < Math.min(this.height - 2, seabed + 6); y++) {
+          const b = this.tiles[y * this.width + x];
+          if (b === TILES.AIR || b === TILES.WATER) openBelow++;
+        }
+        if (openBelow < 4) continue;                          // solid root column
+      }
       // Find the seabed: the first solid non-sand/stone cap from above, or fall
       // back to the surface height for this column.
-      let top = this.surfaceHeights[x];
+      const top = seabed;
       const span = Math.max(1, this.height - 2 - top);
       for (let y = top + 4; y < this.height - 2; y++) {
         const i = y * this.width + x;

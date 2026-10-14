@@ -7438,10 +7438,14 @@ class Game {
   /**
    * Right-click the Abyssal Horn: the Megalodon's own rite.
    *
-   * The drowned colosseum out in the reef is the only place this is accepted —
-   * no horn, no shark, and no arrival ever ambushes you. Same rules as the
-   * bone rite: host-only in a session, one beast at a time, a refused horn is
-   * never spent, and a banked fight (leviathanHP) is a fight in progress.
+   * The horn works anywhere in the abyssal ocean — the arena was the original
+   * gate, but "swim all the way to the colosseum to summon it" is a long, dead
+   * swim that only ever punished the player for summoning somewhere scenic.
+   * The shark is called to the PLAYER and the arena bounds simply contain it:
+   * you get the same fight wherever you stand, and you can stop dancing around
+   * the map looking for one specific bowl of water. The rite rules themselves
+   * are unchanged: host-only in a session, one beast at a time, a refused horn
+   * is never spent, and a banked fight (leviathanHP) is a fight in progress.
    */
   performAbyssRite() {
     const g = this;
@@ -7453,6 +7457,10 @@ class Game {
       g.showToast('📯 The horn only sounds in the deep water of the west.');
       return false;
     }
+    if (!world.isInOcean()) {
+      g.showToast('📯 The horn only sounds out on the abyssal planet. Enter through the Tide Gate.');
+      return false;
+    }
     if (g.wormhole) {
       g.showToast('📯 The horn needs still water to be heard.');
       return false;
@@ -7461,18 +7469,6 @@ class Game {
       g.boss.kind === 'kraken'
         ? g.showToast('🦈 The Megalodon is already awake.')
         : g.showToast('📯 Something else already owns this water.');
-      return false;
-    }
-    // The arena: standing inside the colosseum, not anywhere in the world.
-    const arena = world.oceanArena;
-    if (!arena || !world.isInOcean()) {
-      g.showToast('📯 The colosseum is far west, past the reef temple. Find the drowned bowl and blow the horn there.');
-      return false;
-    }
-    const inArena = Math.abs((g.player.x + g.player.width / 2) - arena.arenaCX) < 26 * TILE_SIZE &&
-      Math.abs((g.player.y + g.player.height / 2) - arena.arenaCY) < 20 * TILE_SIZE;
-    if (!inArena) {
-      g.showToast('📯 Not here. The horn answers only inside the drowned colosseum.');
       return false;
     }
     // A banked Megalodon fight (a wounded boss the player left) is a fight in
@@ -7496,10 +7492,18 @@ class Game {
     g.showAnnouncement('📯 THE HORN SOUNDS — SOMETHING OLD IS COMING.');
     g.sound.playBossRoar?.();
     g.particles.bubbleBurst?.(g.player.x, g.player.y, '#5eead4', 26);
-    // The shark rises in the middle of the pit, eight tiles above the floor,
-    // facing the player — the same geometry the tesla harnesses drive by hand.
-    const tx = arena.arenaCX;
-    const ty = (arena.floorY - 8) * TILE_SIZE;
+    // It rises from the deep at the player's own position, deep enough that it
+    // must climb to reach them — the arena bounds then hold it wherever it
+    // spawned. Never inside the player: spawn below and let the first lunge do
+    // the meeting, which keeps the summon fair from any water column.
+    const W = world;
+    // Spawn beside the player (the shark is wide), clamped to the world, and
+    // below them so the first charge does the meeting.
+    const half = 210;
+    const wantX = g.player.x + g.player.width / 2 + (g.player.facing >= 0 ? -half : half);
+    const tx = Math.max(TILE_SIZE * 4, Math.min(W.pixelWidth - TILE_SIZE * 10, wantX));
+    const ty = Math.min((W.height - 8) * TILE_SIZE,
+      (g.player.y / TILE_SIZE + 12) * TILE_SIZE);
     try {
       const m = new Megalodon(tx, ty, g);
       m.hp = m.maxHp;
