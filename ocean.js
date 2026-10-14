@@ -2790,7 +2790,12 @@ World.prototype.enterOceanDimension = function() {
         const i = y * this.width + x;
         if (this.tiles[i] !== TILES.STONE) continue;
         const depth = (y - top) / span;
-        const roll = Math.random() * totalW;
+        // MUST be `let`: the tier walk below subtracts each weight in turn.
+        // This was `const`, so the first subtraction threw
+        // "TypeError: Assignment to constant variable" from inside
+        // enterOceanDimension() — which left the Tide Gate crossing frozen
+        // mid-swap (white-out that never cleared / an empty ocean arena).
+        let roll = Math.random() * totalW;
         let pick = null;
         for (const t of oceanTiers) {
           roll -= t.weight;

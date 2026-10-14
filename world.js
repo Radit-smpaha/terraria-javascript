@@ -4831,7 +4831,13 @@ class World {
     // Underground darkness bonus
     const minTileY = Math.floor(camera.y / TILE_SIZE);
     const undergroundStart = 56;
-    if (!inTemple && minTileY > undergroundStart - 10) {
+    // The ocean planet is one continuous water column with a seabed at the
+    // bottom of the world: "underground" is measured from tile 56 down, so
+    // nearly the whole arena counted as deep rock and got painted near-black
+    // on top of the water. The abyss must be lit by its own god rays, caustics
+    // and motes instead of the overworld depth ramp.
+    const inOceanDim = typeof this.isInOcean === 'function' && this.isInOcean();
+    if (!inTemple && !inOceanDim && minTileY > undergroundStart - 10) {
       const depthFactor = Math.min(1.0, (minTileY - undergroundStart + 10) / 15);
       lightCtx.fillStyle = `rgba(0, 0, 0, ${depthFactor * 0.92})`;
       lightCtx.fillRect(0, 0, w, h);
@@ -4847,7 +4853,8 @@ class World {
     // roofs, shadow pooled under overhangs and dirt huts, while the sky and
     // the sunlit ground outside stay bright. Torches and the player's own
     // aura still carve straight through it in the pass below.
-    if (!inTemple && !(typeof this.isInSpace === 'function' && this.isInSpace())) {
+    if (!inTemple && !inOceanDim &&
+        !(typeof this.isInSpace === 'function' && this.isInSpace())) {
       const occX0 = Math.max(0, Math.floor(camera.x / TILE_SIZE));
       const occX1 = Math.min(this.width - 1, Math.ceil((camera.x + w) / TILE_SIZE));
       const occY0 = Math.max(0, Math.floor(camera.y / TILE_SIZE));

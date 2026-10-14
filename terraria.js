@@ -7233,6 +7233,12 @@ class Game {
     this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 0.4);
     if (this.wormhole.update(dt, this.player, this.particles) === 'done') {
       const intent = this.wormholeIntent;
+      // Tear the FX down BEFORE the world is rebuilt, not after. If the
+      // dimension swap threw, the old order left this.wormhole pointing at a
+      // finished crossing whose flash was pinned at 1.0 — so the sea-foam
+      // white-out never cleared and the screen stayed white over a dead UI.
+      // Dropping the FX first means a failure can at worst leave the player
+      // in the new dimension, never frozen under a full-screen wash.
       this.wormhole = null;
       this.wormholeIntent = null;
       if (intent === 'space') this.enterSpaceDimension();

@@ -10380,7 +10380,13 @@ class World {
     // Underground darkness bonus
     const minTileY = Math.floor(camera.y / TILE_SIZE);
     const undergroundStart = 56;
-    if (!inTemple && minTileY > undergroundStart - 10) {
+    // The ocean planet is one continuous water column with a seabed at the
+    // bottom of the world: "underground" is measured from tile 56 down, so
+    // nearly the whole arena counted as deep rock and got painted near-black
+    // on top of the water. The abyss must be lit by its own god rays, caustics
+    // and motes instead of the overworld depth ramp.
+    const inOceanDim = typeof this.isInOcean === 'function' && this.isInOcean();
+    if (!inTemple && !inOceanDim && minTileY > undergroundStart - 10) {
       const depthFactor = Math.min(1.0, (minTileY - undergroundStart + 10) / 15);
       lightCtx.fillStyle = `rgba(0, 0, 0, ${depthFactor * 0.92})`;
       lightCtx.fillRect(0, 0, w, h);
@@ -10396,7 +10402,8 @@ class World {
     // roofs, shadow pooled under overhangs and dirt huts, while the sky and
     // the sunlit ground outside stay bright. Torches and the player's own
     // aura still carve straight through it in the pass below.
-    if (!inTemple && !(typeof this.isInSpace === 'function' && this.isInSpace())) {
+    if (!inTemple && !inOceanDim &&
+        !(typeof this.isInSpace === 'function' && this.isInSpace())) {
       const occX0 = Math.max(0, Math.floor(camera.x / TILE_SIZE));
       const occX1 = Math.min(this.width - 1, Math.ceil((camera.x + w) / TILE_SIZE));
       const occY0 = Math.max(0, Math.floor(camera.y / TILE_SIZE));
@@ -23177,7 +23184,12 @@ World.prototype.enterOceanDimension = function() {
         const i = y * this.width + x;
         if (this.tiles[i] !== TILES.STONE) continue;
         const depth = (y - top) / span;
-        const roll = Math.random() * totalW;
+        // MUST be `let`: the tier walk below subtracts each weight in turn.
+        // This was `const`, so the first subtraction threw
+        // "TypeError: Assignment to constant variable" from inside
+        // enterOceanDimension() — which left the Tide Gate crossing frozen
+        // mid-swap (white-out that never cleared / an empty ocean arena).
+        let roll = Math.random() * totalW;
         let pick = null;
         for (const t of oceanTiers) {
           roll -= t.weight;
@@ -38532,6 +38544,12 @@ class Game {
     this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 0.4);
     if (this.wormhole.update(dt, this.player, this.particles) === 'done') {
       const intent = this.wormholeIntent;
+      // Tear the FX down BEFORE the world is rebuilt, not after. If the
+      // dimension swap threw, the old order left this.wormhole pointing at a
+      // finished crossing whose flash was pinned at 1.0 — so the sea-foam
+      // white-out never cleared and the screen stayed white over a dead UI.
+      // Dropping the FX first means a failure can at worst leave the player
+      // in the new dimension, never frozen under a full-screen wash.
       this.wormhole = null;
       this.wormholeIntent = null;
       if (intent === 'space') this.enterSpaceDimension();

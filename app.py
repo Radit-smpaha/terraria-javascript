@@ -239,13 +239,18 @@ if _debug:
 # entities.js against a new terraria.js -> "Player is not defined").
 st.iframe(INLINED_URL, height=GAME_HEIGHT)
 
-# Visible build stamp. If the game ever looks stale again, compare this size
-# against GitHub Pages - equal numbers mean the deploy is fine and the problem
-# is the browser cache, not the repo.
+# Diagnostic-only stamp. This deliberately leaks a raw URL plus build internals
+# into the page, so it now only renders under ?debug — shipping it to every
+# player looked like noise, and the "hard-refresh" note read like a bug report.
 try:
-    st.caption(
-        "build %s - %s - if you see an old game, hard-refresh (Ctrl+F5)"
-        % (CACHE_TOKEN, INLINED_URL)
-    )
+    _debug_stamp = "debug" in st.query_params
 except Exception:
-    pass
+    _debug_stamp = False
+if _debug_stamp:
+    try:
+        st.caption(
+            "build %s - %s - if you see an old game, hard-refresh (Ctrl+F5)"
+            % (CACHE_TOKEN, INLINED_URL)
+        )
+    except Exception:
+        pass
