@@ -7124,7 +7124,17 @@ class Game {
     }
     this.riftUses++;
     this.wormholeIntent = intent;
-    this.wormhole = new WormholeFX(x, y, {
+    // The Tide Gate — the door to and from the Abyssal Planet — has its own
+    // crossing: an abyssal maelstrom (AbyssalGateFX in ocean.js), not the
+    // Void Rift's wormhole. The deep-sea door must never tear open like the
+    // sky above the Ossuary, so BOTH legs of that trip (going in and coming
+    // back out) pick the maelstrom; every other rift keeps the space show.
+    const tideGate = intent === 'ocean' ||
+      (intent === 'overworld' && this.world.isInOcean());
+    const RiftFX = (tideGate && typeof AbyssalGateFX === 'function')
+      ? AbyssalGateFX
+      : WormholeFX;
+    this.wormhole = new RiftFX(x, y, {
       charged,
       // Opening a rift toward the arena is the loud, cinematic one; the way
       // home is a smaller, quieter tear, because you walk into it.
@@ -7134,7 +7144,9 @@ class Game {
       ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
       : intent === 'ocean'
         ? '🌊 THE TIDE GATE OPENS — THE KRAKEN STIRS.'
-        : '🕳️ THE WAY HOME OPENS.');
+        : tideGate
+          ? '🌊 THE ABYSS LETS GO — THE TIDE GATE TURNS HOME.'
+          : '🕳️ THE WAY HOME OPENS.');
   }
 
   /**

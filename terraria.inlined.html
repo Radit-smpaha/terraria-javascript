@@ -20609,6 +20609,410 @@ World.prototype.renderReefTemplePortal = function(ctx, camera) {
   ctx.restore();
 };
 
+// ============================================================
+// THE ABYSSAL GATE — the Tide Gate's own crossing animation
+// ============================================================
+// Walking into the Tide Gate (and out of it, on the far side) used to run the
+// Void Rift's WormholeFX, so the deep-sea door tore open exactly like the sky
+// above the Ossuary. This is the crossing the Abyssal Planet deserves: a
+// maelstrom instead of a black hole — water that BREATHES rather than gravity
+// that pulls.
+//
+// Deliberately the opposite of the wormhole in every read:
+//   * a tall mouth whose silhouette ripples like a disturbed water surface
+//     (not a smooth event horizon), with a luminous teal throat instead of a
+//     perfectly black core
+//   * foam ripples that wave OUTWARD — the wormhole's debris falls inward
+//   * bubbles that climb out of the gate — the wormhole's dust orbits it
+//   * three slow ink tendrils curling round the rim: the Kraken's colour
+//   * a tidal pull that yanks in SURGES with a side-to-side undertow sway,
+//     not one tight accelerating spiral
+//
+// Same contract as WormholeFX — constructor(x, y, opts), phase, playerScale,
+// playerSpin, update()/render()/renderScreenOverlay() — so Game.openWormhole,
+// the player-transform pass and the screen overlay all drive it identically.
+class AbyssalGateFX {
+  constructor(x, y, opts = {}) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = opts.maxRadius || 175;
+    this.phase = 'open';
+    this.timer = 0;
+    this.t = 0;
+    this.durations = { open: 1.20, suck: 2.05, collapse: 0.60 };
+    this.pullRadius = 700;
+    this.done = false;
+    this.flash = 0;
+    this.squash = 1;       // vertical fold factor — the collapse closes flat
+    this.surge = 0;        // 0..1 strength of the current's latest yank
+    this.playerSpin = 0;
+    this.playerScale = 1;
+    this.ripples = [];     // foam rings expanding away from the mouth
+    this.bubbles = [];     // bubbles climbing out of the gate
+    this.rippleClock = 0;
+    // Repeat crossings are quicker, exactly like the charged rift: a player
+    // hopping back and forth for gear should not replay the full cinematic.
+    this.charged = !!opts.charged;
+    if (this.charged) {
+      this.durations = { open: 0.62, suck: 1.05, collapse: 0.34 };
+      this.maxRadius *= 1.1;
+    }
+  }
+
+  get totalDuration() {
+    return this.durations.open + this.durations.suck + this.durations.collapse;
+  }
+
+  /**
+   * Advance the crossing. Returns 'done' on the frame the gate folds shut, so
+   * the Game can swap dimensions while the screen is still washed out.
+   */
+  update(dt, player, particleSystem) {
+    this.timer += dt;
+    this.t += dt;
+    this.flash = Math.max(0, this.flash - dt * 2.2);
+    this.updateWater(dt, particleSystem);
+
+    if (this.phase === 'open') {
+      const t = Math.min(1, this.timer / this.durations.open);
+      // A swell, not an inflate: it surges past its size, sloshes back and
+      // settles — water never opens on a clean ease curve.
+      const eased = 1 - Math.pow(1 - t, 3);
+      this.radius = this.maxRadius * (eased + Math.sin(t * Math.PI * 2) * 0.1 * (1 - t));
+      if (particleSystem) {
+        for (let i = 0; i < 2; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = this.radius * (0.5 + Math.random() * 0.6);
+          particleSystem.addParticle(
+            this.x + Math.cos(a) * r, this.y + Math.sin(a) * r,
+            Math.cos(a) * 1.5, -1.8 - Math.random() * 2.4,
+            Math.random() < 0.5 ? '#a5f3fc' : '#e0f2fe',
+            2 + Math.random() * 2, 1.1, -0.02, true
+          );
+        }
+      }
+      if (t >= 1) { this.phase = 'suck'; this.timer = 0; }
+      return null;
+    }
+
+    if (this.phase === 'suck') {
+      const p = Math.min(1, this.timer / this.durations.suck);
+      // The gate gulps: a slow double pulse per cycle is what makes it read
+      // as water swallowing rather than a hole narrowing.
+      this.surge = Math.pow(Math.max(0, Math.sin(this.timer * 3.1)), 2);
+      this.radius = this.maxRadius * (1 - p * 0.16) * (1 + Math.sin(this.timer * 7) * 0.035);
+      this.pull(dt, player, particleSystem);
+      if (p >= 1) { this.phase = 'collapse'; this.timer = 0; }
+      return null;
+    }
+
+    // ---- collapse ----
+    const t = Math.min(1, this.timer / this.durations.collapse);
+    // The mouth does not slam shut like a trap — it folds flat like a wave
+    // curling over, going thin vertically before it goes narrow.
+    this.squash = Math.pow(1 - t, 1.6);
+    this.radius = this.maxRadius * (1 - t * 0.35);
+    this.flash = Math.max(this.flash, 0.3 + t * 0.7);
+    this.playerScale = Math.max(0.04, this.playerScale * (1 - dt * 3.2));
+    if (particleSystem) {
+      for (let i = 0; i < 7; i++) {
+        const a = Math.random() * Math.PI * 2;
+        particleSystem.addParticle(
+          this.x + Math.cos(a) * this.radius, this.y + Math.sin(a) * this.radius,
+          Math.cos(a) * 6, Math.sin(a) * 6 - 3,
+          Math.random() < 0.5 ? '#ffffff' : '#a5f3fc',
+          2.5, 0.5, -0.05, true
+        );
+      }
+    }
+    if (t >= 1) {
+      if (this.done) return null;
+      this.done = true;
+      this.radius = 0;
+      return 'done';
+    }
+    return null;
+  }
+
+  /**
+   * Haul the player in on the tide. The current arrives in SURGES (this.surge
+   * pulses about twice a second) and swings them side to side as it goes, so
+   * the path into the gate is an undulating drag — a spiral would just be the
+   * wormhole again.
+   */
+  pull(dt, player, particleSystem) {
+    if (!player) return;
+    const px = player.x + player.width / 2;
+    const py = player.y + player.height / 2;
+    const dx = this.x - px;
+    const dy = this.y - py;
+    const dist = Math.hypot(dx, dy) || 1;
+    const closeness = 1 - Math.max(0, Math.min(1, dist / this.pullRadius));
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const inward = (85 + closeness * closeness * 1350) * dt * (0.35 + this.surge * 1.6);
+    const sway = Math.sin(this.timer * 3.6) * (95 + closeness * 400) * dt;
+    // Inward along the current, plus a perpendicular undertow swing.
+    player.x += nx * inward - ny * sway;
+    player.y += ny * inward + nx * sway;
+    player.vx = nx * 5;
+    player.vy = ny * 5;
+    // A slow, watery tumble — lazy, not the wormhole's tight screw-in.
+    this.playerSpin += dt * (1.3 + closeness * 5);
+    this.playerScale = Math.max(0.06, Math.min(1, dist / (this.pullRadius * 0.5)));
+    if (particleSystem) {
+      // Sea foam clinging to them as the current hauls them in.
+      particleSystem.addParticle(
+        px + (Math.random() - 0.5) * 16, py + (Math.random() - 0.5) * 22,
+        -nx * 2.4 + (Math.random() - 0.5), -ny * 2.4 - 0.9,
+        Math.random() < 0.5 ? '#e0f2fe' : '#67e8f9',
+        2 + Math.random() * 2, 0.5, -0.03, true
+      );
+    }
+  }
+
+  /** Ripple rings leaving the mouth + bubbles climbing out of it. */
+  updateWater(dt, particleSystem) {
+    // Ripples wave OUTWARD — water answers a disturbance by spreading it,
+    // the exact opposite of the wormhole's infalling debris.
+    this.rippleClock -= dt;
+    if (this.rippleClock <= 0 && this.phase !== 'collapse' && this.radius > 8) {
+      this.rippleClock = 0.3;
+      this.ripples.push({
+        r: this.radius * 0.5, life: 1.25, maxLife: 1.25,
+        lobe: 3 + Math.floor(Math.random() * 3), wob: Math.random() * Math.PI * 2
+      });
+    }
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const rp = this.ripples[i];
+      rp.r += (95 + this.radius * 0.5) * dt;
+      rp.life -= dt;
+      if (rp.life <= 0) this.ripples.splice(i, 1);
+    }
+    if (this.bubbles.length < 32 && this.phase !== 'collapse' && this.radius > 8) {
+      const a = Math.random() * Math.PI * 2;
+      this.bubbles.push({
+        x: this.x + Math.cos(a) * this.radius * 0.9,
+        y: this.y + Math.sin(a) * this.radius * this.squash,
+        vy: -(18 + Math.random() * 44),
+        sway: Math.random() * Math.PI * 2,
+        swayAmp: 5 + Math.random() * 14,
+        size: 1.3 + Math.random() * 3.2,
+        life: 1.3 + Math.random() * 1.5
+      });
+    }
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i];
+      b.y += b.vy * dt;
+      b.sway += dt * 3.2;
+      b.life -= dt;
+      if (b.life <= 0 || b.y < this.y - this.radius * 3) {
+        if (particleSystem && b.life <= 0) {
+          // Popped: a speck of foam where the bubble was.
+          particleSystem.addParticle(b.x, b.y, 0, -1, '#e0f9ff', 1.6, 0.3, 0, true);
+        }
+        this.bubbles.splice(i, 1);
+      }
+    }
+  }
+  /** World-space draw: the maelstrom mouth itself. */
+  render(ctx, camera) {
+    if (this.radius <= 0.5) return;
+    const cx = this.x - camera.x;
+    const cy = this.y - camera.y;
+    const R = this.radius;
+    const rx = R;
+    const ry = R * 1.22 * this.squash;
+    const t = this.t;
+
+    ctx.save();
+
+    // 1. Wet halo — a wide teal bloom breathing around the gate.
+    ctx.globalCompositeOperation = 'lighter';
+    const halo = ctx.createRadialGradient(cx, cy, R * 0.3, cx, cy, R * 2.4);
+    halo.addColorStop(0, `rgba(34,211,238,${(0.42 + Math.sin(t * 2.4) * 0.12).toFixed(3)})`);
+    halo.addColorStop(0.45, 'rgba(8,145,178,0.22)');
+    halo.addColorStop(1, 'rgba(2,6,23,0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(cx - R * 2.4, cy - R * 2.4, R * 4.8, R * 4.8);
+
+    // 2. Foam ripples spreading AWAY from the mouth.
+    for (const rp of this.ripples) {
+      const k = 1 - rp.life / rp.maxLife;
+      ctx.globalAlpha = Math.max(0, (1 - k) * 0.6);
+      ctx.strokeStyle = k < 0.5 ? '#e0f9ff' : '#67e8f9';
+      ctx.lineWidth = Math.max(0.6, 4 * (1 - k));
+      ctx.beginPath();
+      for (let s = 0; s <= 64; s++) {
+        const a = (s / 64) * Math.PI * 2;
+        const wob = 1 + Math.sin(a * rp.lobe + rp.wob + t * 3) * 0.07;
+        const px = cx + Math.cos(a) * rp.r * wob;
+        const py = cy + Math.sin(a) * rp.r * wob * 0.88;
+        if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    // 3. Ink tendrils: slow abyss whips curling round the rim. The throat (4)
+    // covers their inner ends, so they appear to swim out from behind it.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 3; i++) {
+      const dir = i === 1 ? -1 : 1;
+      const phase = t * (0.5 + i * 0.18) * dir + i * 2.1;
+      this._tendril(ctx, cx, cy, R, phase, dir, `rgba(4,10,26,${0.62 - i * 0.12})`, 0.24);
+      this._tendril(ctx, cx, cy, R, phase, dir, 'rgba(56,189,248,0.35)', 0.075);
+    }
+
+    // 4. The throat: a deep teal well with caustic light rippling across it —
+    // deliberately NOT the wormhole's black core.
+    ctx.save();
+    this._mouthPath(ctx, cx, cy, rx, ry, t);
+    ctx.clip();
+    const throat = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+    throat.addColorStop(0, '#0a3550');
+    throat.addColorStop(0.5, '#062a42');
+    throat.addColorStop(1, '#031b2c');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = throat;
+    ctx.fillRect(cx - rx * 1.6, cy - ry * 1.6, rx * 3.2, ry * 3.2);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const band = (t * 0.45 + i * 0.2) % 1;
+      ctx.globalAlpha = 0.18 * Math.sin(band * Math.PI);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(cx - rx * 1.6, cy - ry + band * ry * 2, rx * 3.2,
+        3 + Math.sin(t * 3 + i) * 2.5);
+    }
+    const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.85);
+    bloom.addColorStop(0, `rgba(207,250,254,${(0.5 + Math.sin(t * 4) * 0.14).toFixed(3)})`);
+    bloom.addColorStop(1, 'rgba(34,211,238,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = bloom;
+    ctx.fillRect(cx - rx * 1.6, cy - ry * 1.6, rx * 3.2, ry * 3.2);
+    ctx.restore();
+
+    // 5. Bubbles climbing out of the water, over the throat.
+    ctx.globalCompositeOperation = 'source-over';
+    for (const b of this.bubbles) {
+      const bx = b.x - camera.x + Math.sin(b.sway) * b.swayAmp;
+      const by = b.y - camera.y;
+      const alpha = Math.max(0, Math.min(1, b.life / 0.8)) * 0.8;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#d8f7ff';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(bx, by, b.size, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = alpha * 0.35;
+      ctx.fillStyle = '#a5f3fc';
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(bx - b.size * 0.35, by - b.size * 0.35, Math.max(0.6, b.size * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 6. Foam rim: the rippling silhouette itself, pulsing bright.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.7 + Math.sin(t * 6) * 0.22;
+    ctx.strokeStyle = '#ecfeff';
+    ctx.lineWidth = 3;
+    this._mouthPath(ctx, cx, cy, rx, ry, t);
+    ctx.stroke();
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = '#67e8f9';
+    ctx.lineWidth = 1.5;
+    this._mouthPath(ctx, cx, cy, rx * 0.86, ry * 0.9, t + 1.3);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /** The mouth: an oval whose edge ripples like disturbed water. */
+  _mouthPath(ctx, cx, cy, rx, ry, t) {
+    ctx.beginPath();
+    for (let s = 0; s <= 72; s++) {
+      const a = (s / 72) * Math.PI * 2;
+      const wob = 1 + Math.sin(a * 3 + t * 2.6) * 0.055 + Math.sin(a * 5 - t * 3.4) * 0.035;
+      const px = cx + Math.cos(a) * rx * wob;
+      const py = cy + Math.sin(a) * ry * wob;
+      if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  /** One tapered ink whip curling round the gate. */
+  _tendril(ctx, cx, cy, R, phase, dir, color, width) {
+    const STEPS = 18;
+    const outer = [];
+    const inner = [];
+    for (let s = 0; s <= STEPS; s++) {
+      const k = s / STEPS;
+      const a = phase + dir * (k * 2.6);
+      const rad = R * (0.72 + k * 1.15) * (1 + Math.sin(k * 5 + phase * 2) * 0.07);
+      const w = R * width * Math.pow(1 - k, 1.1) + 1.2;
+      const px = cx + Math.cos(a) * rad;
+      const py = cy + Math.sin(a) * rad * 1.08;
+      outer.push([px + Math.cos(a) * w * 0.5, py + Math.sin(a) * w * 0.5]);
+      inner.push([px - Math.cos(a) * w * 0.5, py - Math.sin(a) * w * 0.5]);
+    }
+    ctx.beginPath();
+    ctx.moveTo(outer[0][0], outer[0][1]);
+    for (let i = 1; i < outer.length; i++) ctx.lineTo(outer[i][0], outer[i][1]);
+    for (let i = inner.length - 1; i >= 0; i--) ctx.lineTo(inner[i][0], inner[i][1]);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  /**
+   * Full-screen draw on the OUTPUT canvas (same contract as WormholeFX):
+   * deep water closing over the screen — teal pressure and rising foam streaks
+   * instead of the rift's violet haze and horizontal motion blur — then a
+   * sea-foam white-out on the exact frame the Game swaps dimensions.
+   */
+  renderScreenOverlay(ctx, w, h) {
+    const suckT = this.phase === 'suck'
+      ? Math.min(1, this.timer / this.durations.suck)
+      : (this.phase === 'collapse' ? 1 : 0);
+    ctx.save();
+    if (this.phase !== 'collapse' && suckT > 0.02) {
+      // Deep water crowding in from the edges.
+      const g = ctx.createRadialGradient(
+        w / 2, h / 2, Math.min(w, h) * 0.22, w / 2, h / 2, Math.max(w, h) * 0.72);
+      g.addColorStop(0, 'rgba(8,47,73,0)');
+      g.addColorStop(1, `rgba(2,14,26,${(0.3 + suckT * 0.55).toFixed(3)})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      // Columns of foam CLIMBING the screen — the current taking them up,
+      // the opposite read to the wormhole's sideways streaking.
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 30; i++) {
+        const x = ((i * 53) % w) + Math.sin(i * 2.1) * 8;
+        const rise = (this.t * (60 + (i % 7) * 26) + i * 97) % (h + 80);
+        const y = h - rise;
+        const len = 24 + suckT * 90 * (0.4 + ((i * 17) % 10) / 10);
+        ctx.globalAlpha = 0.06 + suckT * 0.16;
+        ctx.fillStyle = i % 3 ? '#a5f3fc' : '#67e8f9';
+        ctx.fillRect(x, y - len, 2, len);
+      }
+    }
+    ctx.restore();
+    if (this.flash > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, this.flash);
+      // Sea-foam white-out: bright enough to hide the tile swap completely.
+      ctx.fillStyle = '#eafffb';
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+  }
+}
+
 const OCEAN_BASE_ANIMATED_TILE = World.prototype.isAnimatedTile;
 World.prototype.isAnimatedTile = function(tile) {
   return OCEAN_BASE_ANIMATED_TILE.call(this, tile) ||
@@ -26064,6 +26468,11 @@ window.Kraken = Megalodon;
 window.OceanLeviathan = Megalodon;
 
 window.OceanFish = OceanFish;
+
+// The Tide Gate's crossing FX (AbyssalGateFX, above). Exported the same way
+// as the rest of ocean.js so Game.openWormhole in terraria.js can reach it,
+// and so the Node QA harnesses can see it too.
+window.AbyssalGateFX = AbyssalGateFX;
 
 </script>
   <script>
@@ -37282,7 +37691,17 @@ class Game {
     }
     this.riftUses++;
     this.wormholeIntent = intent;
-    this.wormhole = new WormholeFX(x, y, {
+    // The Tide Gate — the door to and from the Abyssal Planet — has its own
+    // crossing: an abyssal maelstrom (AbyssalGateFX in ocean.js), not the
+    // Void Rift's wormhole. The deep-sea door must never tear open like the
+    // sky above the Ossuary, so BOTH legs of that trip (going in and coming
+    // back out) pick the maelstrom; every other rift keeps the space show.
+    const tideGate = intent === 'ocean' ||
+      (intent === 'overworld' && this.world.isInOcean());
+    const RiftFX = (tideGate && typeof AbyssalGateFX === 'function')
+      ? AbyssalGateFX
+      : WormholeFX;
+    this.wormhole = new RiftFX(x, y, {
       charged,
       // Opening a rift toward the arena is the loud, cinematic one; the way
       // home is a smaller, quieter tear, because you walk into it.
@@ -37292,7 +37711,9 @@ class Game {
       ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
       : intent === 'ocean'
         ? '🌊 THE TIDE GATE OPENS — THE KRAKEN STIRS.'
-        : '🕳️ THE WAY HOME OPENS.');
+        : tideGate
+          ? '🌊 THE ABYSS LETS GO — THE TIDE GATE TURNS HOME.'
+          : '🕳️ THE WAY HOME OPENS.');
   }
 
   /**
