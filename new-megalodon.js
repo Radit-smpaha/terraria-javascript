@@ -1893,7 +1893,7 @@ class Megalodon {
   }
 
 
-﻿  /**
+  /**
    * A shark with a spine.
    *
    * The body is never drawn as one frozen silhouette: the whole animal is
@@ -2170,15 +2170,13 @@ class Megalodon {
       const rootB = spineAt(0.575, 0.62);
       const mid   = spineAt(0.635, 0);
       const drop  = bodyHalf(0.635) * 0.95 + pecFlap(0.5) * 22;
-      // The wing's outer edge is chewed: same raggedEdge treatment, so the
-      // torn silhouette holds up at every phase.
-      const wingTip = { x: mid.x - 108 - pecFlap(0.12) * 30, y: mid.y + drop * 1.18 + pecFlap(0.12) * 16 };
-      const pts = [
-        rootB,
-        { x: mid.x - 66 - pecFlap(0.3) * 20, y: mid.y + drop * 0.92 + pecFlap(0.3) * 10 }
-      ].concat(raggedEdge({ x: mid.x - 66 - pecFlap(0.3) * 20, y: mid.y + drop * 0.92 + pecFlap(0.3) * 10 },
-        wingTip, 3, 7 + tearAmp * 11, 71.3))
-        .concat([{ x: mid.x - 66 - pecFlap(0.5) * 14, y: mid.y + drop * 0.78 + pecFlap(0.5) * 8 }])
+      // Same swept-wing silhouette as the near pectoral, tucked smaller and
+      // darker behind the body, so both fins read as the same animal's pair.
+      const lead = { x: mid.x - 40 - pecFlap(0.3) * 20, y: mid.y + drop * 0.36 + pecFlap(0.3) * 10 };
+      const wingTip = { x: mid.x - 138 - pecFlap(0.12) * 28, y: mid.y + drop * 1.16 + pecFlap(0.12) * 16 };
+      const pts = [rootB, lead, wingTip]
+        .concat(raggedEdge(wingTip, { x: mid.x - 60 - pecFlap(0.5) * 14, y: mid.y + drop * 0.72 + pecFlap(0.5) * 8 },
+          3, 7 + tearAmp * 11, 71.3))
         .concat([rootA]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finDark;
@@ -2380,17 +2378,40 @@ class Megalodon {
       const rootFront = spineAt(0.60, -0.92);
       const rootBack  = spineAt(0.26, -0.96);
       const base       = spineAt(0.43, 0);
-      // The sheet's dorsal: a big, heavy, swept-back triangle that leans into
-      // the swim direction. Bleed Frenzy/Apex tear chunks out of its back.
-      const tipX = base.x - 26 - (this.surge || 0) * 16 - (dashing ? 12 : 0);
-      const tipY = base.y - bodyHalf(0.43) * 1.72 + finTilt * 14;
+      // THE DORSAL FIN. A shark's signature is a single tall, swept-back
+      // TRIANGLE: a long straight leading edge running from the shoulder up and
+      // BACK to an apex, then a short, concave trailing edge dropping back to
+      // the spine. The old path built the tip from two arbitrary offsets and
+      // then carved a ragged edge INTO the leading edge, which rounded the
+      // nose of the fin off and made it read as a lumpy blob rather than a fin.
+      // Here the leading edge is one clean line, the trailing edge is a concave
+      // curve, and the tearing is applied ONLY to the trailing edge so the
+      // silhouette still reads unmistakably as a dorsal at every phase.
+      const bH = bodyHalf(0.43);
+      // FIX: the apex used to be pulled so far BACK (44px, +18 surge, +14 dash)
+      // and so little UP that the "triangle" collapsed into a near-vertical
+      // spike sitting over the shoulder — it read as a stub, not a fin.
+      // A real great white dorsal is TALL and only mildly swept: the apex rises
+      // ~2.4 body-depths and sits ~26px behind the leading root, with the rear
+      // base running well aft of it. Those three numbers are the fin.
+      const finH = bH * 2.45 + (this.surge || 0) * 7;   // how far the apex rises
+      const tipX = rootFront.x - 26 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
+      const tipY = base.y - finH + finTilt * 16;
+      // Notch on the trailing edge, a little above the spine: the small rear
+      // tooth that sits behind a real great white's dorsal.
+      const notchX = base.x - 56 - (dashing ? 8 : 0);
+      const notchY = base.y - bH * 0.42;
       const pts = [
         { x: rootFront.x + 4, y: rootFront.y + 3 },
-        { x: rootFront.x - 20, y: rootFront.y - bodyHalf(0.43) * 0.5 },
-        { x: tipX, y: tipY }
-      ].concat(raggedEdge({ x: tipX, y: tipY },
-        { x: base.x - 62, y: base.y - bodyHalf(0.43) * 0.42 }, 4, 8 + tearAmp * 13, 61.7))
-        .concat([{ x: rootBack.x, y: rootBack.y + 3 }]);
+        // Straight leading edge: shoulder -> apex. No raggedness here.
+        { x: rootFront.x - 10, y: rootFront.y - finH * 0.30 },
+        { x: tipX, y: tipY },
+        { x: tipX + 9, y: tipY + 10 }
+      ]
+        // Concave, torn trailing edge: apex -> notch. Tearing lives here only.
+        .concat(raggedEdge({ x: tipX + 9, y: tipY + 10 },
+          { x: notchX, y: notchY }, 4, 4 + tearAmp * 8, 61.7))
+        .concat([{ x: notchX + 10, y: notchY + bH * 0.10 }, { x: rootBack.x, y: rootBack.y + 3 }]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finLite;
       ctx.fill();
@@ -2403,21 +2424,22 @@ class Megalodon {
       ctx.lineWidth = 1.5;
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(rootFront.x - 6, rootFront.y - 10 - r * 3);
-        ctx.lineTo(tipX + 8 + r * 5, tipY + 16 + r * 13);
+        ctx.moveTo(rootFront.x - 4 - r * 10, rootFront.y - 4 - r * 5);
+        ctx.lineTo(tipX + 8 + r * 12, tipY + 18 + r * 22);
         ctx.stroke();
       }
+      // The leading edge catches the key light all the way up to the apex.
       ctx.strokeStyle = 'rgba(206, 224, 255, 0.30)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(rootFront.x + 2, rootFront.y);
-      ctx.quadraticCurveTo(rootFront.x - 22, rootFront.y - bodyHalf(0.43) * 0.52, tipX, tipY - 2);
+      ctx.quadraticCurveTo(rootFront.x - 10, rootFront.y - finH * 0.30, tipX, tipY - 2);
       ctx.stroke();
       // Apex: the dorsal is notched and torn.
       if (ph === 3 || (ph === 2 && injury > 0.4)) {
         ctx.fillStyle = flash ? '#ffe4e6' : hideMid;
         ctx.beginPath();
-        ctx.moveTo(tipX - 16, tipY + 10); ctx.lineTo(tipX + 2, tipY + 30); ctx.lineTo(tipX - 26, tipY + 26);
+        ctx.moveTo(tipX - 13, tipY + 8); ctx.lineTo(tipX + 2, tipY + 26); ctx.lineTo(tipX - 22, tipY + 23);
         ctx.closePath(); ctx.fill();
       }
       // Second dorsal.
@@ -2484,11 +2506,25 @@ class Megalodon {
       const mid   = spineAt(0.635, 0);
       const f = pecFlap;
       const wing = bodyHalf(0.635) * 1.5 + swing * 0.05;
-      const wMid = { x: mid.x - 74 - f(0.3) * 26, y: mid.y + wing * 0.9 + f(0.3) * 12 };
-      const wTip = { x: mid.x - 122 - f(0.12) * 34, y: mid.y + wing * 1.22 + f(0.12) * 18 };
-      const pts = [rootB, wMid]
-        .concat(raggedEdge(wMid, wTip, 3, 8 + tearAmp * 12, 81.7))
-        .concat([{ x: mid.x - 76 - f(0.5) * 18, y: mid.y + wing * 0.8 + f(0.5) * 10 }])
+      // THE PECTORAL FIN. A shark's pectoral is a long, narrow, SWEPT-BACK
+      // wing: a straight leading edge that runs out from the belly and back
+      // toward the tail, a pointed outer tip, then a short trailing edge that
+      // returns to the flank.
+      //
+      // FIX: the fin used to be built from only THREE hull points
+      // [rootB, lead, wTip], and traceSmooth() then cut a quadratic corner
+      // through `lead` on the way to the tip. Because `lead` sat forward of the
+      // tip, the "leading edge" curved out and then hooked BACK — the silhouette
+      // came out as a thin downward blade instead of a swept wing. The fin is
+      // now built from explicit points with NO intermediate control vertex on
+      // the leading edge, so shoulder -> tip is one clean straight sweep.
+      const lead = { x: mid.x - 30 - f(0.3) * 12, y: mid.y + wing * 0.30 + f(0.3) * 8 };
+      // The tip sits far behind AND below the root: that sweep is the "fin".
+      const wTip = { x: mid.x - 150 - f(0.12) * 26, y: mid.y + wing * 1.12 + f(0.12) * 14 };
+      const pts = [rootB, lead, wTip]
+        // Torn trailing edge: tip -> back to the flank. Concave, like flesh.
+        .concat(raggedEdge(wTip, { x: mid.x - 66 - f(0.5) * 16, y: mid.y + wing * 0.72 + f(0.5) * 8 },
+          3, 7 + tearAmp * 11, 81.7))
         .concat([rootA]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#ffe4e6' : finLite;
@@ -2496,21 +2532,24 @@ class Megalodon {
       ctx.strokeStyle = outline;
       ctx.lineWidth = 4;
       ctx.stroke();
-      // Rays: three clean strokes across the wing, not five scribbled lines.
+      // Rays: three clean strokes fanning out along the swept wing, following
+      // the new tip so they read as fin structure rather than scribbles.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
       ctx.lineWidth = 1.8;
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 5);
-        ctx.quadraticCurveTo(mid.x - 60, mid.y + wing * 0.9 + r * 6,
-          mid.x - 112 - f(0.2) * 20, mid.y + wing * 1.15 + r * 8);
+        ctx.moveTo(rootB.x + 4, rootB.y - 3 + r * 3);
+        ctx.quadraticCurveTo(mid.x - 62, mid.y + wing * 0.80 + r * 6,
+          wTip.x + 24 + r * 12, wTip.y - 10 - r * 8);
         ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.4)';
+      // The lit leading edge, running root -> tip.
+      ctx.strokeStyle = 'rgba(206, 224, 255, 0.28)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(mid.x - 70, mid.y + wing * 0.86);
-      ctx.quadraticCurveTo(mid.x - 100, mid.y + wing * 1.08, mid.x - 120 - f(0.15) * 24, mid.y + wing * 1.2);
+      ctx.moveTo(rootB.x, rootB.y - 2);
+      ctx.quadraticCurveTo((rootB.x + wTip.x) / 2 - 6, (rootB.y + wTip.y) / 2 + wing * 0.06,
+        wTip.x, wTip.y);
       ctx.stroke();
     }
 
@@ -2545,38 +2584,239 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 7. HIDE WEAR — a small, DELIBERATE set of battle scars. These are
-    //    readable slashes, not scatter: hatch marks, barnacles and escort
-    //    fish were removed because they read as noise at game scale.
+    // 7. HIDE WEAR — the ANIMAL'S BIOGRAPHY, drawn on its skin.
+    //
+    // A real apex macropredator this old is a walking map of fights it won:
+    // long healed claw-raked gashes, short tooth punctures in matched pairs,
+    // bite scars that never closed cleanly, healed nicks torn out of the fin
+    // margins, and a scatter of pale barnacle rings from its slow years. This
+    // block layers FOUR distinct scar families + a dapple coat so the body
+    // reads as a scarred veteran rather than a clean, flat shape. Every mark
+    // is seeded off `scarSeed`, so each new Megalodon carries its OWN scars —
+    // no two animals ever look alike — and every mark is deterministic frame
+    // to frame, so nothing crawls or flickers while it swims.
+    //
+    // All of it is clipped INSIDE the hull (see the clip above) and kept on
+    // the upper flank, off the pale belly and the face, so the silhouette and
+    // the countershading stay readable at game scale.
     // ======================================================================
     {
-      const scars = 4 + Math.floor(injury * 4);      // 4 .. 8, more as it dies
-      for (let s = 0; s < scars; s++) {
-        const sSeed = s * 7.399 + (this.scarSeed || 0);
-        const u = 0.20 + this._hash01(sSeed) * 0.74;
-        // Upper flank only: scars never cross the pale belly or the face.
-        const p = spineAt(u, -0.85 + this._hash01(sSeed * 1.7) * 0.7);
-        const slen = 16 + this._hash01(sSeed * 2.3) * 26;
-        // Slashes rake backwards along the body, following the spine.
-        const sang = 0.6 + this._hash01(sSeed * 3.1) * 0.5 + spineBend(u) * 0.4;
+      const seed = this.scarSeed || 0;
+      const scarRed = Math.min(0.92, 0.42 + injury * 0.42);
+      const healed = ph >= 2 ? 'rgba(186, 58, 74, ' + scarRed.toFixed(2) + ')' : 'rgba(150, 165, 200, 0.60)';
+      const healedSoft = ph >= 2 ? 'rgba(150, 44, 60, ' + (scarRed * 0.7).toFixed(2) + ')' : 'rgba(120, 138, 176, 0.42)';
+
+      // ---- (a) LONG RAKED GASHES: 3-7 deep parallel slashes, claw-wounds
+      //          that healed badly. Grouped in 1-3 clusters, each cluster a
+      //          set of 2-4 near-parallel lines, so they read as one event.
+      const clusters = 1 + Math.floor(this._hash01(seed * 1.7) * 3);
+      const gashCount = 3 + Math.floor(this._hash01(seed * 2.3) * 5);
+      for (let g = 0; g < gashCount; g++) {
+        const gs = g * 5.113 + seed;
+        const u = 0.16 + this._hash01(gs) * 0.76;
+        // Cluster index -> a shared base angle so a cluster rakes as one blow.
+        const cl = Math.floor(this._hash01(gs * 0.37) * clusters);
+        const clAng = -0.35 + this._hash01(seed * 3.1 + cl) * 1.1;
+        const p = spineAt(u, -0.78 + this._hash01(gs * 1.9) * 0.62);
+        const slen = 22 + this._hash01(gs * 2.7) * 40;
+        // Slashes rake BACKWARD along the body, following the spine bend.
+        const sang = 0.5 + clAng * 0.5 + this._hash01(gs * 3.3) * 0.35 + spineBend(u) * 0.4;
         const p2 = { x: p.x + Math.cos(sang) * slen, y: p.y + Math.sin(sang) * slen };
-        ctx.strokeStyle = ph >= 2
-          ? 'rgba(190, 60, 76, ' + Math.min(0.9, 0.45 + injury * 0.4).toFixed(2) + ')'
-          : 'rgba(148, 163, 198, 0.62)';
-        ctx.lineWidth = 2.6 + this._hash01(sSeed * 5.1) * 1.6;
+        // The gash: a dark inner line with a pale raised lip on one side.
+        ctx.strokeStyle = healed;
+        ctx.lineWidth = 2.4 + this._hash01(gs * 5.1) * 1.9;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p2.x, p2.y);
+        ctx.quadraticCurveTo((p.x + p2.x) / 2 + Math.sin(sang) * 5, (p.y + p2.y) / 2 + 3, p2.x, p2.y);
         ctx.stroke();
-        // Phase 3: the wounds weep light through the hide.
-        if (ph === 3) {
-          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.22 + woundGlow * 0.4).toFixed(2) + ')';
-          ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(230, 238, 255, 0.22)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(p.x + 1.5, p.y - 1.5);
+        ctx.lineTo(p2.x + 1.5, p2.y - 1.5);
+        ctx.stroke();
+        // Bleed-frenzy / apex: the deepest gashes break open and glow.
+        if (ph >= 2) {
+          ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.16 + woundGlow * 0.42).toFixed(2) + ')';
+          ctx.lineWidth = 1.3;
           ctx.beginPath();
           ctx.moveTo(p.x + 1, p.y + 1);
           ctx.lineTo(p2.x, p2.y);
           ctx.stroke();
         }
+      }
+
+      // ---- (b) TOOTH PUNCTURES: matched PAIRS of short round holes, the mark
+      //          of a rival's jaws. Spacing follows a jaw arc, which is what
+      //          makes them read as a bite rather than random dots.
+      const bites = 2 + Math.floor(this._hash01(seed * 4.9) * 3);
+      for (let bIdx = 0; bIdx < bites; bIdx++) {
+        const bs = bIdx * 9.217 + seed * 1.3;
+        const u = 0.24 + this._hash01(bs) * 0.6;
+        const p = spineAt(u, -0.7 + this._hash01(bs * 1.5) * 0.5);
+        const arcR = 12 + this._hash01(bs * 2.1) * 16;
+        const arcA = this._hash01(bs * 2.9) * Math.PI;
+        const pts = 3 + Math.floor(this._hash01(bs * 3.7) * 3);  // tooth pairs
+        for (let t = 0; t < pts; t++) {
+          const a = arcA + (t - (pts - 1) / 2) * 0.42;
+          const hx = p.x + Math.cos(a) * arcR;
+          const hy = p.y + Math.sin(a) * arcR * 0.6;
+          ctx.fillStyle = healedSoft;
+          ctx.beginPath();
+          ctx.ellipse(hx, hy, 3.1, 2.2, a, 0, Math.PI * 2);
+          ctx.fill();
+          // A wet centre in the open wound; a pale ring once it has scarred.
+          ctx.fillStyle = ph >= 2 ? 'rgba(120, 20, 32, 0.85)' : 'rgba(30, 38, 60, 0.55)';
+          ctx.beginPath();
+          ctx.ellipse(hx, hy, 1.5, 1.1, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // The bite ring: a faint dashed arc joining the punctures.
+        ctx.strokeStyle = 'rgba(150, 165, 200, 0.28)';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, arcR, arcR * 0.6, 0, arcA - 0.7, arcA + 0.7);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // ---- (c) FIN MARGIN NICKS: missing chunks bitten out of the trailing
+      //          edges of the dorsal and pectorals. Drawn as small notches in
+      //          the hide colour so they read as torn-away tissue, and scaled
+      //          by phase so the fins look progressively chewed as it frenzies.
+      const nickCount = 2 + Math.floor(injury * 3) + (ph >= 2 ? 1 : 0);
+      for (let n = 0; n < nickCount; n++) {
+        const ns = n * 6.551 + seed * 0.7;
+        // Scatter nicks across the mid/upper flank margin where the fins meet
+        // the body, so they always land on visible skin.
+        const u = 0.30 + this._hash01(ns) * 0.42;
+        const p = spineAt(u, -0.98 - this._hash01(ns * 1.6) * 0.05);
+        const w = 5 + this._hash01(ns * 2.2) * 7;
+        ctx.fillStyle = hideBack;
+        ctx.beginPath();
+        ctx.moveTo(p.x - w, p.y - 3);
+        ctx.lineTo(p.x, p.y + 2 + this._hash01(ns * 3.1) * 4);
+        ctx.lineTo(p.x + w, p.y - 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(230, 238, 255, 0.18)';
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+      }
+
+      // ---- (d) BARNACLE RINGS: pale encrusted clusters from its slow years.
+      //          Tiny concentric rings, grouped in 2-4, only on the older
+      //          (rear/upper) hide, and gone in the heat of Blood Frenzy.
+      if (ph < 3) {
+        const barns = 3 + Math.floor(this._hash01(seed * 7.1) * 4);
+        for (let bIdx = 0; bIdx < barns; bIdx++) {
+          const bs = bIdx * 4.773 + seed * 2.1;
+          const u = 0.30 + this._hash01(bs) * 0.56;
+          const p = spineAt(u, -0.9 + this._hash01(bs * 1.7) * 0.45);
+          const rr = 2.4 + this._hash01(bs * 2.3) * 3.4;
+          ctx.strokeStyle = 'rgba(216, 226, 244, 0.42)';
+          ctx.lineWidth = 1.3;
+          ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = 'rgba(180, 195, 220, 0.30)';
+          ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.5, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = 'rgba(240, 246, 255, 0.30)';
+          ctx.beginPath(); ctx.arc(p.x - rr * 0.3, p.y - rr * 0.3, rr * 0.3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+
+      // ---- (e) DAPPLE COAT: the faint two-tone speckle a mature macropredator
+      //          carries along the flank. Bigger and denser than the old 12
+      //          speckles, but low-contrast so it stays texture, never noise.
+      const dapples = 26 + Math.floor(injury * 14);
+      for (let d = 0; d < dapples; d++) {
+        const ds = d * 3.317 + seed * 0.31;
+        const u = 0.10 + this._hash01(ds) * 0.86;
+        const p = spineAt(u, -0.95 + this._hash01(ds * 1.9) * 1.55);
+        const rr = 2.6 + this._hash01(ds * 2.7) * 6.5;
+        // Above the countershade seam the dapples lighten; below, they darken.
+        const upper = this._hash01(ds * 1.9) < 0.55;
+        ctx.fillStyle = upper ? 'rgba(210, 230, 255, 0.07)' : 'rgba(6, 10, 20, 0.06)';
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, rr, rr * 0.58, this._hash01(ds * 4.1) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ---- (f) HEALED SCAR TISSUE: a few wide, pale, slightly-raised patches
+      //          where a big old wound closed over. Soft-edged so they read as
+      //          skin texture, not stickers.
+      const patches = 2 + Math.floor(this._hash01(seed * 8.3) * 2);
+      for (let pIdx = 0; pIdx < patches; pIdx++) {
+        const ps = pIdx * 11.83 + seed * 1.9;
+        const u = 0.26 + this._hash01(ps) * 0.5;
+        const p = spineAt(u, -0.7 + this._hash01(ps * 1.4) * 0.4);
+        const rr = 9 + this._hash01(ps * 2.2) * 12;
+        ctx.fillStyle = ph >= 2 ? 'rgba(120, 34, 46, 0.16)' : 'rgba(206, 218, 240, 0.12)';
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, rr, rr * 0.5, this._hash01(ps * 3.3) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ---- (g) TOOTH-RAKE TRIPLES: three parallel scratches from a single
+      //          swipe of a rival's jaw — always an odd cluster of exactly
+      //          three, which is what separates a rake from random slashes.
+      const rakes = 1 + Math.floor(this._hash01(seed * 5.7) * 3);
+      for (let rk = 0; rk < rakes; rk++) {
+        const rs = rk * 13.31 + seed * 0.9;
+        const u = 0.22 + this._hash01(rs) * 0.6;
+        const p = spineAt(u, -0.74 + this._hash01(rs * 1.4) * 0.55);
+        const baseA = 0.55 + this._hash01(rs * 2.1) * 0.6 + spineBend(u) * 0.35;
+        const len = 26 + this._hash01(rs * 2.8) * 30;
+        for (let t = -1; t <= 1; t++) {
+          const a = baseA + t * 0.16;
+          const off = t * 5.5;
+          ctx.strokeStyle = healed;
+          ctx.lineWidth = 1.5 + this._hash01(rs * 4.2 + t) * 0.9;
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.sin(baseA) * off, p.y + Math.cos(baseA) * off);
+          ctx.lineTo(p.x + Math.sin(baseA) * off + Math.cos(a) * len,
+            p.y + Math.cos(baseA) * off + Math.sin(a) * len);
+          ctx.stroke();
+        }
+      }
+
+      // ---- (h) CROSS-HATCHED SCAR WEBS: a couple of long-healed wounds that
+      //          a predator survived twice, leaving crossing lines that read as
+      //          an X or a lattice of old scar tissue.
+      const webs = 1 + Math.floor(this._hash01(seed * 9.9) * 2);
+      for (let wIdx = 0; wIdx < webs; wIdx++) {
+        const ws = wIdx * 17.43 + seed * 2.6;
+        const u = 0.30 + this._hash01(ws) * 0.46;
+        const p = spineAt(u, -0.66 + this._hash01(ws * 1.3) * 0.5);
+        const arm = 14 + this._hash01(ws * 2.4) * 16;
+        ctx.strokeStyle = 'rgba(224, 232, 250, 0.24)';
+        ctx.lineWidth = 1.3;
+        for (const a of [0.7, 2.15, 3.5, 4.9]) {
+          const aa = a + this._hash01(ws * 3.1) * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x - Math.cos(aa) * arm, p.y - Math.sin(aa) * arm * 0.7);
+          ctx.lineTo(p.x + Math.cos(aa) * arm, p.y + Math.sin(aa) * arm * 0.7);
+          ctx.stroke();
+        }
+      }
+
+      // ---- (i) HEALED BITE HOLES: a couple of deep, older punctures that have
+      //          closed into dark pockmarks with a raised rim, in the classic
+      //          paired upper/lower jaw pattern.
+      const holes = 1 + Math.floor(this._hash01(seed * 3.9) * 3);
+      for (let hIdx = 0; hIdx < holes; hIdx++) {
+        const hs = hIdx * 8.61 + seed * 3.4;
+        const u = 0.20 + this._hash01(hs) * 0.64;
+        const p = spineAt(u, -0.72 + this._hash01(hs * 1.6) * 0.5);
+        const rr = 4 + this._hash01(hs * 2.3) * 5;
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.5)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(226, 234, 252, 0.26)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
+        // The partner puncture a jaw-width away.
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.42)';
+        ctx.beginPath(); ctx.arc(p.x - rr * 2.1, p.y + rr * 0.7, rr * 0.5, 0, Math.PI * 2); ctx.fill();
       }
     }
 

@@ -422,23 +422,39 @@ const NEW_ITEMS = {
   fish_angler: { id: 'fish_angler', name: 'Abyssal Anglerfish', type: 'material', icon: '🐟', stackMax: 256 },
   sacred_pearl: { id: 'sacred_pearl', name: 'Sacred Pearl', type: 'material', icon: '🫧', stackMax: 256 },
   coral_fragment: { id: 'coral_fragment', name: 'Coral Fragment', type: 'material', icon: '🪸', stackMax: 256 },
-  sea_scale: { id: 'sea_scale', name: 'Kraken Scale', type: 'material', icon: '🔹', stackMax: 256 },
-  kraken_trophy: { id: 'kraken_trophy', name: 'Kraken Trophy', type: 'material', icon: '🦑', stackMax: 1 },
-  leviathan_trident: { id: 'leviathan_trident', name: 'Kraken Trident', type: 'weapon', weaponType: 'melee', damage: 142, range: 132, useTime: 0.28, icon: '🔱', stackMax: 1 },
-  // The Kraken's signature ranged drop: no ammo, ink tendrils that lash on
-  // hit and sometimes lock the target stiff (stun-ink proc on monster hits,
-  // see the projectile→monster path in Game.update).
-  tentacle_gun: {
-    id: 'tentacle_gun', name: 'Tentacle Gun', type: 'weapon', weaponType: 'ranged',
-    damage: 96, projectile: 'ink_tentacle', speed: 16, useTime: 0.16, critBonus: 0.10,
-    usesAmmo: false, stunChance: 0.35, stunDuration: 1.4, icon: '🐙', stackMax: 1
+  // ==========================================================================
+  // THE ABYSSAL SEA — ocean-themed ores, carved from the rock UNDER the seabed
+  // of the abyssal planet. Four tiers of mythic sea-metal, deepest = richest.
+  // ==========================================================================
+  brine_ore: {
+    id: 'brine_ore', name: 'Brine Ore', type: 'material', icon: '🧂', stackMax: 999,
+    desc: 'Salt-crusted metal dredged from the shallow rock just beneath the seabed.'
+  },
+  abyss_ore: {
+    id: 'abyss_ore', name: 'Abyssal Ore', type: 'material', icon: '🌑', stackMax: 999,
+    desc: 'Pitch-black metal veined with cold light. Found deep in the abyssal underworld.'
+  },
+  tide_ore: {
+    id: 'tide_ore', name: 'Tidesteel Ore', type: 'material', icon: '🌊', stackMax: 999,
+    desc: 'Blue ore that hums like a trapped current. Rarer than abyssal ore, deeper still.'
+  },
+  leviathan_ore: {
+    id: 'leviathan_ore', name: 'Leviathan Ore', type: 'material', icon: '💠', stackMax: 999,
+    desc: 'Primordial metal from the very bottom of the abyssal planet — the rarest sea ore.'
+  },
+  // The Megalodon's fangs, torn from its jaws on death and used to forge its
+  // signature weapon. Deliberately NOT the trophy, so the trophy recipe chain
+  // and the weapon chain never compete for one unique item.
+  megalodon_tooth: {
+    id: 'megalodon_tooth', name: "Megalodon's Tooth", type: 'material', icon: '🦷', stackMax: 999,
+    desc: 'A serrated slab of enamel longer than your forearm. Still warm.'
   },
   diving_gear_1: { id: 'diving_gear_1', name: 'Reef Diver Set', type: 'material', icon: '🤿', oxygen: 18, stackMax: 1 },
   diving_gear_2: { id: 'diving_gear_2', name: 'Tidecaller Set', type: 'material', icon: '🤿', oxygen: 38, stackMax: 1 },
   diving_gear_3: { id: 'diving_gear_3', name: 'Abyssal Suit', type: 'material', icon: '🫧', oxygen: 75, stackMax: 1 },
   swim_fins_1: { id: 'swim_fins_1', name: 'Reef Swim Fins', type: 'material', icon: '🩴', swimSpeed: 1.18, stackMax: 1 },
   swim_fins_2: { id: 'swim_fins_2', name: 'Current fins', type: 'material', icon: '🩴', swimSpeed: 1.34, stackMax: 1 },
-  swim_fins_3: { id: 'swim_fins_3', name: 'Kraken Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
+  swim_fins_3: { id: 'swim_fins_3', name: 'Tidecaller Fins', type: 'material', icon: '🩴', swimSpeed: 1.55, stackMax: 1 },
   sunken_boot: {
     id: 'sunken_boot', name: 'Sunken Boot', type: 'material',
     icon: '🥾', stackMax: 99
@@ -500,6 +516,28 @@ const NEW_ITEMS = {
     // every tier stays a distinct step on a small hit.
     id: 'demon_armor', name: 'Demonplate Armor', type: 'armor', defense: 32, reduction: 0.44,
     icon: '👹', stackMax: 1
+  },
+  // ---- ABYSSAL APEX GEAR ----------------------------------------------------
+  // The Megalodon's own hide, torn off the last predator and worn as a suit.
+  // Deliberately the strongest plate in the game RIGHT NOW: 52% reduction and
+  // the highest flat defense, one clear rung above the Ossuary plate. It also
+  // grants a swim-speed bonus and a big oxygen reserve, so it doubles as the
+  // endgame diving suit. The 1 HP damage floor still applies, so it never
+  // becomes literally invulnerable.
+  megalodon_armor: {
+    id: 'megalodon_armor', name: 'Megalodon Hideplate', type: 'armor',
+    defense: 40, reduction: 0.52, swimSpeed: 1.4, oxygen: 120,
+    icon: '🦈', stackMax: 1,
+    desc: 'The dread hideplate of the last predator. The most powerful armour known to Terracraft.'
+  },
+  // The Megalodon's fang-blade, forged from its own teeth and the abyssal sea
+  // ores. A heavy melee weapon with a wide arc and sweeping crit, and a small
+  // lifesteal: killing with it feeds you, the way the predator fed on the sea.
+  megalodon_blade: {
+    id: 'megalodon_blade', name: 'Fang of the Last Predator', type: 'weapon', weaponType: 'melee',
+    damage: 165, range: 145, useTime: 0.30, critBonus: 0.16, lifesteal: 0.05,
+    icon: '🦷', stackMax: 1,
+    desc: 'A serrated fang-blade of tooth and abyssal ore. Widest reach, heaviest bite in the deep.'
   }
 };
 
@@ -520,8 +558,9 @@ for (const item of Object.values(ITEMS)) item.stackMax = 256;
 // armour still lets most of a big hit through.
 // ============================================================
 const ARMOR_TIERS = [
-  'ossuary_armor',      // 1st - 47%  (pried off the Ossuary Sovereign itself)
-  'demon_armor',        // 2nd - 44%  (forged from the Demon himself)
+  'megalodon_armor',    // 1st - 52%  (the last predator's hide; the game's apex plate)
+  'ossuary_armor',      // 2nd - 47%  (pried off the Ossuary Sovereign itself)
+  'demon_armor',        // 3rd - 44%  (forged from the Demon himself)
   'voidscale_armor',    // 3rd - 43% at less defence (nerfed: see the item)
   'fallen_star_armor',  // 4th - 40%
   'rainbow_armor',      // 5th - 32%
@@ -769,7 +808,7 @@ const RECIPES = [
   // what lives at the bottom of it.
   {
     result: { id: 'abyss_horn', count: 1 },
-    materials: [{ id: 'coral_fragment', count: 24 }, { id: 'sacred_pearl', count: 1 }, { id: 'sea_scale', count: 6 }, { id: 'iron_ore', count: 8 }],
+    materials: [{ id: 'coral_fragment', count: 24 }, { id: 'sacred_pearl', count: 1 }, { id: 'brine_ore', count: 6 }, { id: 'iron_ore', count: 8 }],
     name: 'Abyssal Horn'
   },
   // ---- Fishing gear ----
@@ -783,13 +822,21 @@ const RECIPES = [
   { result: { id: 'diving_gear_3', count: 1 }, materials: [{ id: 'diving_gear_2', count: 1 }, { id: 'diamond', count: 8 }, { id: 'sacred_pearl', count: 2 }, { id: 'fish_angler', count: 3 }], name: 'Abyssal Suit (75s oxygen)' },
   { result: { id: 'swim_fins_1', count: 1 }, materials: [{ id: 'wool', count: 4 }, { id: 'fish_turtle', count: 2 }], name: 'Reef Swim Fins' },
   { result: { id: 'swim_fins_2', count: 1 }, materials: [{ id: 'swim_fins_1', count: 1 }, { id: 'fish_turtle', count: 2 }, { id: 'coral_fragment', count: 12 }], name: 'Current Fins' },
-  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Kraken Fins' },
-  { result: { id: 'leviathan_trident', count: 1 }, materials: [{ id: 'sea_scale', count: 18 }, { id: 'sacred_pearl', count: 4 }], name: 'Kraken Trident' },
-  // Tentacle Gun: the trophy rebuilds a lost gun (the drop is the primary
-  // source; the trophy is the backup — same pattern as the Sovereign's gear).
-  // The trophy is unique per save, so the trident was retargeted to pure
-  // reef materials: both recipes stay reachable with one trophy in hand.
-  { result: { id: 'tentacle_gun', count: 1 }, materials: [{ id: 'kraken_trophy', count: 1 }, { id: 'sea_scale', count: 15 }, { id: 'fish_manta', count: 3 }], name: 'Tentacle Gun' },
+  { result: { id: 'swim_fins_3', count: 1 }, materials: [{ id: 'swim_fins_2', count: 1 }, { id: 'fish_manta', count: 3 }, { id: 'sacred_pearl', count: 1 }], name: 'Tidecaller Fins' },
+  // ---- ABYSSAL APEX GEAR ----
+  // The weapon: Megalodon teeth (dropped by the beast) + the ocean-themed ores
+  // mined under the abyssal seabed. The armour has no recipe at all — it is
+  // dropped ONCE, off the Megalodon itself, and never anything else.
+  {
+    result: { id: 'megalodon_blade', count: 1 },
+    materials: [
+      { id: 'megalodon_tooth', count: 6 },
+      { id: 'leviathan_ore', count: 8 },
+      { id: 'tide_ore', count: 12 },
+      { id: 'abyss_ore', count: 16 }
+    ],
+    name: 'Fang of the Last Predator'
+  },
   {
     result: { id: 'anglers_charm', count: 1 },
     materials: [{ id: 'gold_ore', count: 6 }, { id: 'crystal', count: 3 }, { id: 'fish_koi', count: 2 }],
@@ -6649,10 +6696,8 @@ class Game {
       const pMidY = this.player.y + this.player.height / 2;
       const angle = Math.atan2(mouseWorldY - pMidY, mouseWorldX - pMidX);
       // Bowstring release: a quick fan of sparks off the bow, tinted per bow.
-      // The Tentacle Gun spits violet ink sparks instead of a bowstring flash.
-      const isTentacleGun = held.id === 'tentacle_gun';
-      const bowTint = isTentacleGun ? '#a855f7'
-        : held.id === 'soulfire_repeater' ? '#fb7185' : held.id === 'ember_bow' ? '#fb923c' : '#bae6fd';
+      const bowTint = held.id === 'soulfire_repeater' ? '#fb7185'
+        : held.id === 'ember_bow' ? '#fb923c' : '#bae6fd';
       for (let i = 0; i < 7; i++) {
         const a = angle + (Math.random() - 0.5) * 0.9;
         const spd = 1.5 + Math.random() * 3;
@@ -7143,7 +7188,7 @@ class Game {
     this.showAnnouncement(intent === 'space'
       ? '🌀 THE SKY TEARS OPEN — THE OSSUARY WAITS.'
       : intent === 'ocean'
-        ? '🌊 THE TIDE GATE OPENS — THE KRAKEN STIRS.'
+        ? '🌊 THE TIDE GATE OPENS — THE DEEP STIRS.'
         : tideGate
           ? '🌊 THE ABYSS LETS GO — THE TIDE GATE TURNS HOME.'
           : '🕳️ THE WAY HOME OPENS.');
@@ -7459,27 +7504,31 @@ class Game {
     this.player.vx = 0;
     this.player.vy = 0;
     this.oxygen = this.oxygenMax;
-    // Arrival grace: the Kraken is live the instant you land and its first
-    // telegraphed shot can be mid-flight. A short invulnerability window means
-    // entering the ocean is never an instant death, whichever way you arrived
-    // (the Tide Gate's own cutscene, or a creative teleport straight onto it).
+    // Arrival grace: the last predator is live the instant you land and its
+    // first telegraphed lunge can be mid-flight. A short invulnerability window
+    // means entering the ocean is never an instant death, whichever way you
+    // arrived (the Tide Gate's own cutscene, or a creative teleport).
     if (this.player.invuln !== undefined) {
       this.player.invuln = Math.max(this.player.invuln || 0, 1.6);
     }
     if (this.mp && this.mp.status !== 'idle') {
       this.showToast('This ocean-world expedition is solo-only.');
     }
-    if (!this.leviathanSlain && typeof Kraken === 'function') {
+    // FIRST ARRIVAL IS ALWAYS THE FIGHT. The Megalodon greets the player the
+    // very first time they set foot on the abyssal planet — no horn required.
+    // After it is felled once, the sea stays quiet on re-entry and the only way
+    // back into the arena is to blow another Abyssal Horn.
+    if (!this.leviathanSlain && typeof Megalodon === 'function') {
       const hp = Number.isFinite(this.leviathanHP) ? this.leviathanHP : 110000;
-      this.boss = new Kraken(arena.bossX, arena.bossY, this);
+      this.boss = new Megalodon(arena.bossX, arena.bossY, this);
       this.boss.hp = Math.max(1, Math.min(this.boss.maxHp, hp));
       this.leviathanHP = null;
       this.sound.isBoss = true;
       document.getElementById('boss-panel')?.classList.remove('hidden');
-      this.showAnnouncement('🐙 THE ABYSSAL KRAKEN RISES!');
+      this.showAnnouncement('🦈 THE MEGALODON RISES!');
     } else {
       this.boss = null;
-      this.showToast('🌊 The ocean planet is quiet. The Kraken you defeated remains gone.');
+      this.showToast('🌊 The ocean planet is quiet. The Megalodon you defeated remains gone.');
     }
     this.showToast('🫧 Keep your diving gear close. The Tide Gate behind you returns home.');
   }
@@ -7569,7 +7618,7 @@ class Game {
       this.player.y + this.player.height / 2 - this.camera.viewportHeight / 2));
     this.showToast(fromOcean
       ? (Number.isFinite(this.leviathanHP)
-        ? '🌊 Back at the reef. The Kraken remembers the damage it took.'
+        ? '🌊 Back at the reef. The Megalodon remembers the damage it took.'
         : '🌊 Back at the reef, with the Tide Gate still behind you.')
       : Number.isFinite(this.dragonHP)
         ? '🕳️ The rift closes. It is still in there, and it remembers every hit.'
@@ -8364,7 +8413,7 @@ this.player.dodgeTime = 0;
       this._bossKinds[bossKey] = true;
       if (firstTime) {
         this.logDiscovery(`boss_${bossKey}`,
-          defeatedKraken ? '🐙 First Abyssal Kraken Defeated!'
+          defeatedKraken ? '🦈 First Megalodon Defeated!'
             : defeatedDragon ? '🌌 First Ossuary Sovereign Defeated!'
               : defeatedDemon ? '🔥 First Hellbound Demon Defeated!'
                 : defeatedKnight ? '⚔️ First Cursed Knight Defeated!' : '👑 First Forest Guardian Defeated!',
@@ -8374,7 +8423,7 @@ this.player.dodgeTime = 0;
       if (bossPanel) bossPanel.classList.add('hidden');
       this.sound.isBoss = false;
       this.showAnnouncement(defeatedKraken
-        ? '🐙 THE ABYSSAL KRAKEN HAS FALLEN!'
+        ? '🦈 THE MEGALODON — LAST PREDATOR — HAS FALLEN!'
         : defeatedDragon
         ? '🌌 THE OSSUARY SOVEREIGN HAS FALLEN!'
         : defeatedDemon
@@ -8383,8 +8432,12 @@ this.player.dodgeTime = 0;
       this.feel.slow(defeatedKraken ? 2.8 : defeatedDragon ? 3.0 : defeatedDemon ? 2.4 : 1.6,
         defeatedKraken ? 0.15 : defeatedDragon ? 0.12 : defeatedDemon ? 0.18 : 0.25);
       this.feel.shake(defeatedKraken ? 2.2 : defeatedDragon ? 2.4 : defeatedDemon ? 1.8 : 1.0);
+      // A re-summoned Megalodon (via the Abyssal Horn) is worth killing for its
+      // TEETH and its loot bag, but it never drops the unique trophy mount or
+      // the apex plate again — those are the FIRST kill's only rewards.
+      const megalodonFirstKill = defeatedKraken && !this._megalodonSlainOnce;
       const rewardIds = defeatedKraken
-        ? ['sea_scale', 'coral_fragment', 'fish_manta', 'fish_angler', 'sacred_pearl']
+        ? ['abyss_ore', 'tide_ore', 'leviathan_ore', 'brine_ore', 'megalodon_tooth', 'coral_fragment']
         : defeatedDragon
         ? ['dragonbone', 'meteor_shard', 'nebula_crystal', 'crystal', 'life_crystal', 'mana_crystal']
         : defeatedDemon
@@ -8398,26 +8451,28 @@ this.player.dodgeTime = 0;
           defeatedKraken ? 6 : defeatedDragon ? 4 : defeatedDemon ? 3 : 2));
       }
         this.drops.push(new DropItem(this.boss.x, this.boss.y - 12,
-          defeatedKraken ? 'kraken_trophy'
-            : defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
-              : defeatedKnight ? 'cursed_edge' : 'guardian_trophy', 1));
-        // The Megalodon is its own trophy: a mount you place on the wall, so
-        // the last predator leaves a permanent mark on the player's base. It
-        // drops IN ADDITION to the Kraken Trophy, which the forge recipes
-        // still need — add a first-kill reef sprite so the win has a
-        // companion attached to it as well.
+          defeatedDragon ? 'dragon_trophy' : defeatedDemon ? 'demon_trophy'
+            : defeatedKnight ? 'cursed_edge'
+              : defeatedKraken ? 'megalodon_tooth' : 'guardian_trophy',
+          defeatedKraken ? 3 : 1));
+        // THE MEGALODON. Every kill gives teeth (the weapon material) and a
+        // generous bag of abyssal ores. The trophy mount, the reef-sprite pet
+        // and the apex Hideplate are FIRST-KILL ONLY — a re-summoned predator
+        // is fought for teeth, ore and trophies, never for the unique gear.
         if (this.boss.kind === 'kraken' && this.boss instanceof Megalodon) {
-          this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
-          if (!this._megalodonSlainOnce) {
+          // Its teeth always drop: the fang-blade's whole recipe chain.
+          this.drops.push(new DropItem(this.boss.x - 20, this.boss.y - 22, 'megalodon_tooth', 3));
+          if (megalodonFirstKill) {
             this._megalodonSlainOnce = true;
+            this.drops.push(new DropItem(this.boss.x + 10, this.boss.y - 20, 'megalodon_trophy', 1));
             this.drops.push(new DropItem(this.boss.x - 14, this.boss.y - 22, 'reef_sprite', 1));
+            // THE APEX ARMOUR: dropped once, never again.
+            this.drops.push(new DropItem(this.boss.x + 22, this.boss.y - 26, 'megalodon_armor', 1));
           }
         }
       if (defeatedKraken) {
-        // Both weapons drop straight off the corpse: the trident for melee,
-        // the Tentacle Gun for range. The forge recipes are rebuild backups.
-        this.drops.push(new DropItem(this.boss.x + 16, this.boss.y - 20, 'leviathan_trident', 1));
-        this.drops.push(new DropItem(this.boss.x - 16, this.boss.y - 26, 'tentacle_gun', 1));
+        // The Megalodon's fight is banked-and-cleared: mark the world so a
+        // re-entry is quiet until the player blows another Abyssal Horn.
         this.leviathanHP = null;
         this.leviathanSlain = true;
       }
@@ -8450,8 +8505,10 @@ this.player.dodgeTime = 0;
       const vTitle = document.querySelector('#victory-screen .victory-title');
       const vLead = document.querySelector('#victory-screen .victory-content > p');
       if (defeatedKraken) {
-        if (vTitle) vTitle.textContent = '🐙 THE ABYSSAL KRAKEN IS BROKEN!';
-        if (vLead) vLead.textContent = 'The Kraken’s mantle lies still and the ink cloud thins. The Tide Gate remains open, and the ocean planet is yours to explore. Gather Kraken Scales, take the trident and the Tentacle Gun, and craft spares from its trophy.';
+        if (vTitle) vTitle.textContent = '🦈 THE MEGALODON IS BROKEN!';
+        if (vLead) vLead.textContent = megalodonFirstKill
+          ? 'The last predator rolls belly-up and the deep goes quiet. The sea is yours to explore, its seabed veined with abyssal ore — and its teeth are yours to forge. Only the first kill leaves the trophy and the dread Hideplate behind.'
+          : 'The Megalodon sinks for the second time. Teeth and abyssal ore scatter in its wake, but the trophy and the Hideplate are a first-kill prize only.';
       } else if (defeatedDragon) {
         if (vTitle) vTitle.textContent = '🌌 THE OSSUARY SOVEREIGN IS BROKEN!';
         if (vLead) vLead.textContent = 'The last king of the dead sky lies in pieces among its own bones. Its wings, the Skeletal Wyrmplate and its own fang fell with it — and they will never fall again, because there is only one of each. The rift home is still open, the arena is full of treasure — and the Sovereign stays dead. Mine the bones, and another Rite of Waking read on them will bring another; it will cost you far more than the first.';

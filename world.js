@@ -2331,9 +2331,14 @@ class World {
   }
 
   /**
-   * Sea haze across the reef's waterline seams. Draws a soft gradient over
-   * each border column where the open ocean begins, so the clipped land
-   * scenery dissolves into the water instead of ending on a vertical line.
+   * Sea haze across the reef's waterline seams.
+   *
+   * FIX: this used to be ONE full-height fillRect per seam, so wherever the
+   * camera sat near a border a long hard-edged rectangle was painted over the
+   * backdrop — the "long rectangle dividing the snow and ocean". It is now a
+   * two-axis wash: horizontally it eases out symmetrically on BOTH sides of
+   * the seam (so no edge exists anywhere), and vertically it fades to nothing
+   * toward the zenith, the way real atmospheric haze only sits near a horizon.
    */
   _paintReefSeamHaze(ctx, camera, w, h) {
     const rb = this.reefBounds;
@@ -2342,21 +2347,56 @@ class World {
       rb.left * TILE_SIZE - camera.x,     // reef's west edge (open sea)
       rb.right * TILE_SIZE - camera.x     // reef's east edge (meets the snow)
     ];
-    const reach = 170;
-    const haze = (x0, x1) => {
-      const left = Math.max(0, x0);
-      const right = Math.min(w, x1);
-      if (right - left < 2) return;
-      const grad = ctx.createLinearGradient(left, 0, right, 0);
-      grad.addColorStop(0, 'rgba(17, 62, 100, 0.72)');
-      grad.addColorStop(0.55, 'rgba(20, 70, 110, 0.34)');
-      grad.addColorStop(1, 'rgba(20, 70, 110, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(left, 0, right - left, h);
-    };
+    const reach = 240;
+    // Vertical profile: zero at the top (zenith is clear), peaking near the
+    // horizon line, easing again toward the ground fog at the bottom.
+    const gradV = ctx.createLinearGradient(0, 0, 0, h);
+    gradV.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradV.addColorStop(0.42, 'rgba(0, 0, 0, 0.55)');
+    gradV.addColorStop(0.60, 'rgba(0, 0, 0, 0.75)');
+    gradV.addColorStop(0.80, 'rgba(0, 0, 0, 0.45)');
+    gradV.addColorStop(1, 'rgba(0, 0, 0, 0)');
     for (const seam of seams) {
       if (seam < -reach || seam > w + reach) continue;
-      haze(seam - reach, seam + reach * 0.35);
+      // Symmetric span around the seam, clamped to the frame.
+      const x0 = Math.max(0, seam - reach);
+      const x1 = Math.min(w, seam + reach);
+      if (x1 - x0 < 2) continue;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, 0, x1 - x0, h);
+      ctx.clip();
+      // Mask: black at the centre, transparent at the clip edges, then the
+      // vertical profile turns that into a horizon-weighted haze.
+      const mask = ctx.createLinearGradient(x0, 0, x1, 0);
+      mask.addColorStop(0, 'rgba(0,0,0)');
+      mask.addColorStop(0.32, 'rgba(0,0,0,0.45)');
+      mask.addColorStop(0.5, 'rgba(0,0,0,1)');
+      mask.addColorStop(0.68, 'rgba(0,0,0,0.45)');
+      mask.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalCompositeOperation = 'source-over';
+      // Layer 1: the vertical profile, tinted deep-sea blue.
+      ctx.fillStyle = 'rgba(18, 66, 104, 1)';
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.save();
+      // Paint tint * profile by drawing the tint then multiplying alpha with
+      // a second pass is overkill — instead paint the profile shape directly
+      // in tint colour, reading stops off the same curve.
+      const tint = ctx.createLinearGradient(0, 0, 0, h);
+      tint.addColorStop(0, 'rgba(18, 66, 104, 0)');
+      tint.addColorStop(0.42, 'rgba(18, 66, 104, 0.20)');
+      tint.addColorStop(0.60, 'rgba(18, 66, 104, 0.30)');
+      tint.addColorStop(0.80, 'rgba(18, 66, 104, 0.14)');
+      tint.addColorStop(1, 'rgba(18, 66, 104, 0)');
+      ctx.fillStyle = tint;
+      ctx.fillRect(x0, 0, x1 - x0, h);
+      // Layer 2: multiply the horizontal mask in with 'destination-in' so the
+      // wash fades to nothing at BOTH clip edges — no seam edge survives.
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.fillStyle = mask;
+      ctx.fillRect(x0, 0, x1 - x0, h);
+      ctx.restore();
+      ctx.restore();
     }
   }
 
@@ -2364,6 +2404,10 @@ class World {
   // position/hash style as the landscape layers, so props never pop or drift
   // when the camera moves.
   renderBiomeDecor(ctx, camera, biome, w, h, t, night) {
+    // The reef is open water: the old code fell through to the swamp's
+    // reeds/stumps branch, which planted reeds and drowned stumps floating
+    // above the sea in the ocean-reef view. Land props belong on land only.
+    if (biome === 'reef' || this.dimension === 'ocean' || this.dimension === 'space') return;
     ctx.save();
     const propOffset = camera.x * 0.58;
     const start = Math.floor(propOffset / 190) - 1;

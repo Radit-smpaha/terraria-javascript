@@ -16,7 +16,15 @@ const OCEAN_TILES = {
   // rather than a decorative prop. WRECK_MAST is a climbable mast (platform).
   WRECK_PLANK: 83,
   WRECK_HULL: 84,
-  WRECK_MAST: 85
+  WRECK_MAST: 85,
+  // ---- Abyssal sea ores. Four tiers of ocean-themed metal, found ONLY in the
+  // rock UNDER the abyssal planet's seabed. Rarer and richer the deeper you
+  // dig: brine (shallow) -> abyssal -> tidesteel -> leviathan (bottom). Each is
+  // placeable and drops its material when mined. --------------------------
+  BRINE_ORE: 86,
+  ABYSS_ORE: 87,
+  TIDE_ORE: 88,
+  LEVIATHAN_ORE: 89
 };
 const OCEAN_TILE_SET = new Set(Object.values(OCEAN_TILES));
 const OCEAN_WATER_TILE_CACHE = [];
@@ -58,6 +66,10 @@ TILES.TEMPLE_DOOR = OCEAN_TILES.TEMPLE_DOOR;
 TILES.WRECK_PLANK = OCEAN_TILES.WRECK_PLANK;
 TILES.WRECK_HULL = OCEAN_TILES.WRECK_HULL;
 TILES.WRECK_MAST = OCEAN_TILES.WRECK_MAST;
+TILES.BRINE_ORE = OCEAN_TILES.BRINE_ORE;
+TILES.ABYSS_ORE = OCEAN_TILES.ABYSS_ORE;
+TILES.TIDE_ORE = OCEAN_TILES.TIDE_ORE;
+TILES.LEVIATHAN_ORE = OCEAN_TILES.LEVIATHAN_ORE;
 
 Object.assign(TILE_PROPERTIES, {
   // Sacred Pearl: light was 11, which turned every pearl into a lighthouse
@@ -77,7 +89,13 @@ Object.assign(TILE_PROPERTIES, {
   // wreck is the ocean's ore seam), and the mast is climbable and gives wood.
   [OCEAN_TILES.WRECK_PLANK]: { solid: true, light: 0, color: '#5b4636', name: 'Rotten Plank', drops: { id: 'wood', count: 2 } },
   [OCEAN_TILES.WRECK_HULL]: { solid: true, light: 0, color: '#3f3226', name: 'Barnacled Hull', drops: { id: 'iron_ore', count: 2 } },
-  [OCEAN_TILES.WRECK_MAST]: { solid: false, light: 0, color: '#7c5a3a', name: 'Broken Mast', isPlatform: true, drops: { id: 'wood', count: 3 } }
+  [OCEAN_TILES.WRECK_MAST]: { solid: false, light: 0, color: '#7c5a3a', name: 'Broken Mast', isPlatform: true, drops: { id: 'wood', count: 3 } },
+  // The abyssal sea ores. Leviathan ore glows faintly so the bottom of the
+  // mine is findable; the rest are lit by the player's own light.
+  [OCEAN_TILES.BRINE_ORE]: { solid: true, light: 0, color: '#cbd5e1', name: 'Brine Ore', drops: { id: 'brine_ore', count: 1 } },
+  [OCEAN_TILES.ABYSS_ORE]: { solid: true, light: 1, color: '#312e81', name: 'Abyssal Ore', drops: { id: 'abyss_ore', count: 1 } },
+  [OCEAN_TILES.TIDE_ORE]: { solid: true, light: 2, color: '#0ea5e9', name: 'Tidesteel Ore', drops: { id: 'tide_ore', count: 1 } },
+  [OCEAN_TILES.LEVIATHAN_ORE]: { solid: true, light: 3, color: '#67e8f9', name: 'Leviathan Ore', drops: { id: 'leviathan_ore', count: 1 } }
 });
 
 const OCEAN_BASE_DRAW_TILE = World.prototype.drawTileGraphic;
@@ -324,6 +342,53 @@ World.prototype.drawTileGraphic = function(ctx, tile, sx, sy, tx, ty, exposedTop
     ctx.fillStyle = '#2f5f4a';
     ctx.fillRect(sx + 18, sy + 20, 3, 3);
     ctx.fillRect(sx + 3, sy + 1, 2, 3);
+  } else if (tile === OCEAN_TILES.BRINE_ORE || tile === OCEAN_TILES.ABYSS_ORE
+      || tile === OCEAN_TILES.TIDE_ORE || tile === OCEAN_TILES.LEVIATHAN_ORE) {
+    // ---- THE ABYSSAL SEA ORES. Each is drawn as the abyssal stone with a
+    // cluster of crystal nodules in its own colour, and the richer tiers get a
+    // self-lit glow so a deep seam is findable in the dark.
+    const isLevi = tile === OCEAN_TILES.LEVIATHAN_ORE;
+    const isTide = tile === OCEAN_TILES.TIDE_ORE;
+    const isAbyss = tile === OCEAN_TILES.ABYSS_ORE;
+    // Base: the same dark seabed stone the ocean dimension uses.
+    ctx.fillStyle = '#141d26';
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    if (exposedTop) {
+      ctx.fillStyle = '#1f2c38';
+      ctx.fillRect(sx, sy, TILE_SIZE, 3);
+    }
+    const oreCol = isLevi ? '#67e8f9' : isTide ? '#0ea5e9'
+      : isAbyss ? '#4338ca' : '#e2e8f0';
+    const oreLit = isLevi ? '#cffafe' : isTide ? '#7dd3fc'
+      : isAbyss ? '#818cf8' : '#ffffff';
+    // A soft glow halo on the two richest tiers.
+    if (isLevi || isTide) {
+      ctx.fillStyle = isLevi
+        ? `rgba(103,232,249,${(0.10 + pulse * 0.10).toFixed(3)})`
+        : `rgba(14,165,233,${(0.07 + pulse * 0.06).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(sx + 12, sy + 12, 11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Nodule cluster: three or four chunky crystals, deterministic per tile.
+    const nodes = [
+      [(tx * 5 + ty * 3) % 8 + 5, (tx * 3 + ty * 7) % 8 + 4, 4],
+      [(tx * 7 + ty * 11) % 9 + 11, (tx * 13 + ty * 5) % 8 + 6, 3],
+      [(tx * 11 + ty * 2) % 8 + 4, (tx * 5 + ty * 13) % 7 + 13, 3]
+    ];
+    if (isLevi) nodes.push([(tx * 3 + ty * 9) % 7 + 13, (tx * 7 + ty * 3) % 6 + 14, 2]);
+    for (const [ox, oy, rr] of nodes) {
+      ctx.fillStyle = oreCol;
+      ctx.beginPath();
+      ctx.moveTo(sx + ox, sy + oy - rr);
+      ctx.lineTo(sx + ox + rr, sy + oy);
+      ctx.lineTo(sx + ox, sy + oy + rr);
+      ctx.lineTo(sx + ox - rr, sy + oy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = oreLit;
+      ctx.fillRect(sx + ox - 1, sy + oy - 1, 2, 2);
+    }
   } else if (tile === OCEAN_TILES.WRECK_MAST) {
     // A leaning, splintered mast you can stand on — an actual platform tile.
     ctx.fillStyle = 'rgba(0,0,0,0)';
@@ -2030,10 +2095,22 @@ World.prototype.generateOceanPlanet = function() {
   }
   // Ore + crystals dress the cavern floors: iron and gold in the stone, and a
   // vein of glowing crystal so the deep abyss is lit and worth diving for.
+  //
+  // THIS is also where the OCEAN-THEMED ORES live. They are found nowhere else
+  // in the game: the rock under the abyssal seabed is the only source of brine,
+  // abyssal, tidesteel and leviathan ore — the materials the Megalodon's
+  // fang-blade is forged from. Each tier owns a DEPTH BAND, so the deeper you
+  // dig the richer the seam: brine just under the seabed, leviathan near the
+  // map floor. The band fraction is measured from the local seabed down to the
+  // bottom, so even a shallow column still yields brine at its own floor.
   for (let x = 2; x < this.width - 2; x++) {
-    for (let y = duneFloor[x] + 5; y < this.height - 2; y++) {
+    const top = duneFloor[x];
+    const span = Math.max(1, this.height - 2 - top);
+    for (let y = top + 5; y < this.height - 2; y++) {
       const tile = this.getTile(x, y);
       if (tile !== TILES.STONE) continue;
+      // 0 at the seabed, 1 at the map floor.
+      const depth = (y - top) / span;
       const roll = Math.random();
       if (roll < 0.012) this.setTile(x, y, TILES.IRON_ORE);
       else if (roll < 0.018) this.setTile(x, y, TILES.GOLD_ORE);
@@ -2041,6 +2118,29 @@ World.prototype.generateOceanPlanet = function() {
       // A crystal stuck to a cavern ceiling sparkles the whole chamber.
       else if (roll < 0.024 && this.getTile(x, y - 1) === TILES.AIR) {
         this.setTile(x, y, TILES.CRYSTAL);
+      }
+      // ---- Ocean-themed ore bands. The common ore of each band gets a wide
+      // share; the rarer ore above it is a thin seam, so a seam feels found.
+      else if (roll < 0.033) {
+        // Brine: the shallow band, commonest near the seabed.
+        if (depth < 0.55) this.setTile(x, y, TILES.BRINE_ORE);
+        else if (roll < 0.028) this.setTile(x, y, TILES.BRINE_ORE);
+        else this.setTile(x, y, TILES.ABYSS_ORE);
+      } else if (roll < 0.042) {
+        // Abyssal: the middle band.
+        if (depth > 0.30 && depth < 0.82) this.setTile(x, y, TILES.ABYSS_ORE);
+        else if (roll < 0.037) this.setTile(x, y, TILES.BRINE_ORE);
+        else this.setTile(x, y, TILES.TIDE_ORE);
+      } else if (roll < 0.049) {
+        // Tidesteel: the deep band, below the middle.
+        if (depth > 0.55) this.setTile(x, y, TILES.TIDE_ORE);
+        else if (roll < 0.045) this.setTile(x, y, TILES.ABYSS_ORE);
+        else this.setTile(x, y, TILES.TIDE_ORE);
+      } else if (roll < 0.0535) {
+        // Leviathan: the very bottom of the planet, rare everywhere else.
+        if (depth > 0.78) this.setTile(x, y, TILES.LEVIATHAN_ORE);
+        else if (roll < 0.051) this.setTile(x, y, TILES.TIDE_ORE);
+        else this.setTile(x, y, TILES.LEVIATHAN_ORE);
       }
     }
   }
@@ -5139,7 +5239,7 @@ class Megalodon {
   }
 
 
-﻿  /**
+  /**
    * A shark with a spine.
    *
    * The body is never drawn as one frozen silhouette: the whole animal is
