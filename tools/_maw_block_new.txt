@@ -1,0 +1,199 @@
+    // 9. THE MAW — the biggest single feature of the model. A real hinge:
+    //    the lower jaw rotates about a point behind the mouth corner, so the
+    //    teeth interleave, the throat opens and the tongue rides the floor.
+    //    The mouth line itself is routed along the UNDERSIDE of the snout —
+    //    a shark's mouth is a slot under the head, not a gash across it.
+    // ======================================================================
+    {
+      // Mouth corner (hinge) sits behind the eye, low on the flank; the front
+      // of the lip rides the belly outline of the snout.
+      const hinge = spineAt(0.56, 0.14);
+      const lipEnd = spineAt(0.985, 0.50);
+      const lipCtrl = { x: hinge.x + (lipEnd.x - hinge.x) * 0.52, y: hinge.y + (lipEnd.y - hinge.y) * 0.52 + 4 };
+      const lipPt = (f) => this._quadAt(hinge, lipCtrl, lipEnd, f);
+      const lipTangent = (f) => {
+        const a = lipPt(Math.max(0, f - 0.03)), b = lipPt(Math.min(1, f + 0.03));
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const l = Math.hypot(dx, dy) || 1;
+        return { x: dx / l, y: dy / l };
+      };
+      // Jaw angle: a resting snarl that unhinges to near-vertical.
+      const ja = 0.10 + (this.jawOpen || 0) * 0.52;
+      const rot = (p, a) => {
+        const c = Math.cos(a), s = Math.sin(a);
+        const dx = p.x - hinge.x, dy = p.y - hinge.y;
+        return { x: hinge.x + dx * c - dy * s, y: hinge.y + dx * s + dy * c };
+      };
+      // Closed mouth line: the lip dropped by the jaw's resting thickness.
+      const closedY = (f) => {
+        const t = lipTangent(f);
+        return { x: lipPt(f).x - t.y * 5, y: lipPt(f).y + t.x * 5 };
+      };
+      // Jaw line: the closed line rotated open about the hinge.
+      const jawPt = (f) => rot(closedY(f), ja);
+      const jawTangent = (f) => {
+        const a = jawPt(Math.max(0, f - 0.03)), b = jawPt(Math.min(1, f + 0.03));
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const l = Math.hypot(dx, dy) || 1;
+        return { x: dx / l, y: dy / l };
+      };
+      const open01 = Math.max(0, Math.min(1, ((this.jawOpen || 0) - 0.12) / 0.88));
+
+      // ---- Mouth interior: a sliver when shut, a maw when thrown wide. ----
+      {
+        const interior = [];
+        for (let i = 0; i <= 10; i++) interior.push(lipPt(i / 10));
+        for (let i = 10; i >= 0; i--) interior.push(jawPt(i / 10));
+        ctx.beginPath(); traceSmooth(ctx, interior); ctx.closePath();
+        ctx.fillStyle = mouthDeep;
+        ctx.fill();
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        if (open01 > 0.03) {
+          // Lit throat: a brighter wedge deep inside the gape.
+          const lit = [];
+          for (let i = 0; i <= 8; i++) {
+            const f = i / 8;
+            const p = lipPt(0.10 + f * 0.48), q = jawPt(0.10 + f * 0.48);
+            lit.push({ x: p.x + (q.x - p.x) * 0.30, y: p.y + (q.y - p.y) * 0.30 });
+          }
+          for (let i = 8; i >= 0; i--) {
+            const f = i / 8;
+            const p = lipPt(0.10 + f * 0.48), q = jawPt(0.10 + f * 0.48);
+            lit.push({ x: p.x + (q.x - p.x) * 0.70, y: p.y + (q.y - p.y) * 0.70 });
+          }
+          ctx.beginPath(); traceSmooth(ctx, lit); ctx.closePath();
+          ctx.fillStyle = mouthLit;
+          ctx.fill();
+          // Throat rings receding into the gullet.
+          ctx.strokeStyle = 'rgba(74, 10, 24, 0.55)';
+          ctx.lineWidth = 2;
+          for (let rr = 0; rr < 3; rr++) {
+            const f0 = 0.12 + rr * 0.11;
+            const p = lipPt(f0), q = jawPt(f0);
+            ctx.beginPath();
+            ctx.moveTo(p.x + (q.x - p.x) * 0.3, p.y + (q.y - p.y) * 0.3);
+            ctx.quadraticCurveTo(p.x - 12 * rr, p.y + (q.y - p.y) * 0.5,
+              p.x + (q.x - p.x) * 0.7, p.y + (q.y - p.y) * 0.7);
+            ctx.stroke();
+          }
+          // Tongue: a muscular curl riding the floor of the mouth.
+          {
+            const t0 = jawPt(0.34), t1 = jawPt(0.62);
+            ctx.fillStyle = '#8f1220';
+            ctx.beginPath();
+            ctx.ellipse((t0.x + t1.x) / 2, (t0.y + t1.y) / 2 + 4,
+              26 + open01 * 10, 7 + open01 * 5, jawTangent(0.5).y * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // The heat of the gullet, phase 2+: skill glow bleeds out of it.
+          if (ph >= 2 && this.skillGlow > 0) {
+            const g0 = lipPt(0.2), g1 = jawPt(0.2);
+            ctx.fillStyle = 'rgba(251, 146, 60, ' + Math.min(0.35, this.skillGlow * 0.22).toFixed(2) + ')';
+            ctx.beginPath();
+            ctx.ellipse((g0.x + g1.x) / 2, (g0.y + g1.y) / 2, 26, 10 + open01 * 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // ---- LOWER JAW: the slab + its teeth, hinged at the mouth corner. ----
+      {
+        const slab = [];
+        for (let i = 0; i <= 8; i++) slab.push(jawPt(i / 8));
+        const jowl = (f) => 13 + open01 * 8 + Math.sin(f * Math.PI) * 5;
+        for (let i = 8; i >= 0; i--) {
+          const f = i / 8;
+          const t = jawTangent(f);
+          slab.push({ x: jawPt(f).x - t.y * jowl(f), y: jawPt(f).y + t.x * jowl(f) });
+        }
+        ctx.beginPath(); traceSmooth(ctx, slab); ctx.closePath();
+        ctx.fillStyle = hideMid;
+        ctx.fill();
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+        // Jaw underside highlight.
+        ctx.strokeStyle = 'rgba(200, 220, 255, 0.14)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let i = 0; i <= 8; i++) {
+          const f = i / 8;
+          const t = jawTangent(f);
+          const p = { x: jawPt(f).x - t.y * (jowl(f) * 0.8), y: jawPt(f).y + t.x * (jowl(f) * 0.8) };
+          if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+        // LOWER TEETH: they ride the top edge of the dropped jaw, pointing up
+        // into the gape so the two rows interleave when it snaps shut.
+        const lowerTeeth = 10;
+        for (let t = 0; t < lowerTeeth; t++) {
+          const f = 0.05 + (t / (lowerTeeth - 1)) * 0.92;
+          const base = jawPt(f);
+          const tg = jawTangent(f);
+          const tlen = (8 + Math.sin(f * Math.PI) * 15 + open01 * 4)
+            * (ph === 3 && t % 3 === 1 ? 0.45 : 1);   // apex: teeth snapped off
+          // direction: from the jaw line up into the gape = (-t.y, t.x) reversed
+          this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 4.4, tooth);
+        }
+      }
+
+      // ---- UPPER TEETH: two staggered rows hanging from the upper lip. ----
+      {
+        for (let row = 0; row < 2; row++) {
+          const count = row === 0 ? 11 : 10;
+          const scale = row === 0 ? 1 : 0.72;
+          for (let t = 0; t < count; t++) {
+            const f = 0.03 + (t / (count - 1)) * 0.94 + row * 0.05;
+            const base = lipPt(Math.min(1, f));
+            const tg = lipTangent(Math.min(1, f));
+            const tlen = (10 + Math.sin(f * Math.PI) * 21 + open01 * 5) * scale
+              * (ph === 3 && t % 3 === 2 ? 0.5 : 1);  // apex: teeth snapped off
+            // direction: from the lip down into the gape = (t.y, -t.x)
+            this._toothTri(ctx, base.x - tg.y * 1.5, base.y + tg.x * 1.5, -tg.y, tg.x, tlen, 4.8 * scale, tooth);
+          }
+        }
+        // Gum line along the upper jaw, just inside the lip.
+        ctx.strokeStyle = gum;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let i = 0; i <= 10; i++) {
+          const p = lipPt(i / 10);
+          const t = lipTangent(i / 10);
+          const q = { x: p.x - t.y * 4, y: p.y + t.x * 4 };
+          if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+        }
+        ctx.stroke();
+      }
+
+      // ---- Closed-mouth resting snarl: front teeth over the lip line. ----
+      if (open01 < 0.12) {
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        traceSmooth(ctx, [closedY(0.06), closedY(0.4), closedY(0.75), closedY(0.98)]);
+        ctx.stroke();
+        for (let t = 0; t < 5; t++) {
+          const f = 0.3 + t * 0.15;
+          const base = lipPt(f);
+          const tg = lipTangent(f);
+          this._toothTri(ctx, base.x - tg.y * 2, base.y + tg.x * 2, -tg.y, tg.x, 7, 3, tooth);
+        }
+      }
+      // Blood drip from the mouth corner: phase 3 is raw meat.
+      if (ph === 3) {
+        const d = (this.animT * 0.7) % 1;
+        const c0 = hinge;
+        ctx.strokeStyle = 'rgba(127, 29, 29, 0.75)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(c0.x, c0.y + 2);
+        ctx.quadraticCurveTo(c0.x - 4, c0.y + 12 + d * 26, c0.x + 2, c0.y + 24 + d * 30);
+        ctx.stroke();
+        ctx.fillStyle = '#7f1d1d';
+        ctx.beginPath();
+        ctx.arc(c0.x + 2, c0.y + 26 + d * 30, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }

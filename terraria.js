@@ -535,9 +535,12 @@ const NEW_ITEMS = {
   // lifesteal: killing with it feeds you, the way the predator fed on the sea.
   megalodon_blade: {
     id: 'megalodon_blade', name: 'Fang of the Last Predator', type: 'weapon', weaponType: 'melee',
-    damage: 165, range: 145, useTime: 0.30, critBonus: 0.16, lifesteal: 0.05,
+    // The apex weapon: a notch above the Voidstar Cleaver (214 dmg / 0.27s /
+    // 24% crit / 7% lifesteal) in every stat, but not a runaway — it hits
+    // harder, faster and deeper while keeping the same lifesteal family.
+    damage: 232, range: 150, useTime: 0.25, critBonus: 0.27, lifesteal: 0.09,
     icon: '🦷', stackMax: 1,
-    desc: 'A serrated fang-blade of tooth and abyssal ore. Widest reach, heaviest bite in the deep.'
+    desc: 'A serrated fang-blade of tooth and abyssal ore. The sharpest thing ever pulled from the sea.'
   }
 };
 

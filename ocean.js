@@ -1234,6 +1234,25 @@ World.prototype.generateReef = function() {
       if (veg.has(nat) || y >= natSurf) this.tiles[idx] = TILES.AIR;
     }
   }
+  // HARD SWEEP above the waterline. The snapshot shave above only clears
+  // tiles that still MATCH the natural generation, so trees/houses from an
+  // older worldgen (or a player build) survived inside the reef band and
+  // floated over open water. Anything solid and non-temple above seaY in the
+  // reef columns is now removed outright — the reef is open sea.
+  for (let x = left; x < edgeRight; x++) {
+    for (let y = 1; y < seaY; y++) {
+      const idx = y * this.width + x;
+      const t = this.tiles[idx];
+      if (t === TILES.AIR || t === TILES.WATER) continue;
+      if (t === TILES.OCEAN_PORTAL || t === TILES.DORMANT_OCEAN_PORTAL) continue;
+      if (t === TILES.TEMPLE_DOOR || t === TILES.TEMPLE_LEVER || t === TILES.TEMPLE_LEVER_PULLED) continue;
+      if (t === TILES.SACRED_PEARL) continue; // shrine architecture keeps its pearls
+      // Leave the tide-temple superstructure alone (stone-brick/marble walls
+      // inside the temple bounds); clear everything else.
+      if (typeof this.isInsideReefTemple === 'function' && this.isInsideReefTemple(x, y)) continue;
+      this.tiles[idx] = TILES.AIR;
+    }
+  }
 
   for (let x = left; x < edgeRight; x++) {
     let floor;
@@ -2747,6 +2766,50 @@ World.prototype.enterOceanDimension = function() {
   this.surfaceHeights = new Int16Array(this.width);
   this.dimension = 'ocean';
   const arena = this.generateOceanPlanet();
+  // ---- ABYSSAL ORE MIGRATION --------------------------------------------
+  // Ores only generate during generateOceanPlanet(), so any ocean world made
+  // before they existed is stone from seabed to bedrock — no brine, no abyssal,
+  // no tidesteel, no leviathan, and therefore NO Fang of the Last Predator.
+  // Seed the seams into any stone that has never been carved by the player.
+  if (!this._abyssOreSeeded) {
+    const O = OCEAN_TILES;
+    const oceanTiers = [
+      { id: O.BRINE_ORE, weight: 0.055 },   // shallow band
+      { id: O.ABYSS_ORE, weight: 0.040 },   // middle band
+      { id: O.TIDE_ORE, weight: 0.028 },    // deep band
+      { id: O.LEVIATHAN_ORE, weight: 0.012 } // bottom of the world
+    ];
+    const totalW = oceanTiers.reduce((s, t) => s + t.weight, 0);
+    let seeded = 0;
+    for (let x = 2; x < this.width - 2; x++) {
+      // Find the seabed: the first solid non-sand/stone cap from above, or fall
+      // back to the surface height for this column.
+      let top = this.surfaceHeights[x];
+      const span = Math.max(1, this.height - 2 - top);
+      for (let y = top + 4; y < this.height - 2; y++) {
+        const i = y * this.width + x;
+        if (this.tiles[i] !== TILES.STONE) continue;
+        const depth = (y - top) / span;
+        const roll = Math.random() * totalW;
+        let pick = null;
+        for (const t of oceanTiers) {
+          roll -= t.weight;
+          if (roll <= 0) { pick = t.id; break; }
+        }
+        if (pick === null) continue;
+        // Band gating: brine shallow, leviathan deep, so migration matches the
+        // fresh-generation distribution.
+        if (pick === O.BRINE_ORE && depth > 0.62) continue;
+        if (pick === O.LEVIATHAN_ORE && depth < 0.62) continue;
+        this.tiles[i] = pick;
+        seeded++;
+      }
+    }
+    this._abyssOreSeeded = true;
+    if (seeded > 0 && typeof console !== 'undefined') {
+      console.log('[terra-migrate] abyssal ore seams seeded into this ocean world: ' + seeded);
+    }
+  }
   return arena;
 };
 
@@ -5516,15 +5579,14 @@ class Megalodon {
       const rootB = spineAt(0.575, 0.62);
       const mid   = spineAt(0.635, 0);
       const drop  = bodyHalf(0.635) * 0.95 + pecFlap(0.5) * 22;
-      // The wing's outer edge is chewed: same raggedEdge treatment, so the
-      // torn silhouette holds up at every phase.
-      const wingTip = { x: mid.x - 108 - pecFlap(0.12) * 30, y: mid.y + drop * 1.18 + pecFlap(0.12) * 16 };
-      const pts = [
-        rootB,
-        { x: mid.x - 66 - pecFlap(0.3) * 20, y: mid.y + drop * 0.92 + pecFlap(0.3) * 10 }
-      ].concat(raggedEdge({ x: mid.x - 66 - pecFlap(0.3) * 20, y: mid.y + drop * 0.92 + pecFlap(0.3) * 10 },
-        wingTip, 3, 7 + tearAmp * 11, 71.3))
-        .concat([{ x: mid.x - 66 - pecFlap(0.5) * 14, y: mid.y + drop * 0.78 + pecFlap(0.5) * 8 }])
+      // Same swept-wing silhouette as the near pectoral, tucked smaller and
+      // darker behind the body — a clean leading edge out to a pointed tip,
+      // concave torn trailing edge back to the flank.
+      const wingTip = { x: mid.x - 128 - pecFlap(0.12) * 26, y: mid.y + drop * 1.24 + pecFlap(0.12) * 14 };
+      const backEnd = { x: mid.x - 56 - pecFlap(0.5) * 12, y: mid.y + drop * 0.68 + pecFlap(0.5) * 8 };
+      const pts = [rootB]
+        .concat(raggedEdge(rootB, wingTip, 2, 5 + tearAmp * 8, 71.3))
+        .concat(raggedEdge(wingTip, backEnd, 3, 6 + tearAmp * 9, 72.9))
         .concat([rootA]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finDark;
@@ -5738,16 +5800,21 @@ class Megalodon {
       // a hair outside the hull line), so no background can show through
       // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
-      const tipX = base.x - 30 - (this.surge || 0) * 18 - (dashing ? 12 : 0);
-      const tipY = base.y - bodyHalf(0.43) * 1.86 + finTilt * 14;
-      // ---- Edge dressing: a HEALTHY dorsal is one of the cleanest shapes in
-      // the ocean — a smooth swept crescent. Ragged bites only appear as the
-      // animal is wounded; the old code tore even a phase-1 fin (amp 6-7px on
-      // every other segment), which is what made it read as a messy blob
-      // instead of a fin.
-      const edgeTear = Math.max(0, tearAmp - 0.25) * 18;
-      const rootB = { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.45 };
-      const rootF = { x: rootFront.x + 2, y: rootFront.y - bodyHalf(0.43) * 0.30 };
+      // DORSAL RESHAPE. The apex used to sit 30px back at 1.86 body-depths,
+      // with the root anchors pinched so the whole fin read as a short spike
+      // perched on the ridge. A real macropredator dorsal is TALL and clearly
+      // swept: apex ~2.6 body-depths up and well aft of the leading root, with
+      // a long convex leading edge that runs from the shoulder to the tip.
+      const finH = bodyHalf(0.43) * 2.6;
+      const tipX = base.x - 64 - (this.surge || 0) * 12 - (dashing ? 10 : 0);
+      const tipY = base.y - finH + finTilt * 14;
+      // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
+      // the ridge cap) so the leading edge has room to run long and convex —
+      // the line that actually reads "shark fin" from a mile off.
+      const rootFrontL = spineAt(0.62, -0.86);
+      const edgeTear = Math.max(0, tearAmp - 0.25) * 14;
+      const rootB = { x: rootBack.x - 4, y: rootBack.y - bodyHalf(0.43) * 0.40 };
+      const rootF = { x: rootFrontL.x + 2, y: rootFrontL.y - bodyHalf(0.43) * 0.22 };
       const sampleQuad = (p0, pc, p1, n) => {
         const out = [];
         for (let i = 0; i <= n; i++) {
@@ -5760,18 +5827,19 @@ class Megalodon {
         return out;
       };
       const tipP = { x: tipX, y: tipY };
-      // Rear slope (root -> tip): bows out and back so the fin has a full
-      // crescent back instead of a straight tent-pole edge.
+      // Rear slope (root -> tip): SHORT and concave — the fin's trailing edge
+      // drops from the apex quickly, which is what makes the shape read as a
+      // triangle instead of a sail.
       const midRear = { x: (rootB.x + tipX) / 2, y: (rootB.y + tipY) / 2 };
       const leading = edgeTear > 1.5
-        ? raggedEdge(rootB, tipP, 6, edgeTear, 61.7)
-        : sampleQuad(rootB, { x: midRear.x - 9, y: midRear.y - 5 }, tipP, 9);
-      // Front slope (tip -> front root): the long convex edge — the line that
-      // actually reads "shark fin" from a mile off.
+        ? raggedEdge(rootB, tipP, 5, edgeTear, 61.7)
+        : sampleQuad(rootB, { x: midRear.x + 7, y: midRear.y + 10 }, tipP, 7);
+      // Front slope (tip -> front root): the LONG convex leading edge. The
+      // control point is pushed forward and down so the edge bows outward.
       const midFront = { x: (tipX + rootF.x) / 2, y: (tipY + rootF.y) / 2 };
       const trailing = edgeTear > 1.5
-        ? raggedEdge(tipP, rootF, 7, edgeTear, 63.1)
-        : sampleQuad(tipP, { x: midFront.x - 6, y: midFront.y - 11 }, rootF, 11);
+        ? raggedEdge(tipP, rootF, 6, edgeTear, 63.1)
+        : sampleQuad(tipP, { x: midFront.x + 14, y: midFront.y - 4 }, rootF, 10);
       // Base: ride the actual back ridge so the fin is one piece with the hull.
       const baseLine = [];
       for (let u = 0.62; u >= 0.235; u -= 0.035) {
@@ -5800,15 +5868,15 @@ class Megalodon {
       // Three rays fanning root -> tip: fin structure, not clutter.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(rootFront.x - 6, rootFront.y - 10 - r * 3);
-        ctx.lineTo(tipX + 8 + r * 5, tipY + 16 + r * 13);
+        ctx.moveTo(rootFrontL.x - 2 - r * 6, rootFrontL.y - 8 - r * 6);
+        ctx.lineTo(tipX + 6 + r * 9, tipY + 22 + r * 24);
         ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(206, 224, 255, 0.30)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(rootFront.x + 2, rootFront.y);
-      ctx.quadraticCurveTo(rootFront.x - 22, rootFront.y - bodyHalf(0.43) * 0.52, tipX, tipY - 2);
+      ctx.moveTo(rootFrontL.x + 2, rootFrontL.y);
+      ctx.quadraticCurveTo((rootFrontL.x + tipX) / 2 + 12, (rootFrontL.y + tipY) / 2 - 4, tipX, tipY - 2);
       ctx.stroke();
       ctx.restore();
       // Apex: the dorsal is notched and torn.
@@ -5890,11 +5958,15 @@ class Megalodon {
       const mid   = spineAt(0.635, 0);
       const f = pecFlap;
       const wing = bodyHalf(0.635) * 1.5 + swing * 0.05;
-      const wMid = { x: mid.x - 74 - f(0.3) * 26, y: mid.y + wing * 0.9 + f(0.3) * 12 };
-      const wTip = { x: mid.x - 122 - f(0.12) * 34, y: mid.y + wing * 1.22 + f(0.12) * 18 };
-      const pts = [rootB, wMid]
-        .concat(raggedEdge(wMid, wTip, 3, 8 + tearAmp * 12, 81.7))
-        .concat([{ x: mid.x - 76 - f(0.5) * 18, y: mid.y + wing * 0.8 + f(0.5) * 10 }])
+      // PECTORAL RESHAPE. The wing used to be built from [rootB, wMid, wTip]
+      // with wMid only 74px out at 0.9 wing-depth — a fat, nearly vertical
+      // paddle. A pectoral is a LONG, NARROW, SWEPT-BACK wing: leading edge
+      // runs clean from the belly to a pointed tip far aft, then a concave
+      // trailing edge returns. Tearing only lives on the trailing edge.
+      const wTip = { x: mid.x - 148 - f(0.12) * 30, y: mid.y + wing * 1.30 + f(0.12) * 16 };
+      const trailingEnd = { x: mid.x - 62 - f(0.5) * 14, y: mid.y + wing * 0.70 + f(0.5) * 8 };
+      const pts = [rootB, wTip]
+        .concat(raggedEdge(wTip, trailingEnd, 3, 6 + tearAmp * 10, 81.7))
         .concat([rootA]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#ffe4e6' : finLite;
@@ -5908,19 +5980,21 @@ class Megalodon {
       // hanging off the fin rather than as membrane structure.
       ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
       ctx.lineWidth = 1.8;
-      // Rays: three clean strokes across the wing, not five scribbled lines.
+      // Rays: three clean strokes fanning along the swept wing.
       for (let r = 0; r < 3; r++) {
         ctx.beginPath();
-        ctx.moveTo(mid.x + 10, mid.y + wing * 0.5 + r * 5);
-        ctx.quadraticCurveTo(mid.x - 34, mid.y + wing * 0.78 + r * 6,
-          mid.x - 58 - f(0.2) * 12, mid.y + wing * 0.92 + r * 5);
+        ctx.moveTo(rootB.x + 2, rootB.y - 3 + r * 3);
+        ctx.quadraticCurveTo(mid.x - 58, mid.y + wing * 0.82 + r * 6,
+          wTip.x + 22 + r * 11, wTip.y - 12 - r * 8);
         ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.4)';
+      // The lit leading edge, running root -> tip along the sweep.
+      ctx.strokeStyle = 'rgba(206, 224, 255, 0.28)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(mid.x - 70, mid.y + wing * 0.86);
-      ctx.quadraticCurveTo(mid.x - 96, mid.y + wing * 1.04, mid.x - 104 - f(0.15) * 12, mid.y + wing * 1.16);
+      ctx.moveTo(rootB.x, rootB.y - 2);
+      ctx.quadraticCurveTo((rootB.x + wTip.x) / 2 - 6, (rootB.y + wTip.y) / 2 + wing * 0.10,
+        wTip.x, wTip.y);
       ctx.stroke();
     }
 
@@ -6021,6 +6095,93 @@ class Megalodon {
         }
       }
     }
+
+      // ---- Richer hide-wear pass. The single-slash loop above is kept, and
+      // these additional scar families layer over it so the animal reads as a
+      // scarred veteran rather than a cleanly sketched silhouette.
+      const seed = this.scarSeed || 0;
+      // (a) TOOTH-RAKE TRIPLES: three parallel scratches from one rival's
+      //     swipe — always a tight cluster of exactly three.
+      const rakes = 2 + Math.floor(this._hash01(seed * 5.7) * 3);
+      for (let rk = 0; rk < rakes; rk++) {
+        const rs = rk * 13.31 + seed * 0.9;
+        const u = 0.22 + this._hash01(rs) * 0.6;
+        const p = spineAt(u, -0.74 + this._hash01(rs * 1.4) * 0.55);
+        const baseA = 0.55 + this._hash01(rs * 2.1) * 0.6 + spineBend(u) * 0.35;
+        const len = 20 + this._hash01(rs * 2.8) * 26;
+        for (let t = -1; t <= 1; t++) {
+          const a = baseA + t * 0.14;
+          const off = t * 5.5;
+          ctx.strokeStyle = 'rgba(206, 214, 228, ' + (0.34 + injury * 0.2).toFixed(2) + ')';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.sin(baseA) * off, p.y + Math.cos(baseA) * off);
+          ctx.lineTo(p.x + Math.sin(baseA) * off + Math.cos(a) * len,
+            p.y + Math.cos(baseA) * off + Math.sin(a) * len);
+          ctx.stroke();
+        }
+      }
+      // (b) HEALED BITE HOLES: paired pockmarks with a raised pale rim.
+      const holes = 2 + Math.floor(this._hash01(seed * 3.9) * 3);
+      for (let hIdx = 0; hIdx < holes; hIdx++) {
+        const hs = hIdx * 8.61 + seed * 3.4;
+        const u = 0.20 + this._hash01(hs) * 0.64;
+        const p = spineAt(u, -0.72 + this._hash01(hs * 1.6) * 0.5);
+        const rr = 3.4 + this._hash01(hs * 2.3) * 4.4;
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.55)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(226, 234, 252, 0.35)';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.45)';
+        ctx.beginPath(); ctx.arc(p.x - rr * 2.2, p.y + rr * 0.8, rr * 0.5, 0, Math.PI * 2); ctx.fill();
+      }
+      // (c) BARNACLE RINGS: pale encrusted clusters from its slow years.
+      const barns = 4 + Math.floor(this._hash01(seed * 7.1) * 4);
+      for (let bIdx = 0; bIdx < barns; bIdx++) {
+        const bs = bIdx * 4.773 + seed * 2.1;
+        const u = 0.30 + this._hash01(bs) * 0.56;
+        const p = spineAt(u, -0.9 + this._hash01(bs * 1.7) * 0.45);
+        const rr = 2.2 + this._hash01(bs * 2.3) * 3.2;
+        ctx.strokeStyle = 'rgba(216, 226, 244, 0.42)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(180, 195, 220, 0.28)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(240, 246, 255, 0.28)';
+        ctx.beginPath(); ctx.arc(p.x - rr * 0.3, p.y - rr * 0.3, rr * 0.3, 0, Math.PI * 2); ctx.fill();
+      }
+      // (d) DAPPLE COAT: faint two-tone speckle along the whole flank, bigger
+      //     and denser than before but low-contrast — texture, never noise.
+      const dapples = 30 + Math.floor(injury * 14);
+      for (let d = 0; d < dapples; d++) {
+        const ds = d * 3.317 + seed * 0.31;
+        const u = 0.10 + this._hash01(ds) * 0.86;
+        const p = spineAt(u, -0.95 + this._hash01(ds * 1.9) * 1.55);
+        const rr = 2.6 + this._hash01(ds * 2.7) * 6;
+        const upper = this._hash01(ds * 1.9) < 0.55;
+        ctx.fillStyle = upper ? 'rgba(210, 230, 255, 0.07)' : 'rgba(6, 10, 20, 0.06)';
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, rr, rr * 0.58, this._hash01(ds * 4.1) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // (e) CROSS-HATCHED SCAR WEBS: long-healed wounds crossed by older ones.
+      const webs = 1 + Math.floor(this._hash01(seed * 9.9) * 2);
+      for (let wIdx = 0; wIdx < webs; wIdx++) {
+        const ws = wIdx * 17.43 + seed * 2.6;
+        const u = 0.30 + this._hash01(ws) * 0.46;
+        const p = spineAt(u, -0.66 + this._hash01(ws * 1.3) * 0.5);
+        const arm = 12 + this._hash01(ws * 2.4) * 14;
+        ctx.strokeStyle = 'rgba(224, 232, 250, 0.26)';
+        ctx.lineWidth = 1.2;
+        for (const a of [0.7, 2.15, 3.5, 4.9]) {
+          const aa = a + this._hash01(ws * 3.1) * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(p.x - Math.cos(aa) * arm, p.y - Math.sin(aa) * arm * 0.7);
+          ctx.lineTo(p.x + Math.cos(aa) * arm, p.y + Math.sin(aa) * arm * 0.7);
+          ctx.stroke();
+        }
+      }
 
     // ======================================================================
     // 8. THE HEAD â€” blunt snout, heavy brow, burning eye. The head carries

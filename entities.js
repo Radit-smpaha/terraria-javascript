@@ -1574,11 +1574,93 @@ class Player {
       }
       ctx.restore();
     }
-    if (!isHellWeapon) {
-      ctx.font = "18px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(itemData.icon, 8, -6);
+    if (!isHellWeapon && !isPrismatic) {
+      // ---- REAL WEAPON SPRITES ------------------------------------------------
+      // Held items used to be drawn as the item's emoji, which looked like a
+      // sticker floating next to the player. Every weapon class is now drawn as
+      // a proper vector sprite anchored at the hand, so a sword looks like a
+      // sword, a pick like a pick, and a bow like a bow.
+      const it = heldItem.id;
+      const wt = itemData.weaponType;
+      const isTool = itemData.type === 'tool';
+      const isBlock = itemData.type === 'tile';
+      if (!isTool && !isBlock && (wt === 'melee' || wt === 'ranged' || wt === 'magic')) {
+        ctx.save();
+        if (wt === 'melee') {
+          // ---- MELEE: blade up, guard, grip, pommel. Proportions scale with
+          // the weapon's reach so a greatblade is visibly longer than a knife.
+          const reach = Math.max(34, Math.min(60, (itemData.range || 100) * 0.42));
+          const w = reach >= 48 ? 5 : 4;
+          // Blade: tapering steel with a bright edge and a dark spine.
+          ctx.fillStyle = '#94a3b8';
+          ctx.beginPath();
+          ctx.moveTo(-w, 0);
+          ctx.lineTo(-w * 0.55, -reach * 0.92);
+          ctx.lineTo(0, -reach);
+          ctx.lineTo(w * 0.55, -reach * 0.92);
+          ctx.lineTo(w, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = '#e2e8f0';          // lit edge
+          ctx.fillRect(-w * 0.6, -reach * 0.9, w * 0.6, reach * 0.86);
+          ctx.fillStyle = '#475569';          // spine shadow
+          ctx.fillRect(w * 0.2, -reach * 0.9, w * 0.45, reach * 0.86);
+          // Guard + grip + pommel.
+          ctx.fillStyle = '#78350f';
+          ctx.fillRect(-w - 3, 0, w * 2 + 6, 3.5);
+          ctx.fillStyle = '#5b3a1a';
+          ctx.fillRect(-2, 3.5, 4, 9);
+          ctx.fillStyle = '#d4a017';
+          ctx.beginPath(); ctx.arc(0, 14, 2.4, 0, Math.PI * 2); ctx.fill();
+          // Per-weapon accent so each legendary reads as itself.
+          const accent = {
+            void_star_blade: '#818cf8', ossuary_blade: '#e2e8f0', inferno_brand: '#f97316',
+            megalodon_blade: '#67e8f9', aurora_blade: '#22d3ee', prismatic_saber: '#a855f7',
+            cursed_edge: '#a855f7', demon_soul_saber: '#ef4444', hellstone_greatblade: '#f97316'
+          }[it];
+          if (accent) {
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(-w * 0.7, -reach * 0.55);
+            ctx.quadraticCurveTo(0, -reach * 0.7, w * 0.7, -reach * 0.55);
+            ctx.stroke();
+          }
+        } else if (wt === 'ranged') {
+          // ---- RANGED: a real bow — curved limbs, string, grip wrap.
+          ctx.strokeStyle = '#8b5a2b';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(2, -6, 17, Math.PI * 0.62, Math.PI * 1.38);
+          ctx.stroke();
+          ctx.strokeStyle = '#e8e2d0';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(-9, -16); ctx.lineTo(-2, -6); ctx.lineTo(-9, 4);
+          ctx.stroke();
+          ctx.fillStyle = '#5b3a1a';
+          ctx.fillRect(0, -9, 4, 7);
+        } else {
+          // ---- MAGIC: a staff — shaft, wrapped head, glowing orb.
+          ctx.fillStyle = '#4a3623';
+          ctx.fillRect(-1.6, -22, 3.2, 34);
+          ctx.fillStyle = '#2f2318';
+          ctx.fillRect(-2.4, -22, 4.8, 5);
+          const oc = it === 'abyssal_staff' ? '#a855f7' : '#38bdf8';
+          ctx.fillStyle = oc;
+          ctx.beginPath(); ctx.arc(0, -26, 4.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.65)';
+          ctx.beginPath(); ctx.arc(-1.2, -27.5, 1.6, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      } else {
+        // Non-weapon categories (materials, food, accessories…) keep the icon
+        // glyph — a raw fish or a pearl reads BETTER as a pictogram.
+        ctx.font = "18px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(itemData.icon, 8, -6);
+      }
     }
 
     ctx.restore();
