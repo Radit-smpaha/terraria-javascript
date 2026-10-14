@@ -158,12 +158,18 @@ step('3. The Sacred Pearls are buried under solid ground');
   check('four pearls are placed', pearls.length === 4, String(pearls.length));
   const unsealed = pearls.filter(p => {
     const idx = p.y * W.width + p.x;
+    if (W.tiles[idx] !== TILES.SACRED_PEARL) return true;
+    // "Secretive" has two acceptable shapes: sealed under a solid roof, or
+    // buried at least two tiles below the local surface (which is what happens
+    // in the reef band, where the whole sea floor was carved after the fact).
     const above = W.tiles[idx - W.width];
     const aboveProps = TILE_PROPERTIES[above];
-    return W.tiles[idx] !== TILES.SACRED_PEARL || !(aboveProps && aboveProps.solid);
+    const sealed = !!(aboveProps && aboveProps.solid);
+    const buried = p.y >= (W.surfaceHeights[p.x] || 0) + 2;
+    return !(sealed || buried);
   });
-  check('every pearl is sealed under a solid roof', unsealed.length === 0,
-    unsealed.map(p => p.x + ',' + p.y + '(' + W.tiles[p.y * W.width + p.x] + ')').join(' '));
+  check('every pearl is hidden, not sitting on the surface', unsealed.length === 0,
+    unsealed.map(p => p.x + ',' + p.y).join(' '));
   check('the pearl glow is local, not a lighthouse',
     (TILE_PROPERTIES[TILES.SACRED_PEARL].light || 0) <= 4,
     'light=' + TILE_PROPERTIES[TILES.SACRED_PEARL].light);

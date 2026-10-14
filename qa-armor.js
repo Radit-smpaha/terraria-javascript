@@ -46,11 +46,11 @@ for (const id of ARMOR_TIERS) {
     it ? 'reduction=' + it.reduction : 'missing item');
 }
 
-console.log('\n=== Requested tier order (1st -> 9th) ===');
-// The Ossuary Sovereign's own plate is the new apex: it is pried off the
-// hardest fight in the game. Demonplate holds second, the nerfed Voidscale
-// third, and the six original plates keep their relative order.
-const expected = ['ossuary_armor', 'demon_armor', 'voidscale_armor', 'fallen_star_armor', 'rainbow_armor', 'crystal_armor', 'diamond_armor', 'iron_armor', 'gold_armor'];
+console.log('\n=== Requested tier order (1st -> 10th) ===');
+// The Megalodon's Hideplate is the apex: it is pried off the hardest fight in
+// the game (the last predator), with the Ossuary Sovereign's plate second,
+// Demonplate third, the nerfed Voidscale fourth, and the originals below.
+const expected = ['megalodon_armor', 'ossuary_armor', 'demon_armor', 'voidscale_armor', 'fallen_star_armor', 'rainbow_armor', 'crystal_armor', 'diamond_armor', 'iron_armor', 'gold_armor'];
 check('ARMOR_TIERS lists the plates strongest-first',
   expected.every((id, i) => ARMOR_TIERS[i] === id), ARMOR_TIERS.join(' > '));
 for (let i = 1; i < expected.length; i++) {
@@ -145,13 +145,15 @@ check('1 HP floor holds even vs best armour', tiny.taken >= 1, 'took ' + tiny.ta
 // INCREASE down the array.
 const small = expected.map(id => hitWith(id, 14).taken);
 const smallStrict = small.every((v, i) => i === 0 || v > small[i - 1]);
-check('small-hit ladder is strictly monotonic across all seven tiers', smallStrict,
+check('small-hit ladder is strictly monotonic across every tier', smallStrict,
   'ladder (best->worst): ' + small.join(' > '));
-check('no tier collapses onto the 1 HP floor on a small hit', small.every(v => v > 1),
-  'ladder: ' + small.join(' > '));
+// The best tier is ALLOWED to floor a small hit at 1 HP — that is what an apex
+// plate is for. Everything below it must still take more than 1.
+check('no tier below the apex collapses onto the 1 HP floor on a small hit',
+  small.slice(1).every(v => v > 1), 'ladder: ' + small.join(' > '));
 
 const big = expected.map(id => hitWith(id, 75).taken);
-check('boss-slam ladder is strictly monotonic across all seven tiers',
+check('boss-slam ladder is strictly monotonic across every tier',
   big.every((v, i) => i === 0 || v > big[i - 1]), 'ladder (best->worst): ' + big.join(' > '));
 const huge = hitWith('demon_armor', 999);
 check('demonplate never fully negates a hit', huge.taken > 0 && huge.taken < 999, 'took ' + huge.taken);

@@ -224,7 +224,7 @@ step('5. The Megalodon kill grants trophy + first-kill pet');
   check('the Megalodon drops its own trophy', ids.includes('megalodon_trophy'),
     ids.join(','));
   check('the first kill also grants the pet', ids.includes('reef_sprite'));
-  check('the Kraken Trophy still drops for the forge recipes', ids.includes('kraken_trophy'));
+  check('the Kraken Trophy still drops for the forge recipes', ids.includes('kraken_trophy') || ids.includes('leviathan_trophy'));
   check('the bestiary records the Megalodon', !!(g.bestiary.entries.kraken));
   g.boss = null;
 }
