@@ -202,9 +202,31 @@ step('4. The Abyssal Horn is the only way to call the Megalodon');
   g._bossKinds = {};
   g.boss = null;
   const summoned = g.performAbyssRite();
-  check('the horn summons the Megalodon inside the arena', summoned === true);
+  check('the horn summons the Megalodon from anywhere on the planet', summoned === true);
   check('the summon IS a Megalodon', g.boss instanceof Megalodon && g.boss.kind === undefined || g.boss instanceof Megalodon);
   check('the horn is spent when it works', g.countItem('abyss_horn') === 0);
+  // The spawn contract: eight tiles below the player, beside them (never
+  // inside them) — it rises out of the deep beneath their feet.
+  const dyTiles = (g.boss.y - g.player.y) / TILE_SIZE;
+  const dxTiles = (g.boss.x - g.player.x) / TILE_SIZE;
+  check('the shark spawns 8 tiles below the player', Math.abs(dyTiles - 8) < 0.6,
+    'dy=' + dyTiles.toFixed(2));
+  check('the spawn is beside the player, not inside them', Math.abs(dxTiles) > 2,
+    'dx=' + dxTiles.toFixed(2));
+
+  // ---- A banked fight must RESUME, not block the horn ----------------
+  // Walking out of (or dying in) a live fight banks its HP; the old rite then
+  // refused every later summon, which is what made the horn look broken.
+  g.boss = null;
+  g.leviathanHP = 60000;
+  g.inventory[g.player.selectedSlot] = { id: 'abyss_horn', count: 1 };
+  const resumed = g.performAbyssRite();
+  check('a banked fight is resumed by the horn, not refused', resumed === true);
+  check('the resumed shark carries the banked wound',
+    !!g.boss && g.boss.hp > 0 && g.boss.hp < g.boss.maxHp,
+    g.boss ? g.boss.hp + '/' + g.boss.maxHp : 'no boss');
+  g.boss = null;
+  g.leviathanHP = null;
   check('the bestiary has not been fobbed off with a Kraken', true);
 
   // A second horn with a boss already awake is refused.

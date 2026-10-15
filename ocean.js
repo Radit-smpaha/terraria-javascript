@@ -6055,15 +6055,19 @@ class Megalodon {
       // a hair outside the hull line), so no background can show through
       // between the fin and the back even while the spine bends. Bleed
       // Frenzy/Apex tear chunks out of its back.
-      // DORSAL RESHAPE (take two): 2.6 body-depths with the apex 64px aft made
-      // the fin dominate the whole silhouette — it was the first thing you saw
-      // and it swallowed the head. A macropredator's dorsal is tall but
-      // PROPORTIONATE: apex sits ~2.0 body-depths up and less far aft, with the
-      // leading edge still long and convex (that line is what reads "shark fin"
-      // from a mile off) and the base roots wide apart so the fin is clearly
-      // part of the back, not a spike stuck on it.
-      const finH = bodyHalf(0.43) * 2.0;
-      const tipX = base.x - 42 - (this.surge || 0) * 12 - (dashing ? 10 : 0);
+      // DORSAL RESHAPE (take three). Two reports in a row: still too big, and
+      // the fill colour (`finLite`) did not match the hide it grows out of, so
+      // the fin read as a separate pasted-on triangle with no volume.
+      //   - HEIGHT: apex ~1.35 body-depths and only 26px aft. The fin is now
+      //     proportionate to the body rather than the first thing you see.
+      //   - SHADING: the fin is no longer one flat fill. It is filled with the
+      //     hull's own `hideTop` colour (so it belongs to the animal), then
+      //     given a darker base gradient where it meets the back, a lit leading
+      //     edge along the convex sweep, and a shadow band on the trailing
+      //     side — the same three-band treatment the hull gets, so the fin has
+      //     the same volume language as the body.
+      const finH = bodyHalf(0.43) * 1.35;
+      const tipX = base.x - 26 - (this.surge || 0) * 12 - (dashing ? 10 : 0);
       const tipY = base.y - finH + finTilt * 14;
       // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
       // the ridge cap) so the leading edge has room to run long and convex —
@@ -6109,8 +6113,32 @@ class Megalodon {
         .concat([{ x: rootFront.x + 4, y: rootFront.y + 3 }])
         .concat(baseLine);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
-      ctx.fillStyle = flash ? '#e2e8f0' : finLite;
+      // Fill with the HULL's own back colour so the fin is the same animal,
+      // then shade it: a dark foot where it springs from the back, the mid tone
+      // over the membrane, and a lit leading edge on the convex sweep.
+      ctx.fillStyle = flash ? '#e2e8f0' : finDark;
       ctx.fill();
+      ctx.save();
+      ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
+      ctx.clip();
+      // Base shadow: darkest at the root, fading up the membrane.
+      const foot = ctx.createLinearGradient(0, base.y, 0, tipY);
+      foot.addColorStop(0, 'rgba(4, 10, 22, 0.55)');
+      foot.addColorStop(0.45, 'rgba(4, 10, 22, 0.12)');
+      foot.addColorStop(1, 'rgba(4, 10, 22, 0)');
+      ctx.fillStyle = foot;
+      ctx.fillRect(Math.min(rootBack.x, tipX) - 4, Math.min(rootBack.y, tipY) - 4,
+        Math.abs(rootBack.x - tipX) + 8, Math.abs(rootBack.y - tipY) + 8);
+      // Mid membrane: the hide's own top tone, lighter toward the apex.
+      const membrane = ctx.createLinearGradient(rootF.x, rootF.y, tipX, tipY);
+      membrane.addColorStop(0, flash ? '#cbd5e1' : hideMid);
+      membrane.addColorStop(1, flash ? '#f1f5f9' : hideTop);
+      ctx.fillStyle = membrane;
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(Math.min(rootF.x, tipX) - 4, Math.min(rootF.y, tipY) - 4,
+        Math.abs(rootF.x - tipX) + 8, Math.abs(rootF.y - tipY) + 8);
+      ctx.globalAlpha = 1;
+      ctx.restore();
       ctx.strokeStyle = outline;
       ctx.lineWidth = 4;
       ctx.stroke();
