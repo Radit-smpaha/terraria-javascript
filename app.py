@@ -47,25 +47,35 @@ INLINED_URL = (
 # build (verified: 200 OK, fresh Last-Modified) and the player would still see
 # the OLD game - which reads as "my update never deployed". Browsers key their
 # cache on the full URL, so any change to the query string forces a real refetch.
-# The token is derived from the size of the inlined build that ships in THIS
-# deploy, so it is stable across reruns (no needless re-download mid-session) but
-# automatically different on every rebuild - meaning once this file is fixed, all
-# future game updates show up with no extra work. CACHE_FORCE is a manual knob to
-# bust the cache by hand if a hotfix ever needs it.
+#
+# WHY A TIME BUCKET AS WELL AS THE FILE HASH: the hash only helps if the app
+# process can SEE the new file. When Streamlit Cloud is serving a stale repo
+# copy - or the running process has not been rebooted since the push - the hash
+# is unchanged and the iframe URL is byte-identical, so the browser keeps
+# serving its cached copy and "nothing changes in the website" forever, no
+# matter how many times GitHub Pages is refetched. The rotating bucket makes the
+# URL change on a fixed cadence regardless of local state, so every published
+# build is picked up within one bucket. The cost is one re-download per bucket
+# (Pages and the browser both cache per-URL), which is nothing next to a game
+# update that never appears.
+# CACHE_FORCE is a manual knob; bump it by hand to bust the cache immediately.
 CACHE_FORCE = "v1"
+CACHE_BUCKET_SECONDS = 300          # 5 minutes: fresh-enough, not spammy
 try:
     # Hash (not size) so a future edit that happens to keep the same byte count
     # still busts the cache.
     import hashlib
+    import time
 
     _blob = (BASE / "terraria.inlined.html").read_bytes()
-    CACHE_TOKEN = "%s-%s" % (
-        CACHE_FORCE,
-        hashlib.md5(_blob).hexdigest()[:10],
-    )
+    _filehash = hashlib.md5(_blob).hexdigest()[:10]
 except Exception:
-    CACHE_TOKEN = "%s-unknown" % CACHE_FORCE
+    _filehash = "nofile"
+_bucket = int(time.time() // CACHE_BUCKET_SECONDS)
+CACHE_TOKEN = "%s-%s-b%d" % (CACHE_FORCE, _filehash, _bucket)
 INLINED_URL = "%s?v=%s" % (INLINED_URL, CACHE_TOKEN)
+# Same treatment for the fallback URL, so a fallback is never a stale copy.
+GITHUB_FALLBACK = "%s?v=%s" % (GITHUB_FALLBACK, CACHE_TOKEN)
 # The game fills 100vh of whatever frame it is given, so the frame has to be
 # sized to the WINDOW, not to a fixed pixel count. 850px was taller than a
 # laptop viewport, which put the bottom of the arena - the hotbar - below the
