@@ -22541,7 +22541,7 @@ World.prototype.generateOceanPlanet = function() {
   // are larger, and the small islet scatter is denser out there too. The east
   // still has open water (the colosseum and the ruins need room), it just is
   // not the only thing out west.
-  const islandCount = 12 + Math.floor(Math.random() * 4);
+  const islandCount = 16 + Math.floor(Math.random() * 5);
   const islands = [];
   const minGap = 24;
   const margin = 20;
@@ -22559,7 +22559,14 @@ World.prototype.generateOceanPlanet = function() {
     if (islands.some(other => Math.abs(other.cx - cx) < minGap)) continue;
     // Bigger overall, and bigger still the further west you go.
     const west = 1 - Math.min(1, Math.max(0, (cx - margin) / usable));
-    const sizeBoost = 0.75 + west * 0.7;
+    // WEST SIDE BIGGER. The archipelago already biased west; the report is that
+    // it needs to be MORE land out there, not just a bias. Two changes:
+    //   - the west curve is squared, so the biggest islands bunch into the
+    //     western third instead of tapering smoothly across the whole map;
+    //   - the size boost roughly doubles on the far west, with the shoal
+    //     count raised to match (more islets = a real archipelago to cross).
+    const westBias = Math.pow(west, 1.8);
+    const sizeBoost = 0.75 + westBias * 1.45;
     const halfWidth = Math.round((8 + Math.floor(Math.random() * 9)) * sizeBoost);
     const height = Math.round((6 + Math.floor(Math.random() * 9)) * sizeBoost);
     islands.push({ cx, halfWidth, height });
@@ -22602,13 +22609,13 @@ World.prototype.generateOceanPlanet = function() {
     // Same westward bias for the free-floating shoals: weight the roll toward
     // the left third so the western sea is a proper archipelago to swim across
     // instead of the long empty crossing it used to be.
-    const westRoll = Math.pow(Math.random(), 1.5);
+    const westRoll = Math.pow(Math.random(), 1.85);
     const wcx = margin + Math.floor(usable * westRoll);
     if (islands.some(o => Math.abs(o.cx - wcx) < 16)) continue;
     if (islets.some(o => Math.abs(o.cx - wcx) < isletSpacing)) continue;
     islets.push({ cx: wcx, halfWidth: 4 + Math.floor(Math.random() * 4),
       height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
-    if (islets.length >= 96) break;
+    if (islets.length >= 140) break;
   }
 
   const allIslands = islands.concat(islets);
@@ -22816,44 +22823,35 @@ World.prototype.generateOceanPlanet = function() {
   // bottom, so even a shallow column still yields brine at its own floor.
   //
   // TWO FIXES HERE:
-  //   1. ISLAND BLEED. `duneFloor` is the flat seabed line, so the ore loop ran
-  //      straight under the islands: digging into a small island's rock gave
-  //      you abyssal ore without ever touching the seabed, and the islands
-  //      looked studded with it. Ore is now skipped entirely under any column
-  //      that is not open seabed (a column sitting under an island has stone
-  //      tiles ABOVE the seabed line), and the band starts a few tiles below
-  //      the true seabed so you have to dig for it.
-  //   2. TOO FREQUENT. Roll cut-offs were 1.2%/4.2%/... per stone tile, which
-  //      is a LOT on a planet the size of the map. Every band is now scaled by
-  //      one ORE_RATE constant, tuned down to roughly a third.
-  const ORE_RATE = 0.34;
+  //   1. ISLAND BLEED. Ore used to seed straight under the islands as well. The
+  //      real test for "this column is an island" is solid rock ABOVE THE
+  //      WATERLINE — not a comparison against the flat `duneFloor` number,
+  //      which varied per column and wrongly excluded most of the open seabed.
+  //   2. TOO FREQUENT (then too scarce). One ORE_RATE constant scales every
+  //      band's roll cut-off. It was 0.34, which combined with the broken
+  //      column filter to leave almost no ore in the world; it is now 0.9.
+  const ORE_RATE = 0.9;
   const cut = (base) => base * ORE_RATE;
+  // The sea surface, for the island test.
+  const seaSurface = this.oceanArena ? this.oceanArena.seaY : 0;
   for (let x = 2; x < this.width - 2; x++) {
     const top = duneFloor[x];
     const span = Math.max(1, this.height - 2 - top);
-    // The column's true top solid tile: if anything solid sits above the
-    // seabed line, this column is inside an island (or its roots), and ore is
-    // not allowed to bleed into it.
-    let columnTop = -1;
-    for (let y = 2; y < this.height - 2; y++) {
-      const above = this.getTile(x, y);
-      if (above !== TILES.AIR && above !== TILES.WATER) { columnTop = y; break; }
-    }
-    // Islands stand ABOVE the seabed line, so a column is an island column when
-    // its top solid tile is well above `top` (the local seabed). A column solid
-    // at the seabed with no open water below it is an island's root mass.
-    if (columnTop >= 0 && columnTop < top) continue;      // island body — no ore
-    {
-      const atSeabed = this.getTile(x, top);
-      if (atSeabed !== TILES.AIR && atSeabed !== TILES.WATER) {
-        let openBelow = 0;
-        for (let y = top + 1; y < Math.min(this.height - 2, top + 6); y++) {
-          const b = this.getTile(x, y);
-          if (b === TILES.AIR || b === TILES.WATER) openBelow++;
-        }
-        if (openBelow < 4) continue;                      // solid root column
+    // Island body: solid rock reaching above the sea surface in this column.
+    let waterlineBlocked = false;
+    if (seaSurface > 2) {
+      for (let y = 2; y < seaSurface; y++) {
+        if (this.getTile(x, y) !== TILES.AIR) { waterlineBlocked = true; break; }
+      }
+    } else {
+      // No arena (direct generator call): fall back to the column's own top
+      // solid tile sitting well above the local seabed.
+      for (let y = 2; y < top; y++) {
+        const above = this.getTile(x, y);
+        if (above !== TILES.AIR && above !== TILES.WATER) { waterlineBlocked = true; break; }
       }
     }
+    if (waterlineBlocked) continue;                            // island / roots — no ore
     // Ore only begins a few tiles under the seabed it belongs to.
     const oreStart = top + 4;
     for (let y = oreStart; y < this.height - 2; y++) {
@@ -23520,40 +23518,30 @@ World.prototype.enterOceanDimension = function() {
       // arena's floor line (`surfaceHeights` is left at the sea surface by the
       // dimension swap, so it cannot be used), and a column whose topmost solid
       // tile is ABOVE that line is an island column and gets no seam here.
-      const seabed = this.oceanArena ? this.oceanArena.floorY : this.surfaceHeights[x];
-      let columnTop = -1;
-      for (let y = 2; y < this.height - 2; y++) {
-        const above = this.tiles[y * this.width + x];
-        if (above !== TILES.AIR && above !== TILES.WATER) { columnTop = y; break; }
+      // ---- ISLAND BLEED, same fix as the generator -----------------------
+      // This migration ran over EVERY stone tile below the seabed line, which
+      // includes the rock inside and under every island: a small island's
+      // underside came out studded with ore.
+      //
+      // The arena's `floorY` is a flat REFERENCE, not the seabed — `duneFloor`
+      // varies per column, so comparing a column's first solid tile against one
+      // flat number classified ~417 of ~436 columns as "island" and suppressed
+      // ore over nearly the whole planet (the "there's still no ore" report).
+      // The real test is two-part:
+      //   1. An island column has solid rock ABOVE THE WATERLINE.
+      //   2. The column's own seabed is the first solid tile below the sea.
+      const seaY = this.oceanArena ? this.oceanArena.seaY : (this.surfaceHeights[x]);
+      let waterlineBlocked = false;
+      for (let y = 2; y < seaY; y++) {
+        if (this.tiles[y * this.width + x] !== TILES.AIR) { waterlineBlocked = true; break; }
       }
-      // An island's ROOT mass can sit below the seabed line, so the column-top
-      // test alone is not enough: a column whose first solid tile is ABOVE the
-      // seabed (island body) or whose column is solid AT the seabed (island
-      // roots sitting in it) is island rock, not open seabed. Open-seabed
-      // columns have water at the seabed line, so this only skips islands.
-      // An island's root/beach mass reaches down to the seabed, so a column
-      // can be solid AT the seabed line and still be island rock. The robust
-      // test is the column's own first-solid tile: anything solid above the
-      // seabed line means island, and any ore below that is root rock.
-      // Open-seabed columns have their first solid tile AT the seabed.
-      const firstSolid = this.tiles.find ? null : null;
-      let fsY = -1;
-      for (let y = 2; y < this.height - 2; y++) {
-        const above = this.tiles[y * this.width + x];
-        if (above !== TILES.AIR && above !== TILES.WATER) { fsY = y; break; }
+      if (waterlineBlocked) continue;                          // island body / roots
+      let seabed = -1;
+      for (let y = Math.max(2, seaY); y < this.height - 2; y++) {
+        const t = this.tiles[y * this.width + x];
+        if (t !== TILES.AIR && t !== TILES.WATER) { seabed = y; break; }
       }
-      if (fsY >= 0 && fsY < seabed) continue;                 // island body
-      if (fsY === seabed) {
-        // Solid exactly at the seabed line: check whether there is open seabed
-        // in this column at all (a beach/island-root column is solid straight
-        // down, an open column is water at the line and solid only below).
-        let openBelow = 0;
-        for (let y = seabed + 1; y < Math.min(this.height - 2, seabed + 6); y++) {
-          const b = this.tiles[y * this.width + x];
-          if (b === TILES.AIR || b === TILES.WATER) openBelow++;
-        }
-        if (openBelow < 4) continue;                          // solid root column
-      }
+      if (seabed < 0) continue;                                // no rock in this column
       // Find the seabed: the first solid non-sand/stone cap from above, or fall
       // back to the surface height for this column.
       const top = seabed;
@@ -26902,32 +26890,147 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 6. GILL SLITS â€” five slashes behind the head, fluttering with breath.
+    // 6. GILL SLITS — five slashes behind the head, fluttering with breath.
+    //    UPGRADED: each slit now has a raised lip (a dark inner channel with a
+    //    lit rim on one side) and a fleshy flap that opens with `gillFlare`, so
+    //    the gills read as anatomy rather than as painted ticks. A faint blood
+    //    bloom tracks the state instead of only appearing in later phases.
     // ======================================================================
     {
       const open = Math.max(0.18, Math.min(1.2,
         (this.gillFlare || 0) * 0.5 + (this.surge || 0) * 0.25 - droop * 0.3));
-      // Five SHORT, clean, evenly-spaced slits on the upper flank only. The old
-      // gills spanned the whole body depth (-0.62 → 0.34) and flared hugely,
-      // so they scribbled vertical bars across the torso; these stay a tidy row
-      // just behind the eye, breathing a little with the swim cycle.
       for (let g = 0; g < 5; g++) {
         const u = 0.80 - g * 0.046;
         const top = spineAt(u, -0.52);
         const bot = spineAt(u - 0.004, 0.02);
         const len = (bot.y - top.y) * (0.5 + open * 0.35);
-        ctx.strokeStyle = ph >= 2 ? 'rgba(90, 16, 28, 0.82)' : 'rgba(6, 10, 20, 0.72)';
-        ctx.lineWidth = 2.2;
+        const x0 = top.x - 2, y0 = top.y + 6;
+        // 1. The channel: darkest at the mouth of the slit, tapering inward.
+        ctx.strokeStyle = ph >= 2 ? 'rgba(96, 18, 30, 0.85)' : 'rgba(6, 10, 20, 0.78)';
+        ctx.lineWidth = 2.6;
         ctx.beginPath();
-        ctx.moveTo(top.x - 2, top.y + 6);
-        ctx.quadraticCurveTo(top.x - 6, top.y + 6 + len * 0.5, top.x - 3, top.y + 6 + len);
+        ctx.moveTo(x0, y0);
+        ctx.quadraticCurveTo(x0 - 6, y0 + len * 0.5, x0 - 3, y0 + len);
         ctx.stroke();
-        // Phase 2+: the gills bleed light in the dark water.
+        // 2. A lit rim on the slit's raised lower lip — the highlight that
+        //    makes a slit look like tissue rather than a stroke.
+        ctx.strokeStyle = 'rgba(180, 200, 224, 0.30)';
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.moveTo(x0 + 1, y0 + 1);
+        ctx.quadraticCurveTo(x0 - 3, y0 + len * 0.5, x0 + 1, y0 + len - 1);
+        ctx.stroke();
+        // 3. Blood bloom when the animal is worked hard: it scales with the
+        //    damage taken (not just with the phase), so the gills redden as the
+        //    fight goes on and are calm again at full HP.
+        const blooded = Math.min(1, injury * 0.9 + (ph >= 2 ? 0.25 : 0) + woundGlow * 0.3);
+        if (blooded > 0.15 && micro > 0.45) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = blooded * 0.42;
+          const g2 = ctx.createRadialGradient(x0 - 3, y0 + len * 0.5, 1, x0 - 3, y0 + len * 0.5, len * 0.7);
+          g2.addColorStop(0, 'rgba(190, 40, 55, 0.9)');
+          g2.addColorStop(1, 'rgba(190, 40, 55, 0)');
+          ctx.fillStyle = g2;
+          ctx.fillRect(x0 - len * 0.7, y0 - 2, len * 0.8, len + 4);
+          ctx.restore();
+        }
+        // 4. Phase 2+: the gills actively bleed light in the dark water.
         if (ph >= 2 && woundGlow > 0.2) {
           ctx.strokeStyle = 'rgba(248, 113, 113, ' + (0.18 + woundGlow * 0.3).toFixed(2) + ')';
           ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.quadraticCurveTo(x0 - 6, y0 + len * 0.5, x0 - 3, y0 + len);
           ctx.stroke();
         }
+      }
+    }
+
+    // ======================================================================
+    // 6b. HIDE MICRO-DETAIL — three cheap, deterministic passes that make the
+    //     hide read as a body instead of a filled silhouette. All of them use
+    //     the quality dial: they are the first thing dropped on low effects.
+    //       - DERMAL DENTICLES: tiny tooth-like scales, brighter on the lit
+    //         upper flank and fading into the belly, along the swim direction.
+    //       - BARNACLE CLUSTERS: pale calcareous dots crusted in 4 fixed spots
+    //         (a wound scar line, the peduncle, behind the eye, at the dorsal
+    //         root) — the detail that most reads as "an old animal".
+    //       - SPERM-whale-style WRINKLES: a few short fold lines over the
+    //         shoulder where the hide bunches during a turn.
+    // ======================================================================
+    const micro = this._fxDetail();
+    if (micro > 0.35) {
+      const detailSeed = (this.scarSeed || 0) * 0.37;
+
+    // ---- dermal denticles: small soft scales, denser on the lit flank ----
+    // Raised from 46 to 120 (and 90 to 170 at high quality): the hide's
+    // micro-texture is what stopped the body reading as a flat silhouette,
+    // and the previous counts were still too sparse to see at game scale.
+    const scaleCount = micro > 0.75 ? 170 : 120;
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      for (let i = 0; i < scaleCount; i++) {
+        const a = this._hash01(detailSeed + i * 1.71);
+        const b = this._hash01(detailSeed * 1.37 + i * 2.13);
+        const c = this._hash01(detailSeed * 0.61 + i * 3.29);
+        // Skip the head: the face is drawn separately and scales there read as
+        // dirt on a portrait.
+        const u = 0.12 + a * 0.72;
+        const off = -0.8 + c * 1.55;
+        const p = spineAt(u, off);
+        // Only on the body, and only where the hull is actually wide.
+        const hh = bodyHalf(u);
+        if (Math.abs(off) > 0.95 || hh < 8) continue;
+        // Scales rake backwards, and grow sparser toward the belly.
+        const size = 1.8 + b * 1.6;
+        const drift = (b - 0.5) * 5;
+        const lit = off < -0.05;
+        ctx.fillStyle = lit ? 'rgba(203, 226, 250, 0.55)' : 'rgba(6, 12, 24, 0.32)';
+        ctx.fillRect(p.x + drift, p.y + (b - 0.5) * 3, size, size * 0.75);
+      }
+      ctx.restore();
+      // ---- barnacle crust: 4 fixed clusters of pale calcareous dots --------
+      const clusters = [
+        [0.86, -0.55], [0.72, 0.42], [0.14, 0.62], [0.46, -1.0]
+      ];
+      for (const [cu, coff] of clusters) {
+        const base = spineAt(cu, coff);
+        if (!Number.isFinite(base.x)) continue;
+        // More barnacles per cluster (14/9): the crust is the single most
+        // readable 'this is an old animal' cue, and it was barely visible.
+        const n = micro > 0.75 ? 14 : 9;
+        for (let k = 0; k < n; k++) {
+          const a = this._hash01(detailSeed * 0.83 + cu * 40 + k * 1.93);
+          const b2 = this._hash01(detailSeed * 1.51 + cu * 61 + k * 2.71);
+          const c2 = this._hash01(detailSeed * 0.29 + cu * 17 + k * 3.37);
+          if (c2 > 0.72) continue;                        // crust, not a carpet
+          const bx = base.x + (a - 0.5) * 26;
+          const by = base.y + (b2 - 0.5) * 14;
+          const s = 1.8 + c2 * 2.6;
+          ctx.fillStyle = 'rgba(226, 236, 245, ' + (0.62 + c2 * 0.32).toFixed(2) + ')';
+          ctx.fillRect(bx, by, s, s);
+          // Littoral barnacles have a dark rim.
+          ctx.fillStyle = 'rgba(20, 30, 44, 0.5)';
+          ctx.fillRect(bx, by + s - 0.7, s, 1);
+          if (c2 > 0.45) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.fillRect(bx, by, 1, 1);
+          }
+        }
+      }
+      // ---- hide folds: short lines where the shoulder bunches in a turn ----
+      const foldCount = micro > 0.75 ? 5 : 3;
+      ctx.strokeStyle = 'rgba(6, 12, 24, 0.18)';
+      ctx.lineWidth = 1.3;
+      for (let i = 0; i < foldCount; i++) {
+        const u = 0.58 + i * 0.055;
+        const a = spineAt(u, -0.75);
+        const b3 = spineAt(u + 0.03, -0.35);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo((a.x + b3.x) / 2 - 3, (a.y + b3.y) / 2 + 3, b3.x, b3.y);
+        ctx.stroke();
       }
     }
 
@@ -27721,7 +27824,6 @@ window.OceanFish = OceanFish;
 // as the rest of ocean.js so Game.openWormhole in terraria.js can reach it,
 // and so the Node QA harnesses can see it too.
 window.AbyssalGateFX = AbyssalGateFX;
-
 </script>
   <script>
 /* inlined juice.js */
@@ -33362,6 +33464,46 @@ class Game {
       [[-20, 134], [47, 88], [95, 135], [157, 86], [218, 136], [278, 92], [345, 142]]
     ];
 
+    // ---- Deterministic scene clutter --------------------------------------
+    // Everything decorative on the menu ground (tufts, flowers, pebbles, reeds,
+    // lily pads) is generated ONCE from a fixed seed so the scene is stable
+    // frame to frame — a menu that reshuffles itself every loop reads as noise.
+    const sceneRand = (() => { let s = 20260415; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; })();
+    const tufts = [];
+    for (let i = 0; i < 46; i++) {
+      tufts.push({
+        x: sceneRand() * 340,
+        y: 170 + sceneRand() * 9,
+        h: 2 + sceneRand() * 3,
+        lean: (sceneRand() - 0.5) * 2.4,
+        kind: sceneRand()                       // tuft | flower | pebble | reed
+      });
+    }
+    const lilies = [];
+    for (let i = 0; i < 5; i++) {
+      lilies.push({
+        x: 204 + sceneRand() * 96,
+        y: 176 + sceneRand() * (height0() - 180),
+        r: 2 + sceneRand() * 1.6,
+        pink: sceneRand() < 0.4,
+        phase: sceneRand() * 6
+      });
+    }
+    const petals = [];
+    for (let i = 0; i < 22; i++) {
+      petals.push({
+        x: sceneRand() * 340,
+        y: sceneRand() * 170,
+        size: 1 + sceneRand() * 1.6,
+        speed: 5 + sceneRand() * 9,
+        drift: 6 + sceneRand() * 14,
+        phase: sceneRand() * 6,
+        spin: (sceneRand() - 0.5) * 3,
+        warm: sceneRand() < 0.45
+      });
+    }
+    function height0() { return 180; }
+
     const draw = (time) => {
       // The loop must stay scheduled even while a world is being played: it was
       // previously `return`ed out of when the player entered a world, which
@@ -33474,6 +33616,41 @@ class Game {
         context.fillRect(mx - 1, my + 3, 2, 2);
       }
 
+      // ---- horizon haze: the aerial-perspective band that ties sky to land
+      // Without it the mountains end on a hard cut; with it, distance reads.
+      const haze = context.createLinearGradient(0, 92, 0, 152);
+      haze.addColorStop(0, 'rgba(255,255,255,0)');
+      haze.addColorStop(0.55, rgba(mixRGB(P.skyBot, [255, 255, 255], 0.30 + day * 0.25), 0.55));
+      haze.addColorStop(1, rgba(mixRGB(P.skyBot, [255, 255, 255], 0.42 + day * 0.30), 0.85));
+      context.fillStyle = haze;
+      context.fillRect(0, 92, width, 60);
+
+      // ---- god rays at golden hour ---------------------------------------
+      // Soft diagonal shafts raking down through the sky: the single strongest
+      // "cinematic" cue at dusk/dawn, and it costs one additive pass.
+      const golden = clamp01(1 - Math.abs(light - 0.15) * 3.2) * day;
+      if (golden > 0.05) {
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 5; i++) {
+          const rx = 60 + i * 52 + Math.sin(time * 0.0002 + i) * 6;
+          const tilt = 0.22 + i * 0.03;
+          const g = context.createLinearGradient(rx, 0, rx + tilt * 150, 150);
+          g.addColorStop(0, rgba([255, 246, 214], 0.20 * golden));
+          g.addColorStop(0.45, rgba([255, 236, 190], 0.10 * golden));
+          g.addColorStop(1, rgba([255, 226, 170], 0));
+          context.fillStyle = g;
+          context.beginPath();
+          context.moveTo(rx - 9, 0);
+          context.lineTo(rx + 13, 0);
+          context.lineTo(rx + 13 + tilt * 160, 168);
+          context.lineTo(rx - 9 + tilt * 160, 168);
+          context.closePath();
+          context.fill();
+        }
+        context.restore();
+      }
+
       // ---- clouds ------------------------------------------------------
       const cloudBody = css(mixRGB([255, 255, 255], [54, 64, 102], night));
       const cloudShade = css(mixRGB([189, 231, 255], [36, 44, 78], night));
@@ -33566,6 +33743,46 @@ class Game {
       context.fillRect(lakeX, lakeY, lakeW, lakeH);
       context.fillStyle = css(mixRGB(P.water, [255, 255, 255], 0.22));
       context.fillRect(lakeX, lakeY, lakeW, 2);
+      // Sun / moon reflection: a broken vertical shimmer column under the
+      // brightest body in the sky. It is the classic still-water cue and it
+      // makes the pond read as water rather than as a blue rectangle.
+      {
+        const reflectSrc = Math.max(0, Math.min(1, light));
+        const bodyX = reflectSrc > 0 ? sunX : moonX;
+        const onLake = bodyX > lakeX - 10 && bodyX < lakeX + lakeW + 10;
+        if (onLake && bodyX > 0) {
+          const colX = bodyX - lakeX;
+          const strength = (reflectSrc > 0 ? day : night) * 0.85;
+          for (let i = 0; i < 14; i++) {
+            const ry = lakeY + 3 + i * 2.4;
+            const wobble = Math.sin(time * 0.0022 + i * 0.9) * (3 + i * 0.55);
+            const w = Math.max(2, 16 - i * 0.9);
+            context.fillStyle = reflectSrc > 0
+              ? 'rgba(255,244,196,' + (0.30 * strength * (1 - i / 15)).toFixed(3) + ')'
+              : 'rgba(220,236,255,' + (0.26 * strength * (1 - i / 15)).toFixed(3) + ')';
+            context.fillRect(Math.round(colX + wobble - w / 2), Math.round(ry), Math.round(w), 1);
+          }
+        }
+      }
+      // Lily pads: flat round pads on the water, one in four flowered.
+      for (const pad of lilies) {
+        if (pad.x < lakeX + 4 || pad.x > lakeX + lakeW - 4) continue;
+        const py = lakeY + 6 + (pad.y % 8);
+        if (py > height - 3) continue;
+        context.fillStyle = 'rgba(16, 60, 40, 0.75)';
+        context.beginPath(); context.ellipse(pad.x, py, pad.r + 1.4, pad.r * 0.72, 0, 0, Math.PI * 2); context.fill();
+        context.fillStyle = '#2f7d4f';
+        context.beginPath(); context.ellipse(pad.x, py, pad.r, pad.r * 0.6, 0, Math.PI, Math.PI * 2); context.fill();
+        context.fillStyle = 'rgba(190, 240, 200, 0.35)';
+        context.fillRect(pad.x - pad.r * 0.6, py - 1, pad.r * 1.2, 1);
+        if (pad.pink) {
+          const bob = Math.sin(time * 0.0016 + pad.phase) * 0.8;
+          context.fillStyle = '#f9a8d4';
+          context.fillRect(pad.x + 2, py - 3 + bob, 3, 2);
+          context.fillStyle = '#fbcfe8';
+          context.fillRect(pad.x + 2, py - 3 + bob, 2, 1);
+        }
+      }
       context.fillStyle = 'rgba(255,255,255,' + (0.12 + 0.16 * day).toFixed(3) + ')';
       const shimmerSpan = lakeW - 40;
       for (let i = 0; i < 5; i++) {
@@ -33603,6 +33820,108 @@ class Game {
       };
       drawTorch(24);
       drawTorch(168);
+
+      // ---- foreground ground detail: tufts, flowers, pebbles, reeds -------
+      // Small deterministic clutter along the grass band. It is what stops the
+      // foreground reading as a flat green bar, and each type has its own shape
+      // so the band has texture instead of repetition.
+      const grassLit = css(mixRGB(P.grass, [255, 255, 255], 0.30));
+      const grassDark = css(mixRGB(P.grass, [0, 0, 0], 0.30));
+      for (const t of tufts) {
+        if (t.y < 169) continue;
+        const sway = Math.sin(time * 0.0011 + t.x * 0.35) * 1.1;
+        if (t.kind < 0.42) {
+          // Grass tuft: three blades of varying height.
+          context.fillStyle = grassDark;
+          context.fillRect(Math.round(t.x), Math.round(t.y), 1, t.h);
+          context.fillStyle = grassLit;
+          context.fillRect(Math.round(t.x + 1 + sway * 0.5), Math.round(t.y), 1, t.h + 1);
+          context.fillRect(Math.round(t.x + 2 + sway), Math.round(t.y), 1, t.h - 1);
+        } else if (t.kind < 0.62) {
+          // Flower: a stem plus a 2x2 petal head, day-bright.
+          context.fillStyle = grassDark;
+          context.fillRect(Math.round(t.x + sway), Math.round(t.y), 1, t.h);
+          const hue = t.kind > 0.52;
+          context.fillStyle = hue ? '#fbbf24' : '#f472b6';
+          context.fillRect(Math.round(t.x + sway) - 1, Math.round(t.y) - 2, 3, 2);
+          context.fillStyle = 'rgba(255,255,255,0.75)';
+          context.fillRect(Math.round(t.x + sway), Math.round(t.y) - 2, 1, 1);
+        } else if (t.kind < 0.76) {
+          // Pebble: a two-tone stone with a lit top.
+          context.fillStyle = 'rgba(10, 16, 24, 0.35)';
+          context.fillRect(Math.round(t.x) + 1, Math.round(t.y) + 1, 3, 2);
+          context.fillStyle = '#94a3b8';
+          context.fillRect(Math.round(t.x), Math.round(t.y), 3, 2);
+          context.fillStyle = '#cbd5e1';
+          context.fillRect(Math.round(t.x), Math.round(t.y), 3, 1);
+        } else {
+          // Reed: a taller, thinner stalk that bows further.
+          const bow = Math.sin(time * 0.0009 + t.x * 0.5) * 2.4;
+          context.fillStyle = '#3f6212';
+          context.fillRect(Math.round(t.x), Math.round(t.y), 1, t.h + 3);
+          context.fillStyle = grassLit;
+          context.fillRect(Math.round(t.x + bow * 0.5), Math.round(t.y) - 2, 2, 2);
+        }
+      }
+
+      // ---- campfire on the shore: a warm focal point beside the pond ------
+      // The game's whole emotional centre is a campfire; the menu should have
+      // one. It breathes, throws sparks, and lights the ground around it at
+      // night — so the scene has a place for the eye to rest.
+      {
+        const fx = 244, fy = 176;
+        // Logs.
+        context.fillStyle = '#5b3a1a';
+        context.fillRect(fx - 5, fy + 2, 11, 3);
+        context.fillStyle = '#7c4f26';
+        context.fillRect(fx - 5, fy + 2, 11, 1);
+        context.fillStyle = '#42240c';
+        context.fillRect(fx - 2, fy - 1, 5, 4);
+        // Flame: three stacked wobbling blocks, additive so it reads as light.
+        const flick = 0.75 + Math.abs(Math.sin(time * 0.011)) * 0.25;
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        const fg = context.createRadialGradient(fx + 1, fy, 1, fx + 1, fy, 16 * flick);
+        fg.addColorStop(0, 'rgba(255, 208, 110, ' + (0.55 * flick).toFixed(3) + ')');
+        fg.addColorStop(1, 'rgba(255, 140, 30, 0)');
+        context.fillStyle = fg;
+        context.fillRect(fx - 18, fy - 18, 40, 36);
+        context.restore();
+        context.fillStyle = 'rgba(255, 146, 44, 0.92)';
+        context.fillRect(fx - 2, fy - 6, 5, 7);
+        context.fillStyle = 'rgba(255, 190, 70, 0.95)';
+        context.fillRect(fx - 1, fy - 8, 4, 6);
+        context.fillStyle = 'rgba(255, 246, 200, 0.95)';
+        context.fillRect(fx, fy - 9, 2, 4);
+        // Sparks rising off the flame.
+        for (let i = 0; i < 6; i++) {
+          const p = (time * 0.0009 + i * 0.17) % 1;
+          const spx = fx + 1 + Math.sin(time * 0.004 + i * 2.1) * 3;
+          const spy = fy - 8 - p * 20;
+          context.fillStyle = 'rgba(255, 214, 120, ' + ((1 - p) * 0.8).toFixed(3) + ')';
+          context.fillRect(Math.round(spx), Math.round(spy), 1, 1);
+        }
+      }
+
+      // ---- drifting petals / leaves --------------------------------------
+      // Slow, sparse, warm: the "Mice on Venus" cue. They always drift with the
+      // wind, never fall straight down, and they are the last thing drawn so
+      // they sit over the whole scene.
+      for (const p of petals) {
+        const px = wrapPos(p.x + time * 0.001 * (p.speed * 0.35), width + 24) - 12;
+        const py = wrapPos(p.y + time * 0.001 * p.speed + Math.sin(time * 0.0008 + p.phase) * 4, 196);
+        const tilt = Math.sin(time * 0.002 + p.phase) * p.spin;
+        context.save();
+        context.globalAlpha = 0.72;
+        context.translate(px, py);
+        context.rotate(tilt);
+        context.fillStyle = p.warm ? '#fcd34d' : '#f9a8d4';
+        context.fillRect(-p.size / 2, -p.size / 4, p.size, p.size * 0.5);
+        context.fillStyle = 'rgba(255,255,255,0.55)';
+        context.fillRect(-p.size / 2, -p.size / 4, p.size, 1);
+        context.restore();
+      }
+      context.globalAlpha = 1;
 
       // ---- fireflies (night only) ----------------------------------------
       if (night > 0.15) {
