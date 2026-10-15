@@ -7698,10 +7698,12 @@ class Game {
     } else {
       var resumeHP = null;
     }
-    if (g.leviathanSlain) {
-      g.showToast('🦈 The reef has fallen quiet. The last predator you slew has not come back.');
-      return false;
-    }
+    // NOTE: `leviathanSlain` deliberately does NOT block the horn. It is a
+    // milestone flag for the bestiary, the journey rank and the arrival
+    // message — not a lock. Blocking on it made the Megalodon un-summonable
+    // for the rest of the save after the first kill, which is exactly the
+    // "the horn still doesn't work" report: this fight is replayable content,
+    // so it must always be callable.
     if (g.countItem('abyss_horn') <= 0) {
       g.showToast('📯 You need an Abyssal Horn.');
       return false;

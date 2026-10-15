@@ -238,6 +238,17 @@ step('4. The Abyssal Horn is the only way to call the Megalodon');
   check('a second horn is refused while the shark lives', g.performAbyssRite() === false);
   check('the second horn survives a refusal', g.countItem('abyss_horn') === 1);
   g.boss = null;
+
+  // The kill flag must NOT lock the rite out. This fight is replayable content;
+  // blocking on `leviathanSlain` made the horn useless for the rest of the save
+  // after the first win — the "the horn still doesn't work" report.
+  g.leviathanSlain = true;
+  g.inventory[g.player.selectedSlot] = { id: 'abyss_horn', count: 1 };
+  check('the horn still works after the shark has been slain', g.performAbyssRite() === true);
+  g.boss = null;
+  g.leviathanSlain = false;
+  // With no horn in hand, nothing summons.
+  check('no horn, no shark', g.performAbyssRite() === false);
   W.exitOceanDimension();
 }
 

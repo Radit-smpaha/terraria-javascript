@@ -22544,8 +22544,18 @@ World.prototype.generateOceanPlanet = function() {
   const islandCount = 16 + Math.floor(Math.random() * 5);
   const islands = [];
   const minGap = 24;
-  const margin = 20;
-  const usable = Math.max(1, this.width - margin * 2);
+  // ---- ASYMMETRIC MAP BOUNDS ---------------------------------------------
+  // The planet's playable region used to be symmetric (margin 20 both sides),
+  // so the far west was a thin strip along the world edge and the whole east
+  // third was a long empty crossing. The map now runs from the WEST EDGE
+  // (margin 6) and stops well before the east edge (margin 78): the west side
+  // of the planet is ~3x the area it was, and the east side is correspondingly
+  // smaller. Everything placed from `usable` (islands, shoals, portal, spawn)
+  // inherits the new footprint automatically.
+  const W_MARGIN = 6;
+  const E_MARGIN = 78;
+  const margin = W_MARGIN;
+  const usable = Math.max(1, this.width - W_MARGIN - E_MARGIN);
   for (let i = 0; i < islandCount; i++) {
     // Evenly spaced with jitter, so no two islands ever merge into one blob.
     const even = (i + 0.5) / islandCount;
@@ -22554,7 +22564,7 @@ World.prototype.generateOceanPlanet = function() {
     const biased = Math.pow(even, 1.45);
     const base = margin + usable * biased;
     const jitter = (Math.random() - 0.5) * (usable / islandCount) * 0.6;
-    const cx = Math.max(margin, Math.min(this.width - margin - 1,
+    const cx = Math.max(margin, Math.min(this.width - E_MARGIN - 1,
       Math.round(base + jitter)));
     if (islands.some(other => Math.abs(other.cx - cx) < minGap)) continue;
     // Bigger overall, and bigger still the further west you go.
@@ -22931,7 +22941,7 @@ World.prototype.generateOceanPlanet = function() {
     this.sunkenRuins.push({ x: rx, y: groundHeight[rx] });
   }
 
-  const portalX = Math.floor(this.width * 0.33);
+  const portalX = W_MARGIN + Math.floor(usable * 0.42);
   for (let y = floorY - 4; y < floorY; y++) this.setTile(portalX, y, TILES.OCEAN_PORTAL);
 
   // ---- Dress the spawn island so it reads as "home", not bare sand ----
@@ -23134,7 +23144,7 @@ World.prototype.generateOceanPlanet = function() {
       tiers,
       islands,
       shipwrecks: this.shipwrecks,
-      spawnX: (spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)) * TILE_SIZE,
+      spawnX: (spawnIsland ? spawnIsland.cx : W_MARGIN + Math.floor(usable * 0.42)) * TILE_SIZE,
       spawnY: (Math.max(2, groundHeight[spawnIsland ? spawnIsland.cx : Math.floor(this.width * 0.34)] - 2)) * TILE_SIZE,
       bossX: Math.max(6, Math.min(this.width - 7, bossX)) * TILE_SIZE,
       bossY: Math.max(2, seaY - 3) * TILE_SIZE
@@ -39615,10 +39625,12 @@ class Game {
     } else {
       var resumeHP = null;
     }
-    if (g.leviathanSlain) {
-      g.showToast('🦈 The reef has fallen quiet. The last predator you slew has not come back.');
-      return false;
-    }
+    // NOTE: `leviathanSlain` deliberately does NOT block the horn. It is a
+    // milestone flag for the bestiary, the journey rank and the arrival
+    // message — not a lock. Blocking on it made the Megalodon un-summonable
+    // for the rest of the save after the first kill, which is exactly the
+    // "the horn still doesn't work" report: this fight is replayable content,
+    // so it must always be callable.
     if (g.countItem('abyss_horn') <= 0) {
       g.showToast('📯 You need an Abyssal Horn.');
       return false;
