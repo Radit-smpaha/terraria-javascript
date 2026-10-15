@@ -7471,11 +7471,15 @@ class Game {
         : g.showToast('📯 Something else already owns this water.');
       return false;
     }
-    // A banked Megalodon fight (a wounded boss the player left) is a fight in
-    // progress: refuse it and give the horn back, exactly like the bone rite.
     if (Number.isFinite(g.leviathanHP)) {
-      g.showToast('🦈 The one you started is not finished. Kill it before you call another.');
-      return false;
+      // An unfinished fight is banked... but the horn is how you GET BACK IN.
+      // Refusing the summon for a banked HP value meant walking out of the arena
+      // once (or dying to it) made the boss unreachable for the rest of the
+      // save: exactly the "the horn doesn't work" report. The banked wound is
+      // resumed into the newly summoned shark instead of blocking the rite.
+      var resumeHP = g.leviathanHP;
+    } else {
+      var resumeHP = null;
     }
     if (g.leviathanSlain) {
       g.showToast('🦈 The reef has fallen quiet. The last predator you slew has not come back.');
@@ -7492,25 +7496,26 @@ class Game {
     g.showAnnouncement('📯 THE HORN SOUNDS — SOMETHING OLD IS COMING.');
     g.sound.playBossRoar?.();
     g.particles.bubbleBurst?.(g.player.x, g.player.y, '#5eead4', 26);
-    // It rises from the deep at the player's own position, deep enough that it
-    // must climb to reach them — the arena bounds then hold it wherever it
-    // spawned. Never inside the player: spawn below and let the first lunge do
-    // the meeting, which keeps the summon fair from any water column.
+    // Spawn EIGHT TILES BELOW the player, at the player's own column: it rises
+    // out of the deep beneath their feet, which reads as "called to you" rather
+    // than as a shark teleporting in from nowhere. Never inside the player, and
+    // the eight-tile gap is deliberately shallow enough that the first lunge
+    // reaches in well under a second without an instant hit on frame one.
     const W = world;
-    // Spawn beside the player (the shark is wide), clamped to the world, and
-    // below them so the first charge does the meeting.
-    const half = 210;
-    const wantX = g.player.x + g.player.width / 2 + (g.player.facing >= 0 ? -half : half);
-    const tx = Math.max(TILE_SIZE * 4, Math.min(W.pixelWidth - TILE_SIZE * 10, wantX));
-    const ty = Math.min((W.height - 8) * TILE_SIZE,
-      (g.player.y / TILE_SIZE + 12) * TILE_SIZE);
+    const tx = Math.max(TILE_SIZE * 4, Math.min(W.pixelWidth - TILE_SIZE * 10,
+      g.player.x + g.player.width / 2 - 105));
+    const ty = Math.min((W.height - 8) * TILE_SIZE, g.player.y + 8 * TILE_SIZE);
     try {
       const m = new Megalodon(tx, ty, g);
-      m.hp = m.maxHp;
+      m.hp = (Number.isFinite(resumeHP) && resumeHP > 0)
+        ? Math.max(1, Math.min(m.maxHp, resumeHP)) : m.maxHp;
       g.boss = m;
       g.leviathanHP = null;
       g.sound.isBoss = true;
       document.getElementById('boss-panel')?.classList.remove('hidden');
+      if (Number.isFinite(m.hp) && m.hp < m.maxHp) {
+        g.showToast('🦈 The one you left unfinished answers the horn.');
+      }
       return true;
     } catch (e) {
       g.showToast('📯 The horn echoes back. Nothing answered.');
