@@ -1547,6 +1547,46 @@ class Game {
       [[-20, 134], [47, 88], [95, 135], [157, 86], [218, 136], [278, 92], [345, 142]]
     ];
 
+    // ---- Deterministic scene clutter --------------------------------------
+    // Everything decorative on the menu ground (tufts, flowers, pebbles, reeds,
+    // lily pads) is generated ONCE from a fixed seed so the scene is stable
+    // frame to frame — a menu that reshuffles itself every loop reads as noise.
+    const sceneRand = (() => { let s = 20260415; return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; })();
+    const tufts = [];
+    for (let i = 0; i < 46; i++) {
+      tufts.push({
+        x: sceneRand() * 340,
+        y: 170 + sceneRand() * 9,
+        h: 2 + sceneRand() * 3,
+        lean: (sceneRand() - 0.5) * 2.4,
+        kind: sceneRand()                       // tuft | flower | pebble | reed
+      });
+    }
+    const lilies = [];
+    for (let i = 0; i < 5; i++) {
+      lilies.push({
+        x: 204 + sceneRand() * 96,
+        y: 176 + sceneRand() * (height0() - 180),
+        r: 2 + sceneRand() * 1.6,
+        pink: sceneRand() < 0.4,
+        phase: sceneRand() * 6
+      });
+    }
+    const petals = [];
+    for (let i = 0; i < 22; i++) {
+      petals.push({
+        x: sceneRand() * 340,
+        y: sceneRand() * 170,
+        size: 1 + sceneRand() * 1.6,
+        speed: 5 + sceneRand() * 9,
+        drift: 6 + sceneRand() * 14,
+        phase: sceneRand() * 6,
+        spin: (sceneRand() - 0.5) * 3,
+        warm: sceneRand() < 0.45
+      });
+    }
+    function height0() { return 180; }
+
     const draw = (time) => {
       // The loop must stay scheduled even while a world is being played: it was
       // previously `return`ed out of when the player entered a world, which
@@ -1659,6 +1699,41 @@ class Game {
         context.fillRect(mx - 1, my + 3, 2, 2);
       }
 
+      // ---- horizon haze: the aerial-perspective band that ties sky to land
+      // Without it the mountains end on a hard cut; with it, distance reads.
+      const haze = context.createLinearGradient(0, 92, 0, 152);
+      haze.addColorStop(0, 'rgba(255,255,255,0)');
+      haze.addColorStop(0.55, rgba(mixRGB(P.skyBot, [255, 255, 255], 0.30 + day * 0.25), 0.55));
+      haze.addColorStop(1, rgba(mixRGB(P.skyBot, [255, 255, 255], 0.42 + day * 0.30), 0.85));
+      context.fillStyle = haze;
+      context.fillRect(0, 92, width, 60);
+
+      // ---- god rays at golden hour ---------------------------------------
+      // Soft diagonal shafts raking down through the sky: the single strongest
+      // "cinematic" cue at dusk/dawn, and it costs one additive pass.
+      const golden = clamp01(1 - Math.abs(light - 0.15) * 3.2) * day;
+      if (golden > 0.05) {
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 5; i++) {
+          const rx = 60 + i * 52 + Math.sin(time * 0.0002 + i) * 6;
+          const tilt = 0.22 + i * 0.03;
+          const g = context.createLinearGradient(rx, 0, rx + tilt * 150, 150);
+          g.addColorStop(0, rgba([255, 246, 214], 0.20 * golden));
+          g.addColorStop(0.45, rgba([255, 236, 190], 0.10 * golden));
+          g.addColorStop(1, rgba([255, 226, 170], 0));
+          context.fillStyle = g;
+          context.beginPath();
+          context.moveTo(rx - 9, 0);
+          context.lineTo(rx + 13, 0);
+          context.lineTo(rx + 13 + tilt * 160, 168);
+          context.lineTo(rx - 9 + tilt * 160, 168);
+          context.closePath();
+          context.fill();
+        }
+        context.restore();
+      }
+
       // ---- clouds ------------------------------------------------------
       const cloudBody = css(mixRGB([255, 255, 255], [54, 64, 102], night));
       const cloudShade = css(mixRGB([189, 231, 255], [36, 44, 78], night));
@@ -1751,6 +1826,46 @@ class Game {
       context.fillRect(lakeX, lakeY, lakeW, lakeH);
       context.fillStyle = css(mixRGB(P.water, [255, 255, 255], 0.22));
       context.fillRect(lakeX, lakeY, lakeW, 2);
+      // Sun / moon reflection: a broken vertical shimmer column under the
+      // brightest body in the sky. It is the classic still-water cue and it
+      // makes the pond read as water rather than as a blue rectangle.
+      {
+        const reflectSrc = Math.max(0, Math.min(1, light));
+        const bodyX = reflectSrc > 0 ? sunX : moonX;
+        const onLake = bodyX > lakeX - 10 && bodyX < lakeX + lakeW + 10;
+        if (onLake && bodyX > 0) {
+          const colX = bodyX - lakeX;
+          const strength = (reflectSrc > 0 ? day : night) * 0.85;
+          for (let i = 0; i < 14; i++) {
+            const ry = lakeY + 3 + i * 2.4;
+            const wobble = Math.sin(time * 0.0022 + i * 0.9) * (3 + i * 0.55);
+            const w = Math.max(2, 16 - i * 0.9);
+            context.fillStyle = reflectSrc > 0
+              ? 'rgba(255,244,196,' + (0.30 * strength * (1 - i / 15)).toFixed(3) + ')'
+              : 'rgba(220,236,255,' + (0.26 * strength * (1 - i / 15)).toFixed(3) + ')';
+            context.fillRect(Math.round(colX + wobble - w / 2), Math.round(ry), Math.round(w), 1);
+          }
+        }
+      }
+      // Lily pads: flat round pads on the water, one in four flowered.
+      for (const pad of lilies) {
+        if (pad.x < lakeX + 4 || pad.x > lakeX + lakeW - 4) continue;
+        const py = lakeY + 6 + (pad.y % 8);
+        if (py > height - 3) continue;
+        context.fillStyle = 'rgba(16, 60, 40, 0.75)';
+        context.beginPath(); context.ellipse(pad.x, py, pad.r + 1.4, pad.r * 0.72, 0, 0, Math.PI * 2); context.fill();
+        context.fillStyle = '#2f7d4f';
+        context.beginPath(); context.ellipse(pad.x, py, pad.r, pad.r * 0.6, 0, Math.PI, Math.PI * 2); context.fill();
+        context.fillStyle = 'rgba(190, 240, 200, 0.35)';
+        context.fillRect(pad.x - pad.r * 0.6, py - 1, pad.r * 1.2, 1);
+        if (pad.pink) {
+          const bob = Math.sin(time * 0.0016 + pad.phase) * 0.8;
+          context.fillStyle = '#f9a8d4';
+          context.fillRect(pad.x + 2, py - 3 + bob, 3, 2);
+          context.fillStyle = '#fbcfe8';
+          context.fillRect(pad.x + 2, py - 3 + bob, 2, 1);
+        }
+      }
       context.fillStyle = 'rgba(255,255,255,' + (0.12 + 0.16 * day).toFixed(3) + ')';
       const shimmerSpan = lakeW - 40;
       for (let i = 0; i < 5; i++) {
@@ -1788,6 +1903,108 @@ class Game {
       };
       drawTorch(24);
       drawTorch(168);
+
+      // ---- foreground ground detail: tufts, flowers, pebbles, reeds -------
+      // Small deterministic clutter along the grass band. It is what stops the
+      // foreground reading as a flat green bar, and each type has its own shape
+      // so the band has texture instead of repetition.
+      const grassLit = css(mixRGB(P.grass, [255, 255, 255], 0.30));
+      const grassDark = css(mixRGB(P.grass, [0, 0, 0], 0.30));
+      for (const t of tufts) {
+        if (t.y < 169) continue;
+        const sway = Math.sin(time * 0.0011 + t.x * 0.35) * 1.1;
+        if (t.kind < 0.42) {
+          // Grass tuft: three blades of varying height.
+          context.fillStyle = grassDark;
+          context.fillRect(Math.round(t.x), Math.round(t.y), 1, t.h);
+          context.fillStyle = grassLit;
+          context.fillRect(Math.round(t.x + 1 + sway * 0.5), Math.round(t.y), 1, t.h + 1);
+          context.fillRect(Math.round(t.x + 2 + sway), Math.round(t.y), 1, t.h - 1);
+        } else if (t.kind < 0.62) {
+          // Flower: a stem plus a 2x2 petal head, day-bright.
+          context.fillStyle = grassDark;
+          context.fillRect(Math.round(t.x + sway), Math.round(t.y), 1, t.h);
+          const hue = t.kind > 0.52;
+          context.fillStyle = hue ? '#fbbf24' : '#f472b6';
+          context.fillRect(Math.round(t.x + sway) - 1, Math.round(t.y) - 2, 3, 2);
+          context.fillStyle = 'rgba(255,255,255,0.75)';
+          context.fillRect(Math.round(t.x + sway), Math.round(t.y) - 2, 1, 1);
+        } else if (t.kind < 0.76) {
+          // Pebble: a two-tone stone with a lit top.
+          context.fillStyle = 'rgba(10, 16, 24, 0.35)';
+          context.fillRect(Math.round(t.x) + 1, Math.round(t.y) + 1, 3, 2);
+          context.fillStyle = '#94a3b8';
+          context.fillRect(Math.round(t.x), Math.round(t.y), 3, 2);
+          context.fillStyle = '#cbd5e1';
+          context.fillRect(Math.round(t.x), Math.round(t.y), 3, 1);
+        } else {
+          // Reed: a taller, thinner stalk that bows further.
+          const bow = Math.sin(time * 0.0009 + t.x * 0.5) * 2.4;
+          context.fillStyle = '#3f6212';
+          context.fillRect(Math.round(t.x), Math.round(t.y), 1, t.h + 3);
+          context.fillStyle = grassLit;
+          context.fillRect(Math.round(t.x + bow * 0.5), Math.round(t.y) - 2, 2, 2);
+        }
+      }
+
+      // ---- campfire on the shore: a warm focal point beside the pond ------
+      // The game's whole emotional centre is a campfire; the menu should have
+      // one. It breathes, throws sparks, and lights the ground around it at
+      // night — so the scene has a place for the eye to rest.
+      {
+        const fx = 244, fy = 176;
+        // Logs.
+        context.fillStyle = '#5b3a1a';
+        context.fillRect(fx - 5, fy + 2, 11, 3);
+        context.fillStyle = '#7c4f26';
+        context.fillRect(fx - 5, fy + 2, 11, 1);
+        context.fillStyle = '#42240c';
+        context.fillRect(fx - 2, fy - 1, 5, 4);
+        // Flame: three stacked wobbling blocks, additive so it reads as light.
+        const flick = 0.75 + Math.abs(Math.sin(time * 0.011)) * 0.25;
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        const fg = context.createRadialGradient(fx + 1, fy, 1, fx + 1, fy, 16 * flick);
+        fg.addColorStop(0, 'rgba(255, 208, 110, ' + (0.55 * flick).toFixed(3) + ')');
+        fg.addColorStop(1, 'rgba(255, 140, 30, 0)');
+        context.fillStyle = fg;
+        context.fillRect(fx - 18, fy - 18, 40, 36);
+        context.restore();
+        context.fillStyle = 'rgba(255, 146, 44, 0.92)';
+        context.fillRect(fx - 2, fy - 6, 5, 7);
+        context.fillStyle = 'rgba(255, 190, 70, 0.95)';
+        context.fillRect(fx - 1, fy - 8, 4, 6);
+        context.fillStyle = 'rgba(255, 246, 200, 0.95)';
+        context.fillRect(fx, fy - 9, 2, 4);
+        // Sparks rising off the flame.
+        for (let i = 0; i < 6; i++) {
+          const p = (time * 0.0009 + i * 0.17) % 1;
+          const spx = fx + 1 + Math.sin(time * 0.004 + i * 2.1) * 3;
+          const spy = fy - 8 - p * 20;
+          context.fillStyle = 'rgba(255, 214, 120, ' + ((1 - p) * 0.8).toFixed(3) + ')';
+          context.fillRect(Math.round(spx), Math.round(spy), 1, 1);
+        }
+      }
+
+      // ---- drifting petals / leaves --------------------------------------
+      // Slow, sparse, warm: the "Mice on Venus" cue. They always drift with the
+      // wind, never fall straight down, and they are the last thing drawn so
+      // they sit over the whole scene.
+      for (const p of petals) {
+        const px = wrapPos(p.x + time * 0.001 * (p.speed * 0.35), width + 24) - 12;
+        const py = wrapPos(p.y + time * 0.001 * p.speed + Math.sin(time * 0.0008 + p.phase) * 4, 196);
+        const tilt = Math.sin(time * 0.002 + p.phase) * p.spin;
+        context.save();
+        context.globalAlpha = 0.72;
+        context.translate(px, py);
+        context.rotate(tilt);
+        context.fillStyle = p.warm ? '#fcd34d' : '#f9a8d4';
+        context.fillRect(-p.size / 2, -p.size / 4, p.size, p.size * 0.5);
+        context.fillStyle = 'rgba(255,255,255,0.55)';
+        context.fillRect(-p.size / 2, -p.size / 4, p.size, 1);
+        context.restore();
+      }
+      context.globalAlpha = 1;
 
       // ---- fireflies (night only) ----------------------------------------
       if (night > 0.15) {
