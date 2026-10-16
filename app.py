@@ -38,7 +38,7 @@ GITHUB_FALLBACK = "https://radit-smpaha.github.io/terraria-javascript/terraria.h
 # costs a few bytes over the channel. It is also a SINGLE file, so it cannot go
 # stale-per-file the way the multi-file terraria.html once did (Pages served an
 # old entities.js against a new terraria.js -> "Player is not defined").
-INLINED_URL = (
+INLINED_URL_BASE = (
     "https://radit-smpaha.github.io/terraria-javascript/terraria.inlined.html"
 )
 # CACHE-BUSTER. This is the bug that made Streamlit look frozen: st.iframe()
@@ -59,7 +59,7 @@ INLINED_URL = (
 # (Pages and the browser both cache per-URL), which is nothing next to a game
 # update that never appears.
 # CACHE_FORCE is a manual knob; bump it by hand to bust the cache immediately.
-CACHE_FORCE = "v1"
+CACHE_FORCE = "v2"
 CACHE_BUCKET_SECONDS = 300          # 5 minutes: fresh-enough, not spammy
 try:
     # Hash (not size) so a future edit that happens to keep the same byte count
@@ -71,9 +71,23 @@ try:
     _filehash = hashlib.md5(_blob).hexdigest()[:10]
 except Exception:
     _filehash = "nofile"
+# Token from the REMOTE GitHub Pages copy, so a Pages deploy busts the
+# iframe cache even when the local inlined file was not regenerated. Falls
+# back to "noremote" if the network call fails (e.g. first ever deploy).
+try:
+    import urllib.request
+    _req = urllib.request.Request(INLINED_URL_BASE, method="HEAD")
+    with urllib.request.urlopen(_req, timeout=6) as _resp:
+        _remote_token = (
+            _resp.headers.get("Last-Modified")
+            or _resp.headers.get("ETag")
+            or "unknown"
+        )[:40]
+except Exception:
+    _remote_token = "noremote"
 _bucket = int(time.time() // CACHE_BUCKET_SECONDS)
-CACHE_TOKEN = "%s-%s-b%d" % (CACHE_FORCE, _filehash, _bucket)
-INLINED_URL = "%s?v=%s" % (INLINED_URL, CACHE_TOKEN)
+CACHE_TOKEN = "%s-%s-%s-b%d" % (CACHE_FORCE, _filehash, _remote_token, _bucket)
+INLINED_URL = "%s?v=%s" % (INLINED_URL_BASE, CACHE_TOKEN)
 # Same treatment for the fallback URL, so a fallback is never a stale copy.
 GITHUB_FALLBACK = "%s?v=%s" % (GITHUB_FALLBACK, CACHE_TOKEN)
 # The game fills 100vh of whatever frame it is given, so the frame has to be
@@ -160,7 +174,7 @@ def build_inline_html() -> str | None:
             # A failed earlier deploy used a blanket backslash-escape here that
             # corrupted the JS. This build only touches "</script" (see verify
             # above); backslashes/regexes are passed through untouched.
-            # <script> tags carry onload/onerror probes now â€” allow attributes.
+            # <script> tags carry onload/onerror probes now — allow attributes.
             pattern = re.compile(
                 r'<script\s+src="%s(\?v=[^"]*)?"[^>]*>\s*</script>' % re.escape(name)
             )
@@ -206,7 +220,7 @@ def build_inline_html() -> str | None:
             # Inline <script> blocks never fire onload, so record per-file
             # proof of life right after each block. A failed block's probe
             # still runs (separate <script>) and reports e.g.
-            # "Player=undefined" â€” the boot overlay then names the exact file
+            # "Player=undefined" — the boot overlay then names the exact file
             # instead of a bare "Player is not defined (about:srcdoc)".
             probe = (
                 "\n<script>window.__terraNoteScript&&window.__terraNoteScript("

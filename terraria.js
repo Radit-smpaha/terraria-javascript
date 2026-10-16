@@ -1510,11 +1510,19 @@ class Game {
       context.fillStyle = css(trunkShade);
       context.fillRect(x - 3 * ts + lean, ground - h * ts, 6 * ts, 3 * ts);
       context.fillRect(x - 3 * ts + lean, ground - 6 * ts, 6 * ts, 4 * ts);
+      // Bark knot at the flared base.
+      context.fillStyle = css(trunkShade);
+      context.fillRect(x - 2 * ts + lean, ground - 3 * ts, 4 * ts, 2 * ts);
+      context.fillStyle = css(trunkHi);
+      context.fillRect(x - 1 * ts + lean, ground - 3 * ts, 2 * ts, 1 * ts);
       // One or two branches where the trunk hands off to the canopy.
       context.fillStyle = trunk;
       const bx = x + lean;
       context.fillRect(bx - (tall ? 9 : 12) * ts, ground - h * ts - 1, 5 * ts, 2 * ts);
       context.fillRect(bx + (tall ? 4 : 7) * ts, ground - h * ts - 2, 5 * ts, 2 * ts);
+      // A second, smaller branch tier higher on the trunk.
+      context.fillRect(bx - (tall ? 6 : 8) * ts, ground - h * ts - 4, 3 * ts, 2 * ts);
+      context.fillRect(bx + (tall ? 3 : 5) * ts, ground - h * ts - 5, 3 * ts, 2 * ts);
       // Canopy: three overlapping, stepped lobes with a per-tree jitter on
       // every width, offset and height, so no two background trees match.
       const top = ground - (h + (tall ? 9 : 8)) * ts;
@@ -1540,6 +1548,7 @@ class Game {
       context.fillRect(cx + 6 * ts + j, top + 7 * ts, 5 * ts, 5 * ts);
       context.fillRect(cx - 13 * ts - j2, top + 17 * ts, 6 * ts, 4 * ts);
       if (r > 0.5) context.fillRect(cx + 3 * ts, top + 12 * ts, 5 * ts, 4 * ts);
+      context.fillRect(cx - 4 * ts, top + 20 * ts, 5 * ts, 4 * ts);
     };
 
     const mountains = [
@@ -1866,6 +1875,16 @@ class Game {
           context.fillRect(pad.x + 2, py - 3 + bob, 2, 1);
         }
       }
+      // Dragonfly: a small darting silhouette over the pond.
+      {
+        const dfx = lakeX + 40 + Math.sin(time * 0.002) * 26;
+        const dfy = lakeY + 10 + Math.cos(time * 0.0015) * 3;
+        context.fillStyle = '#1e293b';
+        context.fillRect(Math.round(dfx), Math.round(dfy), 3, 1);
+        context.fillStyle = '#94a3b8';
+        context.fillRect(Math.round(dfx - 4), Math.round(dfy - 1), 8, 1);
+        context.fillRect(Math.round(dfx - 3), Math.round(dfy), 6, 1);
+      }
       context.fillStyle = 'rgba(255,255,255,' + (0.12 + 0.16 * day).toFixed(3) + ')';
       const shimmerSpan = lakeW - 40;
       for (let i = 0; i < 5; i++) {
@@ -1924,8 +1943,8 @@ class Game {
           // Flower: a stem plus a 2x2 petal head, day-bright.
           context.fillStyle = grassDark;
           context.fillRect(Math.round(t.x + sway), Math.round(t.y), 1, t.h);
-          const hue = t.kind > 0.52;
-          context.fillStyle = hue ? '#fbbf24' : '#f472b6';
+          const petal = t.kind > 0.56 ? '#fef3c7' : t.kind > 0.52 ? '#fbbf24' : '#f472b6';
+          context.fillStyle = petal;
           context.fillRect(Math.round(t.x + sway) - 1, Math.round(t.y) - 2, 3, 2);
           context.fillStyle = 'rgba(255,255,255,0.75)';
           context.fillRect(Math.round(t.x + sway), Math.round(t.y) - 2, 1, 1);
@@ -3105,7 +3124,7 @@ class Game {
     this.autoQuality = next === 'auto';
     // Auto quality should step down before sustained work misses a 60 FPS
     // frame budget, not wait until the game is already running below 42 FPS.
-    this.quality.budgetMs = next === 'auto' ? 16.7 : next === 'balanced' ? 20 : 24;
+    this.quality.budgetMs = next === 'auto' ? 18.5 : next === 'balanced' ? 20 : 24;
     this.quality.goodFrames = 0;
     if (next === 'high') {
       this.quality.lowQuality = false; this.renderScale = 1;
@@ -9700,7 +9719,7 @@ this.player.dodgeTime = 0;
       // Only restore after a solid run of fast frames, so the game cannot
       // oscillate between resolutions every other second.
       this.quality.goodFrames += 1;
-      if (this.quality.goodFrames >= 300) {
+      if (this.quality.goodFrames >= 200) {
         this.quality.lowQuality = false;
         this.quality.goodFrames = 0;
         this.renderScale = 1;

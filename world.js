@@ -1319,6 +1319,8 @@ class World {
         else if (roll < 0.46) this.setTile(x, sy - 1, TILES.BUSH);
         else if (roll < 0.50) this.setTile(x, sy - 1, TILES.PEBBLE);
         else if (roll < 0.52) this.setTile(x, sy - 1, TILES.MUSHROOM);
+        else if (roll < 0.55) this.setTile(x, sy - 1, TILES.FALLEN_LEAF);
+        else if (roll < 0.57) this.setTile(x, sy - 1, TILES.SAPLING);
       } else if (biome === 'snow' && ground === TILES.SNOW) {
         if (roll < 0.14) this.setTile(x, sy - 1, TILES.SNOWBUSH);
         else if (roll < 0.22) this.setTile(x, sy - 1, TILES.ICICLE);
@@ -1330,6 +1332,7 @@ class World {
         } else if (roll < 0.30) this.setTile(x, sy - 1, TILES.TALL_GRASS);
         else if (roll < 0.38) this.setTile(x, sy - 1, TILES.PEBBLE);
         else if (roll < 0.40) this.setTile(x, sy - 1, TILES.BUSH);
+        else if (roll < 0.44) this.setTile(x, sy - 1, TILES.SAPLING);
       } else if (biome === 'plains' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
         // Minecraft plains: mostly open grass, thick with flowers and tufts and
         // nothing that hurts to walk into. Denser than the forest on purpose —
@@ -1337,11 +1340,13 @@ class World {
         if (roll < 0.22) this.setTile(x, sy - 1, TILES.FLOWER);
         else if (roll < 0.52) this.setTile(x, sy - 1, TILES.TALL_GRASS);
         else if (roll < 0.55) this.setTile(x, sy - 1, TILES.PEBBLE);
+        else if (roll < 0.58) this.setTile(x, sy - 1, TILES.BUSH);
       } else if (biome === 'swamp' && (ground === TILES.MUD || ground === TILES.WATER)) {
         if (ground === TILES.MUD && roll < 0.20) this.setTile(x, sy - 1, TILES.LILY);
         else if (ground === TILES.MUD && roll < 0.44) this.setTile(x, sy - 1, TILES.TALL_GRASS);
         else if (ground === TILES.MUD && roll < 0.50) this.setTile(x, sy - 1, TILES.MUSHROOM);
         else if (ground === TILES.MUD && roll < 0.53) this.setTile(x, sy - 1, TILES.BUSH);
+        else if (ground === TILES.MUD && roll < 0.56) this.setTile(x, sy - 1, TILES.FALLEN_LEAF);
       }
       // Vines drop from any overhang: solid ground with open air beneath it is
       // a cliff lip or a bank, and a strand or two hanging off it is what makes
