@@ -6868,6 +6868,8 @@ class World {
         else if (roll < 0.46) this.setTile(x, sy - 1, TILES.BUSH);
         else if (roll < 0.50) this.setTile(x, sy - 1, TILES.PEBBLE);
         else if (roll < 0.52) this.setTile(x, sy - 1, TILES.MUSHROOM);
+        else if (roll < 0.55) this.setTile(x, sy - 1, TILES.FALLEN_LEAF);
+        else if (roll < 0.57) this.setTile(x, sy - 1, TILES.SAPLING);
       } else if (biome === 'snow' && ground === TILES.SNOW) {
         if (roll < 0.14) this.setTile(x, sy - 1, TILES.SNOWBUSH);
         else if (roll < 0.22) this.setTile(x, sy - 1, TILES.ICICLE);
@@ -6879,6 +6881,7 @@ class World {
         } else if (roll < 0.30) this.setTile(x, sy - 1, TILES.TALL_GRASS);
         else if (roll < 0.38) this.setTile(x, sy - 1, TILES.PEBBLE);
         else if (roll < 0.40) this.setTile(x, sy - 1, TILES.BUSH);
+        else if (roll < 0.44) this.setTile(x, sy - 1, TILES.SAPLING);
       } else if (biome === 'plains' && (ground === TILES.GRASS || ground === TILES.DIRT)) {
         // Minecraft plains: mostly open grass, thick with flowers and tufts and
         // nothing that hurts to walk into. Denser than the forest on purpose —
@@ -6886,11 +6889,13 @@ class World {
         if (roll < 0.22) this.setTile(x, sy - 1, TILES.FLOWER);
         else if (roll < 0.52) this.setTile(x, sy - 1, TILES.TALL_GRASS);
         else if (roll < 0.55) this.setTile(x, sy - 1, TILES.PEBBLE);
+        else if (roll < 0.58) this.setTile(x, sy - 1, TILES.BUSH);
       } else if (biome === 'swamp' && (ground === TILES.MUD || ground === TILES.WATER)) {
         if (ground === TILES.MUD && roll < 0.20) this.setTile(x, sy - 1, TILES.LILY);
         else if (ground === TILES.MUD && roll < 0.44) this.setTile(x, sy - 1, TILES.TALL_GRASS);
         else if (ground === TILES.MUD && roll < 0.50) this.setTile(x, sy - 1, TILES.MUSHROOM);
         else if (ground === TILES.MUD && roll < 0.53) this.setTile(x, sy - 1, TILES.BUSH);
+        else if (ground === TILES.MUD && roll < 0.56) this.setTile(x, sy - 1, TILES.FALLEN_LEAF);
       }
       // Vines drop from any overhang: solid ground with open air beneath it is
       // a cliff lip or a bank, and a strand or two hanging off it is what makes
@@ -12927,354 +12932,765 @@ class Player {
     const itemData = ITEMS[heldItem.id];
     if (!itemData) return;
 
-    ctx.save();
-    // Anchor at player hand
-    ctx.translate(14, 18);
-
-    if (this.isSwinging) {
-      const swingProg = 1 - (this.swingTimer / this.swingDuration);
-      const swingAngle = -Math.PI * 0.4 + swingProg * Math.PI * 0.85;
-      ctx.rotate(swingAngle);
-    } else {
-      ctx.rotate(0.2); // Rest angle
-    }
-
-    // ---- Render tool or weapon sprite ------------------------------------
-    const isPrismatic = heldItem.id === 'prismatic_saber' || heldItem.id === 'aurora_blade';
-    const isHellWeapon = ['hellstone_greatblade', 'soulfire_repeater', 'abyssal_staff', 'inferno_brand'].includes(heldItem.id);
-    if (isHellWeapon) {
-      // Underworld gear is drawn as a compact pixel sprite rather than an emoji:
-      // obsidian edges, ember seams, and a soul-lit core make each recipe readable.
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.18 + Math.sin(Date.now() * 0.012) * 0.05;
-      ctx.fillStyle = heldItem.id === 'abyssal_staff' ? '#a855f7' : '#fb923c';
-      ctx.fillRect(-5, -22, 10, 42);
-      ctx.restore();
-      ctx.fillStyle = '#1e293b';
-      if (heldItem.id === 'soulfire_repeater') {
-        ctx.fillRect(-2, -13, 4, 27); ctx.fillRect(-10, -5, 20, 4);
-        ctx.fillStyle = '#fb7185'; ctx.fillRect(-7, -3, 14, 2); ctx.fillRect(1, 10, 3, 9);
-      } else if (heldItem.id === 'abyssal_staff') {
-        ctx.fillRect(-2, -15, 4, 30); ctx.fillRect(-7, -18, 14, 4);
-        ctx.fillStyle = '#c084fc'; ctx.fillRect(-4, -22, 8, 8); ctx.fillStyle = '#f5d0fe'; ctx.fillRect(-1, -19, 3, 3);
-      } else {
-        ctx.fillStyle = '#f97316'; ctx.fillRect(0, -17, 5, 28); ctx.fillStyle = '#fef3c7'; ctx.fillRect(2, -14, 2, 19);
-        ctx.fillStyle = '#7f1d1d'; ctx.fillRect(-3, 9, 11, 4); ctx.fillRect(2, 12, 4, 8);
-      }
-    } else if (isPrismatic) {
-      // Endgame blades leave a living aurora behind the hand: layered neon
-      // trails, orbiting motes, and a bright prismatic core.
-      const pulse = 0.7 + Math.sin(Date.now() * 0.012) * 0.3;
-      const colors = heldItem.id === 'aurora_blade'
-        ? ['#22d3ee', '#a855f7', '#f472b6']
-        : ['#f472b6', '#facc15', '#22d3ee'];
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 3; i++) {
-        ctx.strokeStyle = colors[i];
-        ctx.globalAlpha = 0.35 * pulse;
-        ctx.lineWidth = 3 - i;
-        ctx.beginPath();
-        ctx.moveTo(-22 - i * 5, 8 + i * 2);
-        ctx.quadraticCurveTo(-4, -20 - i * 5, 28 + i * 4, -8 + i * 2);
-        ctx.stroke();
-      }
-      for (let i = 0; i < 5; i++) {
-        const a = Date.now() * 0.008 + i * 1.25;
-        ctx.fillStyle = colors[i % colors.length];
-        ctx.globalAlpha = 0.7 * pulse;
-        ctx.fillRect(Math.cos(a) * 22 - 2, Math.sin(a) * 14 - 2, 4, 4);
-      }
-      ctx.restore();
-    }
-    if (!isHellWeapon && !isPrismatic) {
-      // ---- REAL ITEM SPRITES ------------------------------------------------
-      // Held items used to be drawn as the item's emoji, which looked like a
-      // sticker floating next to the player. Every weapon class is now drawn as
-      // a proper vector sprite anchored at the hand, and every NAMED weapon
-      // (and every tool) has its own model in WEAPON_SPRITES below: its blade
-      // profile, its metal, its guard, its glow. Two legendary swords are never
-      // the same silhouette with a colour swapped over it.
-      const it = heldItem.id;
-      const wt = itemData.weaponType;
-      const isTool = itemData.type === 'tool';
-      const isBlock = itemData.type === 'tile';
-      if (isTool || (wt === 'melee' || wt === 'ranged' || wt === 'magic')) {
+    // ---- SWING SMEAR — before the real item, paint 2 lagged ghosts of it at
+    // earlier points of the arc. Motion is what makes a held weapon feel like
+    // a weapon instead of a sticker: the ghosts trail the swing, the newest
+    // brightest, so even a 0.22s swing reads as a committed cut. The smear is
+    // drawn only DURING a swing; at rest the item is drawn once, crisp.
+    // Each pass owns its full save/translate/rotate/restore so the ghosts can
+    // never leak a transform into the real draw (or into the player's frame).
+    const swingAngleNow = this.isSwinging
+      ? -Math.PI * 0.4 + (1 - (this.swingTimer / this.swingDuration)) * Math.PI * 0.85
+      : 0.2; // Rest angle
+    if (this.isSwinging && this.swingDuration > 0.05) {
+      const baseProg = 1 - (this.swingTimer / this.swingDuration);
+      for (let ghost = 2; ghost >= 1; ghost--) {
+        const lagged = Math.max(0, baseProg - ghost * 0.14);
+        const oldAngle = -Math.PI * 0.4 + lagged * Math.PI * 0.85;
         ctx.save();
-        const M = WEAPON_SPRITES[it];
-        if (M && M.kind === 'blade') this._drawBladeModel(ctx, M);
-        else if (M && M.kind === 'bow') this._drawBowModel(ctx, M);
-        else if (M && M.kind === 'gun') this._drawGunModel(ctx, M);
-        else if (M && M.kind === 'staff') this._drawStaffModel(ctx, M);
-        else if (M && M.kind === 'tool') this._drawToolModel(ctx, M);
-        else if (wt === 'melee') this._drawBladeModel(ctx, {
-          reach: Math.max(34, Math.min(60, (itemData.range || 100) * 0.42)),
-          blade: '#94a3b8', edge: '#e2e8f0', spine: '#475569',
-          guard: '#78350f', pommel: '#d4a017', guardW: 6, shape: 'straight'
-        });
-        else if (wt === 'ranged') this._drawBowModel(ctx, {
-          limb: '#8b5a2b', string: '#e8e2d0', grip: '#5b3a1a', r: 17
-        });
-        else if (wt === 'magic') this._drawStaffModel(ctx, {
-          shaft: '#4a3623', wrap: '#2f2318', orb: it === 'abyssal_staff' ? '#a855f7' : '#38bdf8'
-        });
+        ctx.globalAlpha = ghost === 1 ? 0.28 : 0.14;
+        ctx.translate(14, 18);
+        ctx.rotate(oldAngle);
+        this._drawHeldSprite(ctx, heldItem, itemData);
         ctx.restore();
-      } else {
-        // Non-weapon categories (materials, food, accessories…) keep the icon
-        // glyph — a raw fish or a pearl reads BETTER as a pictogram.
-        ctx.font = "18px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(itemData.icon, 8, -6);
       }
     }
-
+    ctx.save();
+    ctx.translate(14, 18);
+    ctx.rotate(swingAngleNow);
+    this._drawHeldSprite(ctx, heldItem, itemData);
     ctx.restore();
   }
 
   /**
-   * A sword model: blade profile (straight / broad / curved / kris / cleaver),
-   * metal colours, guard style and an optional emissive rune. `reach` scales
-   * every part together, so a dagger is the same weapon drawn small.
+   * The held item itself, in its own local frame (rotated to the swing/rest
+   * angle by the caller). Split out of renderHeldItem so the swing smear can
+   * paint ghosts of the exact same sprite without duplicating the dispatch.
+   */
+  _drawHeldSprite(ctx, heldItem, itemData) {
+
+    // ---- Render tool or weapon sprite ------------------------------------
+    const it = heldItem.id;
+    const wt = itemData.weaponType;
+    const isTool = itemData.type === 'tool';
+    const M = WEAPON_SPRITES[it];
+
+    // ---- LIVING AURA — painted BEHIND the sprite, never instead of it -----
+    // Legendary gear used to replace its own model: hell weapons became packed
+    // pixel blocks and the prismatic blades were trails with no blade at all,
+    // so mid-swing the hand held a smudge. The aura now lights the weapon and
+    // the real model always draws on top of it.
+    if (M && M.aura) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      if (M.aura === 'ember') {
+        const reach = M.reach || 46;
+        const g = ctx.createLinearGradient(0, 8, 0, -reach - 8);
+        g.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        g.addColorStop(0.5, M.glow || '#f97316');
+        g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.globalAlpha = 0.17 + Math.sin(Date.now() * 0.011) * 0.05;
+        ctx.fillStyle = g;
+        ctx.fillRect(-8, -reach - 8, 16, reach + 18);
+      } else if (M.aura === 'aurora') {
+        // Layered neon ribbons + orbiting motes trailing the blade.
+        const pulse = 0.7 + Math.sin(Date.now() * 0.012) * 0.3;
+        const colors = M.auraColors || (it === 'aurora_blade'
+          ? ['#22d3ee', '#a855f7', '#f472b6']
+          : ['#f472b6', '#facc15', '#22d3ee']);
+        for (let i = 0; i < 3; i++) {
+          ctx.strokeStyle = colors[i];
+          ctx.globalAlpha = 0.32 * pulse;
+          ctx.lineWidth = 3 - i;
+          ctx.beginPath();
+          ctx.moveTo(-22 - i * 5, 8 + i * 2);
+          ctx.quadraticCurveTo(-4, -20 - i * 5, 28 + i * 4, -8 + i * 2);
+          ctx.stroke();
+        }
+        for (let i = 0; i < 5; i++) {
+          const a = Date.now() * 0.008 + i * 1.25;
+          ctx.fillStyle = colors[i % colors.length];
+          ctx.globalAlpha = 0.65 * pulse;
+          ctx.fillRect(Math.cos(a) * 22 - 2, Math.sin(a) * 14 - 2, 4, 4);
+        }
+      }
+      ctx.restore();
+    }
+
+    // ---- REAL ITEM MODELS -------------------------------------------------
+    // Held items used to be drawn as the item's emoji, which looked like a
+    // sticker floating next to the player. Every weapon class is now drawn as
+    // a proper vector sprite anchored at the hand, and every NAMED weapon
+    // (and every tool) has its own model in WEAPON_SPRITES below: its blade
+    // profile, its metal, its guard, its glow. Two legendary swords are never
+    // the same silhouette with a colour swapped over it.
+    if (isTool || wt === 'melee' || wt === 'ranged' || wt === 'magic') {
+      ctx.save();
+      if (M && M.kind === 'blade') this._drawBladeModel(ctx, M);
+      else if (M && M.kind === 'bow') this._drawBowModel(ctx, M);
+      else if (M && M.kind === 'gun') this._drawGunModel(ctx, M);
+      else if (M && M.kind === 'staff') this._drawStaffModel(ctx, M);
+      else if (M && M.kind === 'tool') this._drawToolModel(ctx, M);
+      // Fallbacks for any weapon without an entry above: still a real model,
+      // never the emoji sticker.
+      else if (wt === 'melee') this._drawBladeModel(ctx, {
+        reach: Math.max(34, Math.min(60, (itemData.range || 100) * 0.42)),
+        blade: '#94a3b8', edge: '#e2e8f0', spine: '#475569',
+        guard: '#78350f', pommel: '#d4a017', shape: 'straight'
+      });
+      else if (wt === 'ranged') this._drawBowModel(ctx, {
+        limb: '#8b5a2b', string: '#e8e2d0', grip: '#5b3a1a', r: 17
+      });
+      else if (wt === 'magic') this._drawStaffModel(ctx, {
+        shaft: '#4a3623', wrap: '#2f2318', orb: it === 'abyssal_staff' ? '#a855f7' : '#38bdf8'
+      });
+      ctx.restore();
+    } else {
+      // Non-weapon categories (materials, food, accessories…) keep the icon
+      // glyph — a raw fish or a pearl reads BETTER as a pictogram.
+      ctx.font = "18px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(itemData.icon, 8, -6);
+    }
+    // NOTE: no ctx.restore() here — the caller owns the save/translate/
+    // rotate frame (see renderHeldItem). Only the balanced save/restore
+    // PAIRS opened inside this function may close here.
+  }
+
+  /**
+   * Blade models. One renderer, but every named weapon feeds it a different
+   * OUTLINE (straight / broad / curved / kris / fang / rapier / spear / fork),
+   * a different guard (crossbar / disc / wings / knuckle-bow / prongs), pommel
+   * and optional extras (back spike, prismatic gradient, rune seam) — so two
+   * swords read as two different objects even before colour.
+   *
+   * All interior shading happens INSIDE a clip of the blade outline: edge
+   * light, spine shadow, the fuller and the travelling specular can therefore
+   * never spill outside the silhouette, which is what made the old straight
+   * fillRect shading look messy on curved blades.
    */
   _drawBladeModel(ctx, M) {
     const reach = M.reach || 44;
     const w = (reach >= 48 ? 5 : 4) * (M.widthScale || 1);
     const yTip = -reach;
-    const yMid = -reach * 0.62;
     const shape = M.shape || 'straight';
-    const drawBlade = () => {
+
+    // ---- OUTLINE (also reused as the clip for interior shading) ------------
+    const outline = () => {
       ctx.beginPath();
       if (shape === 'curved' || shape === 'kris') {
-        // A curved edge: the spine bows back less than the edge, giving the
-        // classic scimitar/kris asymmetry.
-        const bow = shape === 'kris' ? w * 1.7 : w * 0.9;
-        ctx.moveTo(-w * 0.75, 0);
-        ctx.quadraticCurveTo(-w + bow, yMid, w * 0.2, yTip);
-        ctx.quadraticCurveTo(w + bow * 0.5, yMid, w, 0);
+        // A banana profile: the cutting edge bows OUT (convex left) and the
+        // spine follows it, tip thrown to the right. The kris bows harder and
+        // waves once more, so a cursed kris never reads as a plain scimitar.
+        if (shape === 'kris') {
+          ctx.moveTo(-w * 0.7, 0);
+          ctx.quadraticCurveTo(-w * 1.7, -reach * 0.28, -w * 0.35, -reach * 0.5);
+          ctx.quadraticCurveTo(-w * 1.5, -reach * 0.78, w * 0.3, yTip);
+          ctx.quadraticCurveTo(w * 0.6, -reach * 0.7, w * 0.05, -reach * 0.45);
+          ctx.quadraticCurveTo(w * 0.9, -reach * 0.25, w * 0.9, 0);
+        } else {
+          ctx.moveTo(-w * 0.7, 0);
+          ctx.quadraticCurveTo(-w * 1.6, -reach * 0.55, w * 0.3, yTip);
+          ctx.quadraticCurveTo(-w * 0.5, -reach * 0.5, w * 0.9, 0);
+        }
+        ctx.closePath();
       } else if (shape === 'broad') {
-        // A cleaver: a wide belly that narrows only at the very tip.
-        ctx.moveTo(-w * 1.25, 0);
-        ctx.lineTo(-w * 1.2, yMid);
-        ctx.lineTo(w * 0.1, yTip);
-        ctx.lineTo(w * 1.25, yMid);
-        ctx.lineTo(w * 1.25, 0);
-      } else {
-        ctx.moveTo(-w, 0);
-        ctx.lineTo(-w * 0.55, -reach * 0.92);
+        // A cleaver: wide, flat-backed, tip cut at an angle.
+        ctx.moveTo(-w * 0.95, 0);
+        ctx.lineTo(-w, -reach * 0.78);
+        ctx.lineTo(-w * 0.35, yTip);
+        ctx.lineTo(w * 1.1, -reach * 0.72);
+        ctx.lineTo(w * 0.9, -reach * 0.12);
+        ctx.lineTo(w * 0.55, 0);
+        ctx.closePath();
+      } else if (shape === 'fang') {
+        // The Megalodon's tooth: outer edge convex and leaning back, inner
+        // edge scooped, tip hooked — a silhouette no other blade shares.
+        ctx.moveTo(-w * 0.5, 0);
+        ctx.quadraticCurveTo(-w * 1.35, -reach * 0.5, 0, yTip);
+        ctx.quadraticCurveTo(w * 0.95, -reach * 0.45, w * 0.55, 0);
+        ctx.closePath();
+      } else if (shape === 'rapier') {
+        // Needle-thin: almost no width until the last third.
+        ctx.moveTo(-w * 0.4, 0);
+        ctx.lineTo(-w * 0.28, -reach * 0.9);
         ctx.lineTo(0, yTip);
-        ctx.lineTo(w * 0.55, -reach * 0.92);
+        ctx.lineTo(w * 0.28, -reach * 0.9);
+        ctx.lineTo(w * 0.4, 0);
+        ctx.closePath();
+      } else if (shape === 'spear') {
+        // Barbed leaf head, symmetric about the shaft.
+        ctx.moveTo(0, yTip);
+        ctx.lineTo(w * 1.1, -reach * 0.55);
+        ctx.lineTo(w * 0.5, -reach * 0.42);
+        ctx.lineTo(w * 0.4, 0);
+        ctx.lineTo(-w * 0.4, 0);
+        ctx.lineTo(-w * 0.5, -reach * 0.42);
+        ctx.lineTo(-w * 1.1, -reach * 0.55);
+        ctx.closePath();
+      } else if (shape === 'fork') {
+        // Twin prongs with a deep V between them (void star blade).
+        ctx.moveTo(-w, 0);
+        ctx.lineTo(-w * 0.8, yTip);
+        ctx.lineTo(0, -reach * 0.6);
+        ctx.lineTo(w * 0.8, yTip);
         ctx.lineTo(w, 0);
+        ctx.closePath();
+      } else {
+        // Straight sword default: pentagon profile.
+        ctx.moveTo(-w * 0.75, 0);
+        ctx.lineTo(-w * 0.85, -reach * 0.78);
+        ctx.lineTo(-w * 0.3, yTip);
+        ctx.lineTo(w * 0.7, -reach * 0.74);
+        ctx.lineTo(w * 0.9, -reach * 0.1);
+        ctx.closePath();
       }
-      ctx.closePath();
-      ctx.fill();
     };
-    // Emissive aura under the blade for the glowing weapons.
+    // ---- Emissive glow standing under the blade ----------------------------
     if (M.glow) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.2 + Math.sin(Date.now() * 0.01) * 0.06;
-      ctx.fillStyle = M.glow;
-      ctx.fillRect(-w * 2.4, -reach - 4, w * 4.8, reach + 8);
+      ctx.globalAlpha = 0.26 + Math.sin(Date.now() * 0.011) * 0.08;
+      const gg = ctx.createLinearGradient(0, 8, 0, yTip - 6);
+      gg.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      gg.addColorStop(0.6, M.glow);
+      gg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = gg;
+      ctx.fillRect(-w - 5, yTip - 6, w * 2 + 10, reach + 14);
       ctx.restore();
     }
-    ctx.fillStyle = M.blade || '#94a3b8';
-    drawBlade();
-    // Lit edge down the leading side, spine shadow down the back.
-    ctx.fillStyle = M.edge || '#e2e8f0';
-    ctx.fillRect(-w * 0.62, -reach * 0.9, w * 0.55, reach * 0.86);
-    ctx.fillStyle = M.spine || '#475569';
-    ctx.fillRect(w * 0.2, -reach * 0.9, w * 0.45, reach * 0.86);
-    // Fullers / runes: a darker channel down the middle for broad blades, or a
-    // glowing seam for the magical ones.
-    if (M.rune) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.55 + Math.sin(Date.now() * 0.009) * 0.2;
-      ctx.fillStyle = M.rune;
-      ctx.fillRect(-1, -reach * 0.86, 2, reach * 0.8);
-      ctx.restore();
-    }
-    // Grip, guard, pommel — the guard is what most distinguishes two swords at
-    // this scale, so it is per-model.
-    ctx.fillStyle = M.guard || '#78350f';
-    if (M.guardStyle === 'disc') {
-      ctx.beginPath(); ctx.arc(0, 0, w + 3, 0, Math.PI * 2); ctx.fill();
-    } else if (M.guardStyle === 'wings') {
-      ctx.fillRect(-w - 7, -1.5, w + 7, 3);
-      ctx.fillRect(2, -1.5, w + 7, 3);
-      ctx.fillRect(-w - 6, -5, 2.5, 4);
-      ctx.fillRect(w + 3.5, -5, 2.5, 4);
+
+    // ---- Blade body -------------------------------------------------------
+    if (Array.isArray(M.bladeGrad) && M.bladeGrad.length > 1) {
+      const rg = ctx.createLinearGradient(0, yTip, 0, 0);
+      for (let i = 0; i < M.bladeGrad.length; i++) {
+        rg.addColorStop(i / (M.bladeGrad.length - 1), M.bladeGrad[i]);
+      }
+      ctx.fillStyle = rg;
     } else {
-      ctx.fillRect(-(w + 3), 0, (w + 3) * 2, 3.5);
+      ctx.fillStyle = M.blade || '#94a3b8';
     }
-    ctx.fillStyle = M.grip || '#5b3a1a';
-    ctx.fillRect(-2, 3.5, 4, 9);
+    outline();
+    ctx.fill();
+
+    // ---- Interior shading, clipped to the outline --------------------------
+    ctx.save();
+    outline();
+    ctx.clip();
+    // Edge light down the cutting side, spine shadow down the back — clipped,
+    // so curved silhouettes shade correctly with no stray rectangles.
+    ctx.fillStyle = M.edge || '#e2e8f0';
+    ctx.fillRect(-w * 1.6, yTip - 4, w * 0.9, reach + 8);
+    ctx.fillStyle = M.spine || '#475569';
+    ctx.globalAlpha = 0.75;
+    ctx.fillRect(w * 0.35, yTip - 4, w * 1.6, reach + 8);
+    ctx.globalAlpha = 1;
+    if (M.rune) {
+      // A glowing seam down the fuller.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = M.rune;
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(-0.8, -reach * 0.82, 1.6, reach * 0.72);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    } else if (w >= 3) {
+      // Dark fuller (blood groove) for plain blades.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      ctx.fillRect(-0.7, -reach * 0.84, 1.4, reach * 0.74);
+    }
+    // Travelling specular: a short bright sweep that crawls along the blade.
+    const sweep = (Math.sin(Date.now() * 0.006) + 1) * 0.5;
+    ctx.save();
+    ctx.rotate(0.16);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.fillRect(-w * 1.5, yTip * (0.15 + sweep * 0.6), w * 3, 2.5);
+    ctx.restore();
+    ctx.restore();
+
+    // ---- Back spike (bone cleaver, underworld greatblade) -----------------
+    if (M.backSpike) {
+      ctx.fillStyle = M.spine || '#475569';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.8, -reach * 0.1);
+      ctx.lineTo(w + 6, -reach * 0.3);
+      ctx.lineTo(w * 0.9, -reach * 0.44);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.8, -reach * 0.1);
+      ctx.lineTo(w + 6, -reach * 0.3);
+      ctx.lineTo(w * 0.95, -reach * 0.17);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // ---- GUARD: five genuinely different guards ---------------------------
+    ctx.fillStyle = M.guard || '#78350f';
+    const guardW = w + 3;
+    if (M.guardStyle === 'disc') {
+      ctx.beginPath();
+      ctx.arc(0, 1.2, guardW, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.beginPath();
+      ctx.arc(0, 1.2, guardW * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (M.guardStyle === 'wings') {
+      ctx.beginPath();
+      ctx.moveTo(-guardW - 2, -2.6);
+      ctx.lineTo(-w * 0.6, 3.4);
+      ctx.lineTo(w * 0.6, 3.4);
+      ctx.lineTo(guardW + 2, -2.6);
+      ctx.lineTo(w * 0.5, -0.4);
+      ctx.lineTo(-w * 0.5, -0.4);
+      ctx.closePath();
+      ctx.fill();
+    } else if (M.guardStyle === 'bow') {
+      // Saber knuckle-bow: one quillon plus a swept bar protecting the grip.
+      ctx.fillRect(-(w + 2), -0.8, w + 2, 2.4);
+      ctx.strokeStyle = M.guard;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w + 1, 1.2);
+      ctx.quadraticCurveTo(w + 7, 8, 1.5, 13.5);
+      ctx.stroke();
+    } else if (M.guardStyle === 'prong') {
+      // Two angular quillons angled back toward the wielder's hand.
+      ctx.beginPath();
+      ctx.moveTo(-(guardW + 1.5), 1.6);
+      ctx.lineTo(-(w + 1), -4);
+      ctx.lineTo(-w * 0.4, 1.6);
+      ctx.closePath();
+      ctx.moveTo(guardW + 1.5, 1.6);
+      ctx.lineTo(w + 1, -4);
+      ctx.lineTo(w * 0.4, 1.6);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Plain crossbar with a lit top edge.
+      ctx.fillRect(-guardW, -0.6, guardW * 2, 3.4);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fillRect(-guardW, -0.6, guardW * 2, 1);
+    }
+
+    // ---- GRIP: leather wrap with three bands ------------------------------
+    ctx.fillStyle = M.grip || '#3f3226';
+    ctx.fillRect(-2, 2.6, 4, 9);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    for (let b = 0; b < 3; b++) ctx.fillRect(-2, 4.2 + b * 2.6, 4, 0.9);
+
+    // ---- POMMEL: round / gem / spike --------------------------------------
     ctx.fillStyle = M.pommel || '#d4a017';
     if (M.pommelStyle === 'gem') {
-      ctx.fillRect(-2.6, 13, 5.2, 3.4);
-      ctx.fillStyle = M.pommel;
-      ctx.fillRect(-1.4, 13.6, 2.8, 1.6);
+      ctx.fillRect(-2.6, 12.4, 5.2, 4);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.fillRect(-1.6, 13, 1.8, 1.6);
+    } else if (M.pommelStyle === 'spike') {
+      ctx.beginPath();
+      ctx.moveTo(-2.6, 13);
+      ctx.lineTo(0, 17.5);
+      ctx.lineTo(2.6, 13);
+      ctx.closePath();
+      ctx.fill();
     } else {
-      ctx.beginPath(); ctx.arc(0, 14, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, 14, 2.4, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
-  /** A bow model: limb colour, radius and whether it carries a nock/arrow. */
+  /**
+   * A bow model: a curved limb with pale nockings at both tips, a string that
+   * bends to the nock at the grip, a wrapped handle and an optional nocked
+   * arrow. Each bow's entry differs in radius, limb/string colour and arrow
+   * colour, so the bows read as three different weapons.
+   */
   _drawBowModel(ctx, M) {
+    const r = M.r || 17;
+    const a0 = Math.PI * 0.62, a1 = Math.PI * 1.38;
+    const tip0 = { x: 2 + Math.cos(a0) * r, y: -6 + Math.sin(a0) * r };
+    const tip1 = { x: 2 + Math.cos(a1) * r, y: -6 + Math.sin(a1) * r };
+    ctx.save();
+    ctx.lineCap = 'round';
+    // Limb: dark backing first, then the limb colour — one cheap depth cue.
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.lineWidth = (M.lineW || 3.5) + 1.6;
+    ctx.beginPath();
+    ctx.arc(2, -6, r, a0, a1);
+    ctx.stroke();
     ctx.strokeStyle = M.limb || '#8b5a2b';
     ctx.lineWidth = M.lineW || 3.5;
     ctx.beginPath();
-    ctx.arc(2, -6, M.r || 17, Math.PI * 0.62, Math.PI * 1.38);
+    ctx.arc(2, -6, r, a0, a1);
     ctx.stroke();
+    // Pale nockings at both tips.
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.fillRect(tip0.x - 1.6, tip0.y - 1.6, 3.2, 3.2);
+    ctx.fillRect(tip1.x - 1.6, tip1.y - 1.6, 3.2, 3.2);
+    // String: tip -> nock point at the grip -> tip (bent = drawn).
     ctx.strokeStyle = M.string || '#e8e2d0';
     ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(-9, -16); ctx.lineTo(-2, -6); ctx.lineTo(-9, 4);
+    ctx.moveTo(tip0.x, tip0.y);
+    ctx.lineTo(-1, -6);
+    ctx.lineTo(tip1.x, tip1.y);
     ctx.stroke();
+    // Wrapped grip.
     ctx.fillStyle = M.grip || '#5b3a1a';
-    ctx.fillRect(0, -9, 4, 7);
+    ctx.fillRect(-0.5, -9.5, 4, 7.5);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(0.4, -8, 2.2, 1);
+    ctx.fillRect(0.4, -5.6, 2.2, 1);
     if (M.arrow) {
       ctx.fillStyle = M.arrow;
-      ctx.fillRect(-2, -7, 22, 2);
+      ctx.fillRect(-1, -7, 22, 2);
       ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(19, -8.5, 4, 5);
+      ctx.beginPath();
+      ctx.moveTo(21, -8.6);
+      ctx.lineTo(25.5, -6);
+      ctx.lineTo(21, -3.4);
+      ctx.closePath();
+      ctx.fill();
     }
+    ctx.restore();
   }
 
-  /** A gun / repeater / launcher: body, barrel, magazine,燃烧 core. */
+  /**
+   * A gun: shoulder stock, receiver, barrel with a muzzle ring and front
+   * sight, magazine, angled grip and a burning core. Parts are per-entry, so
+   * a pistol and a repeater would draw as different machines.
+   */
   _drawGunModel(ctx, M) {
+    const bodyW = M.bodyW || 16;
+    const barrelLen = M.barrelLen || 22;
+    const back = -4;                 // receiver rear
+    const front = back + bodyW;       // receiver front
+    // Shoulder stock angled down behind the receiver.
+    ctx.fillStyle = M.grip || '#1e293b';
+    ctx.beginPath();
+    ctx.moveTo(back + 1, -5);
+    ctx.lineTo(back - 7, 3);
+    ctx.lineTo(back - 5, 8);
+    ctx.lineTo(back + 3, 4);
+    ctx.closePath();
+    ctx.fill();
+    // Receiver with a lit top edge.
     ctx.fillStyle = M.body || '#334155';
-    ctx.fillRect(-4, -12, M.bodyW || 12, 6);
-    ctx.fillRect(-4, -6, 5, 14);
+    ctx.fillRect(back, -12, bodyW, 7);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.fillRect(back, -12, bodyW, 1.4);
+    // Barrel + shadowed underside + bright muzzle ring.
     ctx.fillStyle = M.barrel || '#64748b';
-    ctx.fillRect(M.bodyW - 8, -10, M.barrelLen || 20, 3);
-    if (M.underBarrel) ctx.fillRect(M.bodyW - 12, -6, 10, 4);
+    ctx.fillRect(front - 4, -11, barrelLen, 3.4);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(front - 4, -8.4, barrelLen, 1.2);
+    ctx.fillStyle = M.edge || '#e2e8f0';
+    ctx.fillRect(front + barrelLen - 4.5, -12, 2.4, 5.6);
+    // Front sight post.
+    ctx.fillStyle = M.body || '#334155';
+    ctx.fillRect(front + barrelLen - 12, -13.6, 2.4, 2.6);
+    if (M.underBarrel) ctx.fillRect(front - 8, -7, 12, 4);
+    // Magazine, slightly raked.
     if (M.mag) {
       ctx.fillStyle = M.mag;
-      ctx.fillRect(1, -5, 5, M.magLen || 9);
+      ctx.beginPath();
+      ctx.moveTo(back + 4, -5.6);
+      ctx.lineTo(back + 9.5, -5.6);
+      ctx.lineTo(back + 8.5, (M.magLen || 9) + 1);
+      ctx.lineTo(back + 3.5, (M.magLen || 9) + 1);
+      ctx.closePath();
+      ctx.fill();
     }
+    // Angled pistol grip under the receiver.
+    ctx.fillStyle = M.grip || '#1e293b';
+    ctx.beginPath();
+    ctx.moveTo(back + 2, -5.4);
+    ctx.lineTo(back + 7, -5.4);
+    ctx.lineTo(back + 5.5, 6.5);
+    ctx.lineTo(back + 1, 6.5);
+    ctx.closePath();
+    ctx.fill();
+    // Soulfire core burning in the chamber and at the muzzle.
     if (M.core) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.5 + Math.sin(Date.now() * 0.012) * 0.25;
       ctx.fillStyle = M.core;
-      ctx.fillRect(M.bodyW + (M.barrelLen || 20) - 12, -11, 3, 5);
+      ctx.fillRect(front - 7, -11.6, 4, 6);
+      ctx.fillRect(front + barrelLen - 9, -11, 3, 4.4);
       ctx.restore();
     }
-    ctx.fillStyle = M.grip || '#1e293b';
-    ctx.fillRect(-6, 7, 5, 7);
   }
 
-  /** A staff: shaft, wrapped head, orb. */
+  /**
+   * A staff: shaft with a lit edge and a wrapped grip, then a PER-WEAPON
+   * head — a plain orb, a leafy sprig (forest wand), a silver crescent
+   * cradling a pearl (moon staff) or a horned crystal (abyssal staff) —
+   * optionally ringed by a channeling halo.
+   */
   _drawStaffModel(ctx, M) {
+    const orbY = M.orbY || -26;
+    // Shaft with a lit edge.
     ctx.fillStyle = M.shaft || '#4a3623';
-    ctx.fillRect(-1.6, -22, 3.2, 34);
+    ctx.fillRect(-1.7, -23, 3.4, 35);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.fillRect(-1.7, -22, 0.9, 33);
+    // Wrapped grip below the head.
     ctx.fillStyle = M.wrap || '#2f2318';
-    ctx.fillRect(-2.4, -22, 4.8, 5);
+    ctx.fillRect(-2.5, -23, 5, 5);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.fillRect(-2.5, -23, 5, 1);
+    // Horns (abyssal staff): two spikes framing the head.
     if (M.horns) {
       ctx.fillStyle = M.shaft;
-      ctx.fillRect(-6, -26, 3, 6);
-      ctx.fillRect(3, -26, 3, 6);
+      ctx.beginPath();
+      ctx.moveTo(-6.5, orbY + 6);
+      ctx.lineTo(-4, orbY - 6);
+      ctx.lineTo(-1.5, orbY + 6);
+      ctx.closePath();
+      ctx.moveTo(6.5, orbY + 6);
+      ctx.lineTo(4, orbY - 6);
+      ctx.lineTo(1.5, orbY + 6);
+      ctx.closePath();
+      ctx.fill();
     }
+    // Channeling halo behind the head.
     if (M.ring) {
       ctx.strokeStyle = M.ring;
       ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(0, M.orbY || -26, M.ringR || 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, orbY, M.ringR || 8, 0, Math.PI * 2);
+      ctx.stroke();
     }
-    ctx.fillStyle = M.orb || '#38bdf8';
-    ctx.beginPath(); ctx.arc(0, M.orbY || -26, M.orbR || 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.beginPath(); ctx.arc(-1.2, (M.orbY || -26) - 1.5, M.orbR ? M.orbR * 0.36 : 1.6, 0, Math.PI * 2); ctx.fill();
+    // The head itself.
+    if (M.top === 'crescent') {
+      // Moon staff: a silver crescent open to the right, pearl at its heart.
+      ctx.strokeStyle = M.orb || '#e2e8f0';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, orbY, (M.orbR || 4.6) + 3, Math.PI * 0.35, Math.PI * 1.65);
+      ctx.stroke();
+      ctx.fillStyle = M.ring || '#bfdbfe';
+      ctx.beginPath();
+      ctx.arc(0, orbY, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (M.top === 'leaf') {
+      // Forest wand: a leafy sprig instead of a gem.
+      ctx.fillStyle = M.orb || '#4ade80';
+      ctx.beginPath();
+      ctx.moveTo(0, orbY - 7);
+      ctx.quadraticCurveTo(6, orbY - 2, 0, orbY + 6);
+      ctx.quadraticCurveTo(-6, orbY - 2, 0, orbY - 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, orbY - 5.5);
+      ctx.lineTo(0, orbY + 4.5);
+      ctx.stroke();
+    } else {
+      // Plain orb with a highlight.
+      ctx.fillStyle = M.orb || '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(0, orbY, M.orbR || 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.beginPath();
+      ctx.arc(-1.2, orbY - 1.5, (M.orbR || 4.5) * 0.36, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
-  /** Tools: pickaxe, axe, hammer, fishing rod — each its own head and shaft. */
+  /**
+   * Tools. The whole tool is built in ONE chain anchored at the hand: the
+   * shaft is drawn from the grip up to its tip, and the head is placed on the
+   * EXACT tip (computed trigonometrically) and rotated relative to the shaft.
+   * The old version guessed the head position from independent offsets, so a
+   * pickaxe's head floated ~6px off the shaft — the hand held a broken tool.
+   * Each head (pick / axe / hammer / rod) is its own clean silhouette: shaped
+   * paths with one shade and one highlight, not stacks of 1px strips.
+   */
   _drawToolModel(ctx, M) {
     const shaft = M.shaft || '#8b5a2b';
     const shaftLen = M.shaftLen || 30;
+    const shaftAngle = M.shaftAngle == null ? 0.5 : M.shaftAngle;
+    const tipX = shaftLen * Math.sin(shaftAngle);
+    const tipY = -shaftLen * Math.cos(shaftAngle);
+
+    // ---- SHAFT, drawn straight up from the hand, then leaned over ----------
     ctx.save();
-    ctx.translate(0, -shaftLen * 0.35);
-    ctx.rotate(M.shaftAngle || 0.5);
+    ctx.rotate(shaftAngle);
     ctx.fillStyle = shaft;
-    ctx.fillRect(-1.6, -shaftLen, 3.4, shaftLen + 8);
+    ctx.fillRect(-1.7, -shaftLen, 3.4, shaftLen + 4);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.fillRect(0.3, -shaftLen + 2, 1, shaftLen);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.fillRect(-1.7, -shaftLen + 2, 0.7, shaftLen - 2);
+    // Leather wrap where the hand grips.
+    ctx.fillStyle = 'rgba(30, 22, 14, 0.92)';
+    ctx.fillRect(-1.9, -7, 3.9, 10);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    for (let b = 0; b < 3; b++) ctx.fillRect(-1.9, -6 + b * 2.8, 3.9, 0.8);
     ctx.restore();
+
+    // ---- HEAD, pinned to the shaft tip ------------------------------------
     ctx.save();
-    ctx.translate(0, -shaftLen * 0.55);
-    ctx.rotate(M.headAngle == null ? -0.7 : M.headAngle);
-    ctx.fillStyle = M.head || '#94a3b8';
+    ctx.translate(tipX, tipY);
+    ctx.rotate(shaftAngle + (M.headAngle == null ? -1.15 : M.headAngle));
+    const s = M.headScale || 1;
+    ctx.scale(s, s);
     if (M.toolKind === 'pick') {
-      ctx.fillRect(-14, -3, 28, 4);
+      // Two swept, tapering arms meeting at the eye — curved paths, so the
+      // tips are POINTS instead of stacked strips of static.
+      for (const dir of [-1, 1]) {
+        ctx.fillStyle = M.head || '#94a3b8';
+        ctx.beginPath();
+        ctx.moveTo(dir * 2.6, -4.6);
+        ctx.quadraticCurveTo(dir * 10, -5.4, dir * 16.6, -1.2);
+        ctx.lineTo(dir * 17.4, 1.2);
+        ctx.quadraticCurveTo(dir * 9, -1.4, dir * 2.6, 3.4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(dir * 2.6, 3.4);
+        ctx.quadraticCurveTo(dir * 9, -1.4, dir * 17.4, 1.2);
+        ctx.stroke();
+        ctx.fillStyle = M.edge || '#e2e8f0';
+        ctx.fillRect(dir > 0 ? 15.8 : -17.6, -1.4, 1.8, 2.6);
+      }
+      // The eye: a collar where the shaft threads through the head.
+      ctx.fillStyle = M.headDark || 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(-2.8, -5, 5.6, 9.6);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillRect(-2.8, -5, 1.8, 9.6);
+    }
+    else if (M.toolKind === 'axe') {
+      // One bit flaring out from the eye with a compact poll behind it.
+      ctx.fillStyle = M.head || '#94a3b8';
+      ctx.beginPath();
+      ctx.moveTo(-3.5, -3.6);
+      ctx.lineTo(4, -4.4);
+      ctx.quadraticCurveTo(11, -6.6, 14.6, -9);
+      ctx.lineTo(16.4, 0.6);
+      ctx.quadraticCurveTo(11, 4.8, 4, 3.6);
+      ctx.lineTo(-3.5, 3.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = M.edge || '#e2e8f0';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(15.2, -7.8);
+      ctx.lineTo(16.4, 0.6);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(-3, 3);
+      ctx.quadraticCurveTo(10, 4.4, 15.8, 1);
+      ctx.stroke();
       ctx.fillStyle = M.headDark || '#64748b';
-      ctx.fillRect(-14, -3, 28, 1.4);
-      ctx.fillStyle = M.edge || '#e2e8f0';
-      ctx.fillRect(-13, -4.2, 7, 1.6);
-      ctx.fillRect(6, -4.2, 7, 1.6);
-    } else if (M.toolKind === 'axe') {
-      ctx.fillRect(-3, -8, 20, 9);
-      ctx.fillStyle = M.headDark || '#64748b';
-      ctx.fillRect(-3, -8, 20, 2.5);
-      ctx.fillStyle = M.edge || '#e2e8f0';
-      ctx.fillRect(15, -8.5, 3.5, 10);
+      ctx.fillRect(-6.5, -3.2, 3.4, 6.4);
     } else if (M.toolKind === 'hammer') {
-      ctx.fillRect(-13, -7, 26, 9);
-      ctx.fillStyle = M.headDark || '#64748b';
-      ctx.fillRect(-13, 0, 26, 2);
+      // A gavel block: two bright faces, one shadow line, an eye collar.
+      ctx.fillStyle = M.head || '#475569';
+      ctx.fillRect(-9, -6, 18, 12);
+      ctx.fillStyle = M.headDark || '#1e293b';
+      ctx.fillRect(-9, 3, 18, 3);
       ctx.fillStyle = M.edge || '#e2e8f0';
-      ctx.fillRect(-13, -7, 26, 2);
+      ctx.fillRect(-10, -6, 2.6, 12);
+      ctx.fillRect(7.4, -6, 2.6, 12);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillRect(-10, -6, 2.6, 1.4);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillRect(-2.4, -6, 2.4, 12);
     } else if (M.toolKind === 'rod') {
-      ctx.fillRect(2, -4, 26, 2.2);
-      ctx.strokeStyle = 'rgba(226,232,240,0.75)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(27, -2.8); ctx.quadraticCurveTo(30, 2, 27, 8); ctx.stroke();
+      // The rod continues past the shaft tip: a tapering pole, line, bobber.
+      ctx.fillStyle = shaft;
+      ctx.beginPath();
+      ctx.moveTo(0, -2.6);
+      ctx.lineTo(24, -1);
+      ctx.lineTo(24, 1);
+      ctx.lineTo(0, 2.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(2, -1.8);
+      ctx.lineTo(22, -0.6);
+      ctx.stroke();
+      // Line dropping from the rod tip to a bobber.
+      ctx.strokeStyle = 'rgba(240, 240, 255, 0.75)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(24, 0.5);
+      ctx.quadraticCurveTo(27, 8, 24.5, 14);
+      ctx.stroke();
       ctx.fillStyle = M.head || '#f87171';
-      ctx.fillRect(25, 8, 4, 2.5);
+      ctx.beginPath();
+      ctx.arc(24.5, 15.4, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.arc(23.7, 14.5, 1, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
-    if (M.grip) {
-      ctx.fillStyle = M.grip;
-      ctx.fillRect(-2, 0, 4, 5);
-    }
   }
 }
 
-// ============================================================================
+// ===========================================================================
 // HELD-ITEM MODELS — one entry per weapon and tool that appears in the hotbar.
 //
-// Each entry is a drawing recipe, not a tint: a different blade PROFILE (a
-// kris waves, a cleaver is broad, a rapier is needle-thin), a different guard
-// (a disc, wings, or a plain crossbar), a different grip and pommel, and where
-// the weapon earns it a glow and a rune. Two legendary swords therefore read as
-// two different objects before you even look at the colour.
+// Each entry is a drawing recipe, not a tint: a different blade PROFILE
+// (straight / broad / curved / kris / fang / rapier / spear / fork), a
+// different guard (crossbar / disc / wings / knuckle-bow / prongs), pommel
+// style and optional extras (backSpike, bladeGrad gradient, rune seam, aura).
+// Two legendary swords therefore read as two different objects before you
+// even look at the colour.
 //
-// Keys: kind | reach | shape | blade/edge/spine | guard/guardStyle/grip/pommel
-//       | glow/rune | (tools) toolKind/head/headDark/shaft/shaftLen
-// ============================================================================
+// Keys: kind | reach | shape | widthScale | blade/edge/spine
+//       | guard/guardStyle/grip/pommel/pommelStyle | glow/rune/backSpike
+//       | bladeGrad | aura ('ember' | 'aurora')
+//       | (bow) limb/string/grip/r/lineW/arrow
+//       | (gun) body/bodyW/barrel/barrelLen/mag/magLen/grip/core/edge
+//       | (staff) shaft/wrap/orb/orbY/orbR/ring/ringR/top/horns
+//       | (tool) toolKind/head/headDark/edge/shaft/shaftLen/headAngle/headScale
+// ===========================================================================
 const WEAPON_SPRITES = {
-  // ---- Tools ---------------------------------------------------------------
-  copper_pickaxe: { kind: 'tool', toolKind: 'pick', head: '#c2703a', headDark: '#8a4a1e', edge: '#f0b98a', shaft: '#8b5a2b', shaftLen: 28, grip: '#3f3226' },
-  fishing_rod: { kind: 'tool', toolKind: 'rod', shaft: '#a16207', shaftLen: 26, head: '#f87171', grip: '#1e293b' },
-  // ---- Starting / craftable weapons ---------------------------------------
-  copper_sword: { kind: 'blade', reach: 40, shape: 'straight', blade: '#c2703a', edge: '#f0b98a', spine: '#8a4a1e', guard: '#8a4a1e', grip: '#5b3a1a', pommel: '#c2703a' },
-  iron_broadsword: { kind: 'blade', reach: 47, shape: 'broad', widthScale: 1.15, blade: '#d8dee8', edge: '#ffffff', spine: '#7c8899', guard: '#64748b', grip: '#3f3226', pommel: '#cbd5e1', guardStyle: 'disc' },
+  // ---- Tools: each a head shape, pinned to the shaft tip -------------------
+  copper_pickaxe: { kind: 'tool', toolKind: 'pick', head: '#e07a3f', headDark: '#8a4a1e', edge: '#fcd34d', shaft: '#6b4226', shaftLen: 34, headScale: 1.35 },
+  fishing_rod: { kind: 'tool', toolKind: 'rod', shaft: '#a16207', shaftLen: 26, head: '#f87171', headAngle: -1.2 },
+  ban_hammer: { kind: 'tool', toolKind: 'hammer', head: '#475569', headDark: '#1e293b', edge: '#e2e8f0', shaft: '#7c5a3a', shaftLen: 30, headScale: 1.3 },
+  // ---- Melee: every blade a different SILHOUETTE ---------------------------
+  copper_sword: { kind: 'blade', reach: 42, shape: 'straight', widthScale: 1.15, blade: '#e07a3f', edge: '#fcd34d', spine: '#8a4a1e', guard: '#b45309', guardStyle: 'cross', grip: '#5b3a1a', pommel: '#d4a017', pommelStyle: 'gem' },
+  iron_broadsword: { kind: 'blade', reach: 47, shape: 'broad', widthScale: 1.15, blade: '#d8dee8', edge: '#ffffff', spine: '#7c8899', guard: '#64748b', guardStyle: 'disc', grip: '#3f3226', pommel: '#cbd5e1' },
+  silver_saber: { kind: 'blade', reach: 52, shape: 'curved', blade: '#e5ecf5', edge: '#ffffff', spine: '#94a3b8', guard: '#cbd5e1', guardStyle: 'bow', grip: '#3f3226', pommel: '#e2e8f0' },
+  crystal_spear: { kind: 'blade', reach: 64, shape: 'spear', widthScale: 0.7, blade: '#c7b5f5', edge: '#ffffff', spine: '#7c3aed', guard: '#4c1d95', guardStyle: 'prong', grip: '#2e1065', pommel: '#ddd6fe', glow: '#a78bfa', rune: '#f5d0fe' },
+  diamond_blade: { kind: 'blade', reach: 56, shape: 'rapier', widthScale: 0.75, blade: '#8ee6f5', edge: '#ecfeff', spine: '#0e7490', guard: '#155e75', guardStyle: 'prong', grip: '#0f2c3d', pommel: '#a5f3fc', pommelStyle: 'gem', glow: '#67e8f9' },
+  // ---- The Megalodon's own blade: its TOOTH, hooked and leaning back -------
+  megalodon_blade: { kind: 'blade', reach: 58, shape: 'fang', widthScale: 1.3, blade: '#dbeafe', edge: '#ffffff', spine: '#3b5b78', guard: '#1e3a5f', guardStyle: 'wings', grip: '#0f2338', pommel: '#67e8f9', pommelStyle: 'spike', glow: '#22d3ee', rune: '#a5f3fc' },
+  // ---- Cursed chapel: a wavy dark kris ------------------------------------
+  cursed_edge: { kind: 'blade', reach: 56, shape: 'kris', blade: '#7c6f9c', edge: '#ddd6fe', spine: '#3b2d5c', guard: '#2e1065', guardStyle: 'wings', grip: '#1b0f36', pommel: '#a78bfa', glow: '#7c3aed', rune: '#c4b5fd' },
+  // ---- Bone: a broad cleaver with a spike off the spine -------------------
+  ossuary_blade: { kind: 'blade', reach: 58, shape: 'broad', widthScale: 1.1, blade: '#e7e5e4', edge: '#ffffff', spine: '#57534e', guard: '#292524', guardStyle: 'cross', grip: '#1c1917', pommel: '#f5f5f4', backSpike: true },
+  inferno_brand: { kind: 'blade', reach: 59, shape: 'curved', blade: '#ea580c', edge: '#fed7aa', spine: '#7c2d12', guard: '#431407', guardStyle: 'bow', grip: '#27100a', pommel: '#fb923c', glow: '#f97316', aura: 'ember' },
+  hellstone_greatblade: { kind: 'blade', reach: 66, shape: 'broad', widthScale: 1.3, blade: '#7f1d1d', edge: '#fca5a5', spine: '#450a0a', guard: '#1c0707', guardStyle: 'disc', grip: '#26100a', pommel: '#f97316', pommelStyle: 'spike', glow: '#dc2626', aura: 'ember', backSpike: true },
+  // ---- Void star: a forked twin-prong blade -------------------------------
+  void_star_blade: { kind: 'blade', reach: 62, shape: 'fork', widthScale: 0.85, blade: '#1e1b4b', edge: '#c7d2fe', spine: '#312e81', guard: '#1e1b4b', guardStyle: 'prong', grip: '#0b0a1f', pommel: '#818cf8', pommelStyle: 'gem', glow: '#6366f1', rune: '#e0e7ff' },
+  // ---- Rainbow endgame pair: aurora trails behind a real gradient blade ---
+  prismatic_saber: { kind: 'blade', reach: 56, shape: 'curved', blade: '#f472b6', bladeGrad: ['#f472b6', '#facc15', '#4ade80', '#38bdf8', '#a78bfa'], edge: '#ffffff', spine: '#7c3aed', guard: '#e2e8f0', guardStyle: 'wings', grip: '#312e81', pommel: '#fde68a', pommelStyle: 'gem', glow: '#f472b6', aura: 'aurora' },
+  aurora_blade: { kind: 'blade', reach: 60, shape: 'straight', widthScale: 0.9, blade: '#38bdf8', bladeGrad: ['#a7f3d0', '#67e8f9', '#818cf8', '#f0abfc'], edge: '#ffffff', spine: '#1e3a8a', guard: '#155e75', guardStyle: 'disc', grip: '#0f172a', pommel: '#a5f3fc', pommelStyle: 'gem', glow: '#22d3ee', aura: 'aurora' },
+  // ---- Bows, gun, staves ---------------------------------------------------
   starlight_bow: { kind: 'bow', limb: '#fde68a', string: '#fff7cc', grip: '#5b3a1a', r: 17, lineW: 3.6, arrow: '#fef3c7' },
-  forest_wand: { kind: 'staff', shaft: '#7c5a3a', wrap: '#3f5129', orb: '#4ade80', orbR: 4.4, ring: '#86efac', ringR: 7.5 },
-  silver_saber: { kind: 'blade', reach: 52, shape: 'curved', blade: '#e5ecf5', edge: '#ffffff', spine: '#94a3b8', guard: '#cbd5e1', grip: '#3f3226', pommel: '#e2e8f0', guardStyle: 'wings' },
-  crystal_spear: { kind: 'blade', reach: 64, shape: 'straight', widthScale: 0.55, blade: '#c7b5f5', edge: '#ffffff', spine: '#7c3aed', guard: '#4c1d95', grip: '#2e1065', pommel: '#ddd6fe', glow: '#a78bfa', rune: '#f5d0fe', guardStyle: 'disc' },
   ember_bow: { kind: 'bow', limb: '#b45309', string: '#fcd34d', grip: '#42240c', r: 18, lineW: 4, arrow: '#fb923c' },
-  moon_staff: { kind: 'staff', shaft: '#57534e', wrap: '#1e293b', orb: '#e2e8f0', orbR: 4.6, ring: '#bfdbfe', ringR: 9 },
-  diamond_blade: { kind: 'blade', reach: 56, shape: 'straight', blade: '#8ee6f5', edge: '#ecfeff', spine: '#0e7490', guard: '#155e75', grip: '#0f2c3d', pommel: '#a5f3fc', glow: '#67e8f9', guardStyle: 'wings' },
-  // ---- The Megalodon's own blade: a razor crescent, pale as a tooth -------
-  megalodon_blade: { kind: 'blade', reach: 58, shape: 'curved', blade: '#dbeafe', edge: '#ffffff', spine: '#3b5b78', guard: '#1e3a5f', grip: '#0f2338', pommel: '#67e8f9', glow: '#22d3ee', rune: '#a5f3fc', guardStyle: 'wings' },
-  // ---- Cursed chapel: a dark broad cleaver ---------------------------------
-  cursed_edge: { kind: 'blade', reach: 56, shape: 'broad', widthScale: 1.15, blade: '#7c6f9c', edge: '#ddd6fe', spine: '#3b2d5c', guard: '#2e1065', grip: '#1b0f36', pommel: '#a78bfa', glow: '#7c3aed', rune: '#c4b5fd', guardStyle: 'disc' },
-  ossuary_blade: { kind: 'blade', reach: 58, shape: 'broad', widthScale: 1.1, blade: '#e7e5e4', edge: '#ffffff', spine: '#57534e', guard: '#292524', grip: '#1c1917', pommel: '#f5f5f4', guardStyle: 'wings' },
-  inferno_brand: { kind: 'blade', reach: 59, shape: 'curved', blade: '#ea580c', edge: '#fed7aa', spine: '#7c2d12', guard: '#431407', grip: '#27100a', pommel: '#fb923c', glow: '#f97316', rune: '#fed7aa', guardStyle: 'wings' },
-  hellstone_greatblade: { kind: 'blade', reach: 66, shape: 'broad', widthScale: 1.3, blade: '#7f1d1d', edge: '#fca5a5', spine: '#450a0a', guard: '#1c0707', grip: '#26100a', pommel: '#f97316', glow: '#dc2626', guardStyle: 'disc' },
-  void_star_blade: { kind: 'blade', reach: 62, shape: 'straight', widthScale: 0.8, blade: '#1e1b4b', edge: '#c7d2fe', spine: '#312e81', guard: '#1e1b4b', grip: '#0b0a1f', pommel: '#818cf8', glow: '#6366f1', rune: '#e0e7ff', guardStyle: 'disc' },
-  ban_hammer: { kind: 'tool', toolKind: 'hammer', head: '#475569', headDark: '#1e293b', edge: '#e2e8f0', shaft: '#7c5a3a', shaftLen: 24, grip: '#0f172a' },
-  // ---- Bows, guns, staves --------------------------------------------------
-  soulfire_repeater: { kind: 'gun', body: '#451a03', bodyW: 18, barrel: '#78350f', barrelLen: 26, mag: '#7f1d1d', magLen: 14, grip: '#26100a', core: '#fb923c' },
+  soulfire_repeater: { kind: 'gun', body: '#451a03', bodyW: 18, barrel: '#78350f', barrelLen: 26, mag: '#7f1d1d', magLen: 14, grip: '#26100a', core: '#fb923c', edge: '#fdba74' },
+  forest_wand: { kind: 'staff', shaft: '#7c5a3a', wrap: '#3f5129', orb: '#4ade80', orbR: 4.4, ring: '#86efac', ringR: 7.5, top: 'leaf' },
+  moon_staff: { kind: 'staff', shaft: '#57534e', wrap: '#1e293b', orb: '#e2e8f0', orbR: 4.6, ring: '#bfdbfe', ringR: 9, top: 'crescent' },
   abyssal_staff: { kind: 'staff', shaft: '#3b2a4d', wrap: '#241a33', orb: '#a855f7', orbR: 5, ring: '#c084fc', ringR: 9, horns: true }
 };
 
@@ -14011,6 +14427,13 @@ class Monster {
       ctx.lineTo(w * 0.29, h * 0.79);
       ctx.closePath();
       ctx.fill();
+      // Lateral line: the sensory stripe that runs snout to tail.
+      context.beginPath();
+      context.moveTo(w * 0.22, h * 0.5);
+      context.quadraticCurveTo(w * 0.5, h * 0.52, w * 0.86, h * 0.48);
+      context.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+      context.lineWidth = 1.4;
+      context.stroke();
       ctx.fillStyle = '#94a3b8';
       ctx.beginPath();
       ctx.moveTo(w * 0.54, h * 0.67);
@@ -14037,11 +14460,13 @@ class Monster {
       ctx.fillStyle = '#b6c6cf';
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 1;
+      const gillFlare = 1 + Math.min(1, Math.abs(this.vx) / 220) * 1.6;
       for (let gill = 0; gill < 3; gill++) {
         const gx = w * (0.65 + gill * 0.055);
+        const reach = 3 * gillFlare;
         ctx.beginPath();
         ctx.moveTo(gx, h * 0.39);
-        ctx.quadraticCurveTo(gx - 3, mid, gx + 1, h * 0.63);
+        ctx.quadraticCurveTo(gx - reach, mid, gx + reach * 0.4, h * 0.63);
         ctx.stroke();
       }
       ctx.fillStyle = '#f8fafc';
@@ -14050,7 +14475,8 @@ class Monster {
       ctx.fill();
       ctx.fillStyle = '#020617';
       ctx.beginPath();
-      ctx.arc(w * 0.84, h * 0.43, 1.7, 0, Math.PI * 2);
+      const lookX = Math.max(-1, Math.min(1, this.vx / 120));
+      ctx.arc(w * 0.84 + lookX * 1.2, h * 0.43, 1.7, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(w * 0.83, h * 0.41, 1.5, 1.5);
@@ -22543,7 +22969,17 @@ World.prototype.generateOceanPlanet = function() {
   // not the only thing out west.
   const islandCount = 16 + Math.floor(Math.random() * 5);
   const islands = [];
-  const minGap = 24;
+  // ---- WATER CHANNELS: islands may never touch --------------------------------
+  // The old rule kept island CENTRES 24 tiles apart, which sounds safe — but a
+  // far-west island is up to ~35 tiles to a side, so two "well separated"
+  // islands still overlapped, their shallow rims fused into one shelf, and that
+  // shelf was a walkway: the sea was there, but you could not get into it.
+  // Every placement now measures SHORE TO SHORE (centre distance minus both
+  // half-widths) and refuses the placement unless real, open, swim-through
+  // water stays between the two landmasses.
+  const CHANNEL = 22;     // guaranteed open water between two big-island shores
+  const ISLET_CLEAR = 10; // open water between an islet and any bigger land
+  const ISLET_GAP = 10;   // open water between two islets
   // ---- ASYMMETRIC MAP BOUNDS ---------------------------------------------
   // The planet's playable region used to be symmetric (margin 20 both sides),
   // so the far west was a thin strip along the world edge and the whole east
@@ -22566,19 +23002,27 @@ World.prototype.generateOceanPlanet = function() {
     const jitter = (Math.random() - 0.5) * (usable / islandCount) * 0.6;
     const cx = Math.max(margin, Math.min(this.width - E_MARGIN - 1,
       Math.round(base + jitter)));
-    if (islands.some(other => Math.abs(other.cx - cx) < minGap)) continue;
-    // Bigger overall, and bigger still the further west you go.
+    // Bigger overall, and bigger still the further west you go (the west curve
+    // is squared so the biggest islands bunch into the western third).
     const west = 1 - Math.min(1, Math.max(0, (cx - margin) / usable));
-    // WEST SIDE BIGGER. The archipelago already biased west; the report is that
-    // it needs to be MORE land out there, not just a bias. Two changes:
-    //   - the west curve is squared, so the biggest islands bunch into the
-    //     western third instead of tapering smoothly across the whole map;
-    //   - the size boost roughly doubles on the far west, with the shoal
-    //     count raised to match (more islets = a real archipelago to cross).
     const westBias = Math.pow(west, 1.8);
     const sizeBoost = 0.75 + westBias * 1.45;
-    const halfWidth = Math.round((8 + Math.floor(Math.random() * 9)) * sizeBoost);
-    const height = Math.round((6 + Math.floor(Math.random() * 9)) * sizeBoost);
+    let halfWidth = Math.round((5 + Math.floor(Math.random() * 6)) * sizeBoost);
+    const height = Math.round((4 + Math.floor(Math.random() * 6)) * sizeBoost);
+    // ---- CHANNEL TEST ---- If this slot would leave less than CHANNEL tiles of
+    // open water against an island already placed, shrink first (the west still
+    // needs its land mass) and only skip the island entirely when even a small
+    // one would weld itself onto a neighbour.
+    let fits = false;
+    while (halfWidth >= 7) {
+      if (islands.every(o =>
+        Math.abs(cx - o.cx) - halfWidth - o.halfWidth >= CHANNEL)) {
+        fits = true;
+        break;
+      }
+      halfWidth -= 2;
+    }
+    if (!fits) continue;
     islands.push({ cx, halfWidth, height });
   }
 
@@ -22590,11 +23034,18 @@ World.prototype.generateOceanPlanet = function() {
   // runs across the WHOLE map (not just the big gaps), so the ocean reads as a
   // living archipelago full of little landmarks to dive between.
   const islets = [];
-  const isletSpacing = 11;   // min tiles between any two small islands
+  // Clearance is measured shore to shore here too: an islet may never weld
+  // itself onto a big island or onto another islet, so every channel keeps a
+  // strip of real, swim-through water even where the shoals are at their
+  // densest. (The old centre-distance checks let a halfWidth-8 islet sit 15
+  // tiles from a halfWidth-35 island — i.e. fused into it.)
+  const clearOf = (cx, hw) =>
+    islands.every(o => Math.abs(cx - o.cx) - hw - o.halfWidth >= ISLET_CLEAR) &&
+    islets.every(o => Math.abs(cx - o.cx) - hw - o.halfWidth >= ISLET_GAP);
   for (let i = 0; i + 1 < islands.length; i++) {
     const a = islands[i], b = islands[i + 1];
     const gap = b.cx - a.cx;
-    if (gap < 30) continue;
+    if (gap < 28) continue;
     const mid = (a.cx + b.cx) / 2;
     const spots = gap > 70 ? [mid - gap * 0.22, mid - gap * 0.08, mid + gap * 0.08, mid + gap * 0.22]
       : gap > 44 ? [mid - gap * 0.15, mid + gap * 0.15]
@@ -22602,30 +23053,31 @@ World.prototype.generateOceanPlanet = function() {
     for (const sx of spots) {
       const cx = Math.round(sx);
       if (cx < margin || cx > this.width - margin - 1) continue;
-      if (islands.some(o => Math.abs(o.cx - cx) < 16)) continue;
-      if (islets.some(o => Math.abs(o.cx - cx) < isletSpacing)) continue;
+      const hw = 3 + Math.floor(Math.random() * 3);
+      if (!clearOf(cx, hw)) continue;
       // A wide, flat, elevated shoal: 5-8 tiles of walkable table that rises
       // 3-5 tiles above the waterline, floating on the sea like a sand bar
       // rather than a thin spike spearing up from the deep.
-      islets.push({ cx, halfWidth: 5 + Math.floor(Math.random() * 4),
+      islets.push({ cx, halfWidth: hw,
         height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
     }
   }
   // A generous independent scatter fills the open water between the rows above
   // so no stretch of sea is ever featureless. These free-floating shoals are
-  // the same flat-table shape.
-  for (let attempt = 0; attempt < this.width; attempt++) {
-    const cx = margin + Math.floor(Math.random() * usable);
+  // the same flat-table shape — and they obey the same channel rules. Tripled
+  // attempts: the channel rules reject most rolls (the lane is crowded) and
+  // testing a free slot is cheap.
+  for (let attempt = 0; attempt < this.width * 3; attempt++) {
     // Same westward bias for the free-floating shoals: weight the roll toward
     // the left third so the western sea is a proper archipelago to swim across
     // instead of the long empty crossing it used to be.
     const westRoll = Math.pow(Math.random(), 1.85);
     const wcx = margin + Math.floor(usable * westRoll);
-    if (islands.some(o => Math.abs(o.cx - wcx) < 16)) continue;
-    if (islets.some(o => Math.abs(o.cx - wcx) < isletSpacing)) continue;
-    islets.push({ cx: wcx, halfWidth: 4 + Math.floor(Math.random() * 4),
+    const whw = 3 + Math.floor(Math.random() * 3);
+    if (!clearOf(wcx, whw)) continue;
+    islets.push({ cx: wcx, halfWidth: whw,
       height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
-    if (islets.length >= 140) break;
+    if (islets.length >= 200) break;
   }
 
   const allIslands = islands.concat(islets);
@@ -23734,159 +24186,6 @@ class OceanFish {
 // exactly, so the game loop, boss panel, save-HP banking and every QA hook
 // keep working untouched. `kind` stays 'kraken' for save compatibility.
 // ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
-// ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
-// ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
-// ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
-// ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
-// ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
-// ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
-// ============================================================================
-// No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
-// and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
-//      depth-erupting leaps, suction bites and the Extinction Hunt combo.
-//
-// THE MODEL: the animal is sampled along a spine whose curvature is the live
-// swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
-// skeleton. render() is the only place the art is defined; update() feeds it
-// the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
-// droop, jawV) and never the geometry itself.
-//
-// The combat surface (headTargets / takeDamage / update / render /
-// renderTelegraph / overlapsPlayer / touchDamage) matches the old Kraken
-// exactly, so the game loop, boss panel, save-HP banking and every QA hook
-// keep working untouched. `kind` stays 'kraken' for save compatibility.
-// ============================================================================
 // THE MEGALODON — V2 SKILL KIT. Every named ability of the fight, keyed by the
 // internal `pending.type` / scheduler the AI arms. The boss bar surfaces
 // `skillName` (set via castSkill) so the player always knows what is coming.
@@ -23927,18 +24226,18 @@ const MEGA_SKILLS = {
   extinction_bite: 'Last Predator Standing'
 };
 // ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
+// THE MEGALODON — the ancient apex predator of the drowned colosseum.
 // ============================================================================
 // No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
 // and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
+//   1. THE ANCIENT PREDATOR (100-65%) — circles, charges, punishes greed.
+//   2. BLOOD FRENZY (65-30%) — cracked hide, burning eyes, chained dashes.
+//   3. APEX OF THE ANCIENT SEA (30-0%) — vanishing execution charges,
 //      depth-erupting leaps, suction bites and the Extinction Hunt combo.
 //
 // THE MODEL: the animal is sampled along a spine whose curvature is the live
 // swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
+// of it — fins, gills, brow, eye and the hinged jaw — hangs off the same
 // skeleton. render() is the only place the art is defined; update() feeds it
 // the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
 // droop, jawV) and never the geometry itself.
@@ -23949,18 +24248,18 @@ const MEGA_SKILLS = {
 // keep working untouched. `kind` stays 'kraken' for save compatibility.
 // ============================================================================
 // ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
+// THE MEGALODON — the ancient apex predator of the drowned colosseum.
 // ============================================================================
 // No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
 // and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
+//   1. THE ANCIENT PREDATOR (100-65%) — circles, charges, punishes greed.
+//   2. BLOOD FRENZY (65-30%) — cracked hide, burning eyes, chained dashes.
+//   3. APEX OF THE ANCIENT SEA (30-0%) — vanishing execution charges,
 //      depth-erupting leaps, suction bites and the Extinction Hunt combo.
 //
 // THE MODEL: the animal is sampled along a spine whose curvature is the live
 // swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
+// of it — fins, gills, brow, eye and the hinged jaw — hangs off the same
 // skeleton. render() is the only place the art is defined; update() feeds it
 // the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
 // droop, jawV) and never the geometry itself.
@@ -23971,18 +24270,18 @@ const MEGA_SKILLS = {
 // keep working untouched. `kind` stays 'kraken' for save compatibility.
 // ============================================================================
 // ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
+// THE MEGALODON — the ancient apex predator of the drowned colosseum.
 // ============================================================================
 // No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
 // and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
+//   1. THE ANCIENT PREDATOR (100-65%) — circles, charges, punishes greed.
+//   2. BLOOD FRENZY (65-30%) — cracked hide, burning eyes, chained dashes.
+//   3. APEX OF THE ANCIENT SEA (30-0%) — vanishing execution charges,
 //      depth-erupting leaps, suction bites and the Extinction Hunt combo.
 //
 // THE MODEL: the animal is sampled along a spine whose curvature is the live
 // swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
+// of it — fins, gills, brow, eye and the hinged jaw — hangs off the same
 // skeleton. render() is the only place the art is defined; update() feeds it
 // the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
 // droop, jawV) and never the geometry itself.
@@ -23993,18 +24292,18 @@ const MEGA_SKILLS = {
 // keep working untouched. `kind` stays 'kraken' for save compatibility.
 // ============================================================================
 // ============================================================================
-// THE MEGALODON â€” the ancient apex predator of the drowned colosseum.
+// THE MEGALODON — the ancient apex predator of the drowned colosseum.
 // ============================================================================
 // No magic, no ink: just a mile of scarred muscle, a mouth like a bear trap,
 // and a speed nothing that big should have. Three phases:
-//   1. THE ANCIENT PREDATOR (100-65%) â€” circles, charges, punishes greed.
-//   2. BLOOD FRENZY (65-30%) â€” cracked hide, burning eyes, chained dashes.
-//   3. APEX OF THE ANCIENT SEA (30-0%) â€” vanishing execution charges,
+//   1. THE ANCIENT PREDATOR (100-65%) — circles, charges, punishes greed.
+//   2. BLOOD FRENZY (65-30%) — cracked hide, burning eyes, chained dashes.
+//   3. APEX OF THE ANCIENT SEA (30-0%) — vanishing execution charges,
 //      depth-erupting leaps, suction bites and the Extinction Hunt combo.
 //
 // THE MODEL: the animal is sampled along a spine whose curvature is the live
 // swim cycle, so flexion travels from shoulder to caudal tip and every part
-// of it â€” fins, gills, brow, eye and the hinged jaw â€” hangs off the same
+// of it — fins, gills, brow, eye and the hinged jaw — hangs off the same
 // skeleton. render() is the only place the art is defined; update() feeds it
 // the rig channels (swimPhase, tailBend, finKick, gillFlare, blink, roll/yaw,
 // droop, jawV) and never the geometry itself.
@@ -26173,25 +26472,31 @@ class Megalodon {
    * sampled along a centre-line whose curvature is the live swim cycle
    * (`swimPhase` + `tailBend`), so waves of flexion travel from shoulder to
    * caudal tip the way a real macropredator swims. Everything hangs off that
-   * spine â€” the caudal fin, the dorsals, the pectorals, the gills, the brow,
-   * the eye and the jaw â€” so the model banks, breathes and flows as one
+   * spine — the caudal fin, the dorsals, the pectorals, the gills, the brow,
+   * the eye and the jaw — so the model banks, breathes and flows as one
    * organism instead of a pile of decals sliding together.
    *
    * Render order is far-to-near: wake shadow, charge ghosts, far pectoral,
    * caudal fin, body + countershading, dorsal line, near pectoral, gills,
    * hide wear, head, THE MAW, water FX, phase flare. Countershading is five
    * hard flat bands with a seam, dappled caustics, a lateral line and a
-   * specular back ridge â€” the shark is always lit from overhead, the way it
+   * specular back ridge — the shark is always lit from overhead, the way it
    * would be under the colosseum's light shafts.
    */
   render(ctx, camera) {
+    // The effects-quality dial, HOISTED to the top of render(): the gill pass
+    // and the hide-wear pass both read it. It used to be declared down in
+    // section 6b, which put its earlier readers in the temporal dead zone —
+    // "Cannot access 'micro' before initialization" — and made every boss
+    // render throw as soon as the gills or the blood bloom drew.
+    const micro = this._fxDetail();
     const x = this.x - camera.x;
     const y = this.y - camera.y;
     const injury = Math.max(0, Math.min(1, 1 - this.hp / this.maxHp));
     const ph = this.phase;
     const flash = this.hitFlash > 0;
     const faceDir = this.faceDir || 1;
-    // VISUAL SCALE: grows a touch per phase, capped â€” never runaway.
+    // VISUAL SCALE: grows a touch per phase, capped — never runaway.
     const grow = Math.min(1.3, 1 + (ph - 1) * 0.12);
     const HW = this.width * 0.5;   // 210
     const HH = this.height * 0.5;  // 100
@@ -26267,7 +26572,7 @@ class Megalodon {
     // skill-driven coil. `spineAt(u, off)` returns the local point at
     // arclength fraction u (0 = tail, 1 = nose) offset `off` along the
     // normal (-1 = back ridge, +1 = belly). Every part of the animal is
-    // placed through it, so the whole body flexes together â€” nothing can
+    // placed through it, so the whole body flexes together — nothing can
     // drift out of register.
     // ======================================================================
     const spineBend = (u) => {
@@ -26385,7 +26690,7 @@ class Megalodon {
 
 
     // ======================================================================
-    // 0. WAKE SHADOW â€” a soft dark bloom under the body so it never reads
+    // 0. WAKE SHADOW — a soft dark bloom under the body so it never reads
     //    as a flat sticker on the backdrop.
     // ======================================================================
     {
@@ -26396,7 +26701,7 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 0b. CHARGE GHOSTS â€” afterimages of the spine during a dash. Each ghost
+    // 0b. CHARGE GHOSTS — afterimages of the spine during a dash. Each ghost
     //     re-runs the spine sampler with the snapshot's own swim phase, so
     //     the whole animal smears instead of a rectangle fading out.
     // ======================================================================
@@ -26428,7 +26733,7 @@ class Megalodon {
     // ======================================================================
 
     // ======================================================================
-    // 1. THE FAR PECTORAL â€” behind the body: darker, tucked, opposite flap.
+    // 1. THE FAR PECTORAL — behind the body: darker, tucked, opposite flap.
     // ======================================================================
     // Idle barely flaps; the charge beats are snapped and violent.
     const finRate = pose === 'idle' ? 0.55
@@ -26461,7 +26766,7 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 2. THE CAUDAL FIN â€” the great heterocercal crescent. Long upper lobe,
+    // 2. THE CAUDAL FIN — the great heterocercal crescent. Long upper lobe,
     //    short lower lobe, a real notch, fin rays; swept by the tail slope.
     // ======================================================================
     {
@@ -26597,6 +26902,35 @@ class Megalodon {
         for (let i = 0; i <= 12; i++) ridge.push(spineAt(1 - i / 12, -0.82));
         ctx.beginPath(); traceSmooth(ctx, ridge); ctx.stroke();
       }
+      // CAUSTIC LIGHT — the moving net of sunlight that swims across a body
+      // under shallow water. Three soft, slow-sliding bands of pale light
+      // draped over the back half, masked to the silhouette by this clip. They
+      // drift along the spine and shimmer in width, which is what actually
+      // reads as "under water" at rest; static dapples never did. Gated on
+      // the quality dial — first thing to drop on low effects.
+      // NOTE: `micro` is the effects-quality dial hoisted to the top of render();
+      // this early block re-asks the dial directly to stay self-contained.
+      if (this._fxDetail() > 0.35 && !vanished) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const t = this.animT * 0.35;
+        for (let ci = 0; ci < 3; ci++) {
+          const phase = (t + ci * 0.33) % 1;
+          const u0 = 0.30 + phase * 0.55;              // band centre slides tail->head
+          const wob = Math.sin(this.animT * 1.4 + ci * 2.1) * 0.5 + 0.5;
+          ctx.strokeStyle = 'rgba(186, 230, 253, '
+            + (0.05 + 0.05 * wob).toFixed(3) + ')';
+          ctx.lineWidth = 7 + wob * 9;
+          ctx.beginPath();
+          for (let k = 0; k <= 8; k++) {
+            const u = Math.max(0.04, Math.min(0.97, u0 - 0.16 + k * 0.04));
+            const p = spineAt(u, -0.95 + k * 0.14 + Math.sin(k * 1.3 + ci) * 0.1);
+            if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
       // Subtle hide mottling: a handful of stable speckles, not a scattergun.
       // Anything denser reads as noise at 24px tiles and costs fill rate.
       for (let i = 0; i < 12; i++) {
@@ -26619,7 +26953,11 @@ class Megalodon {
       // BLOOD FRENZY + APEX: the hide is cracked open and glowing from inside.
       // Phase 2 gets a hot wash under the skin; phase 3 adds bleeding cracks.
       if (ph >= 2) {
-        // Internal light, not a tint over the animal: a low, flank-only wash.\r\n      ctx.fillStyle = 'rgba(127, 29, 29, ' + (ph === 3 ? 0.10 : 0.05).toFixed(2) + ')';
+        // Internal light, not a tint over the animal: a low, flank-only wash.
+        // (A corrupted comment used to swallow this fillStyle line via a literal
+        //  "\r\n" in the source, so the wash silently painted with whatever the
+        //  previous fillStyle was — fixed.)
+        ctx.fillStyle = 'rgba(127, 29, 29, ' + (ph === 3 ? 0.10 : 0.05).toFixed(2) + ')';
         const wash = [];
         for (let i = 0; i <= 16; i++) wash.push(spineAt(1 - i / 16, -0.85));
         for (let i = 16; i >= 0; i--) wash.push(spineAt(1 - i / 16, 0.55));
@@ -26648,7 +26986,7 @@ class Megalodon {
     ctx.restore();
 
     // ======================================================================
-    // 4. THE DORSAL LINE â€” the tall triangle that reads "shark" from a mile
+    // 4. THE DORSAL LINE — the tall triangle that reads "shark" from a mile
     //    off, plus the second dorsal and the pelvic/anal nubs. All of them
     //    ride the spine, so the whole fin row ripples with the swim cycle.
     // ======================================================================
@@ -26842,7 +27180,7 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 5. THE NEAR PECTORAL â€” the big swept wing on the viewer's side, drawn
+    // 5. THE NEAR PECTORAL — the big swept wing on the viewer's side, drawn
     //    ON TOP. It flaps on the swim beat, lagging the head like a real fin.
     // ======================================================================
     {
@@ -26954,30 +27292,97 @@ class Megalodon {
           ctx.quadraticCurveTo(x0 - 6, y0 + len * 0.5, x0 - 3, y0 + len);
           ctx.stroke();
         }
+        // 5. EMBER VENT — the hot slit of living tissue deep inside the channel.
+        //    A radial bloom centred two thirds down the slit, breathing with
+        //    gillFlare: this is what makes the gills read as gasping anatomy
+        //    under the water instead of painted marks, and it is the feature
+        //    that lights the animal's silhouette from within during Blood
+        //    Frenzy and the Apex phase.
+        {
+          const ventHeat = Math.max(0, Math.min(1,
+            0.30 * (ph >= 2 ? 1 : 0.45) + 0.55 * (this.gillFlare || 0) * open
+            + 0.25 * woundGlow));
+          if (ventHeat > 0.06) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            const vy0 = y0 + len * 0.62;
+            const grad = ctx.createRadialGradient(x0 - 4, vy0, 0.5, x0 - 4, vy0, len * 0.5);
+            const ember = ph >= 3 ? '255, 92, 60' : ph === 2 ? '244, 63, 94' : '190, 74, 60';
+            grad.addColorStop(0, 'rgba(' + ember + ', ' + (0.55 * ventHeat).toFixed(3) + ')');
+            grad.addColorStop(0.45, 'rgba(' + ember + ', ' + (0.18 * ventHeat).toFixed(3) + ')');
+            grad.addColorStop(1, 'rgba(' + ember + ', 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.ellipse(x0 - 4, vy0, len * 0.34, len * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            // The slit core itself: a short bright line at the hottest point,
+            // flickering very slightly so the vent feels alive rather than lit.
+            const flick = 0.85 + Math.sin(this.animT * 9 + g * 1.7) * 0.15;
+            ctx.strokeStyle = 'rgba(255, 176, 140, ' + (0.5 * ventHeat * flick).toFixed(3) + ')';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.moveTo(x0 - 3, vy0 - len * 0.26);
+            ctx.quadraticCurveTo(x0 - 5.4, vy0, x0 - 3.6, vy0 + len * 0.3);
+            ctx.stroke();
+          }
+          // 6. GILL VAPOR — a slow ribbon of aerated water lifting off the slit
+          //    tips. Deterministic (no Math.random), phase-tinted, and only the
+          //    first three slits bother, so it reads as one breath, not five.
+          if (g < 3 && micro > 0.35 && !vanished
+              && ((this.gillFlare || 0) > 0.35 || ph >= 2 || dashing)) {
+            const puff = (this.animT * 0.55 + g * 0.31) % 1;
+            const alpha = (1 - puff) * (0.10 + open * 0.10)
+              * (ph >= 2 ? 1.35 : 1);
+            if (alpha > 0.015) {
+              ctx.save();
+              ctx.globalCompositeOperation = 'lighter';
+              ctx.fillStyle = ph >= 2
+                ? 'rgba(244, 118, 130, ' + Math.min(0.3, alpha).toFixed(3) + ')'
+                : 'rgba(186, 230, 253, ' + Math.min(0.22, alpha).toFixed(3) + ')';
+              ctx.beginPath();
+              ctx.ellipse(x0 - 6 - puff * 12, y0 - 4 - puff * 20,
+                2.2 + puff * 5.5, 1.6 + puff * 4, -0.4, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            }
+          }
+        }
+      }
+      // 7. GILL RIDGE SHADOW — a soft occlusion stroke behind the whole slit
+      //    row, so the gill chamber sits IN the shoulder rather than on it.
+      {
+        const top0 = spineAt(0.80, -0.52);
+        const bot0 = spineAt(0.61, 0.02);
+        ctx.strokeStyle = 'rgba(6, 10, 20, 0.20)';
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(top0.x - 10, top0.y + 4);
+        ctx.quadraticCurveTo(top0.x - 20, (top0.y + bot0.y) / 2, bot0.x - 4, bot0.y - 2);
+        ctx.stroke();
       }
     }
 
     // ======================================================================
-    // 6b. HIDE MICRO-DETAIL — three cheap, deterministic passes that make the
-    //     hide read as a body instead of a filled silhouette. All of them use
-    //     the quality dial: they are the first thing dropped on low effects.
-    //       - DERMAL DENTICLES: tiny tooth-like scales, brighter on the lit
-    //         upper flank and fading into the belly, along the swim direction.
-    //       - BARNACLE CLUSTERS: pale calcareous dots crusted in 4 fixed spots
-    //         (a wound scar line, the peduncle, behind the eye, at the dorsal
-    //         root) — the detail that most reads as "an old animal".
-    //       - SPERM-whale-style WRINKLES: a few short fold lines over the
+    // 6b. HIDE MICRO-TEXTURE — one light, deterministic pass so the body is a
+    //     hide rather than a flat fill. This used to carry three heavy passes
+    //     (denticles at 120/170, a barnacle crust, fold lines); the report was
+    //     that the body read as visual porridge at game scale, so the crust is
+    //     gone and the rest is dialed down to a whisper. First thing dropped
+    //     on low effects.
+    //       - DERMAL DENTICLES: a few tiny scales along the swim direction,
+    //         faintly brighter on the lit flank.
+    //       - SPERM-whale-style WRINKLES: two short fold lines over the
     //         shoulder where the hide bunches during a turn.
     // ======================================================================
-    const micro = this._fxDetail();
     if (micro > 0.35) {
       const detailSeed = (this.scarSeed || 0) * 0.37;
 
-    // ---- dermal denticles: small soft scales, denser on the lit flank ----
-    // Raised from 46 to 120 (and 90 to 170 at high quality): the hide's
-    // micro-texture is what stopped the body reading as a flat silhouette,
-    // and the previous counts were still too sparse to see at game scale.
-    const scaleCount = micro > 0.75 ? 170 : 120;
+    // ---- dermal denticles: a whisper of scale texture, nothing more ----
+    // The counts used to be 120/170 with bright scales: at game scale that is
+    // a rash of bright dashes over the whole animal. A sparse, dim scatter
+    // keeps the hide alive without turning it into noise.
+    const scaleCount = micro > 0.75 ? 54 : 34;
       ctx.save();
       ctx.globalAlpha = 1.0;
       for (let i = 0; i < scaleCount; i++) {
@@ -26996,42 +27401,16 @@ class Megalodon {
         const size = 1.8 + b * 1.6;
         const drift = (b - 0.5) * 5;
         const lit = off < -0.05;
-        ctx.fillStyle = lit ? 'rgba(203, 226, 250, 0.55)' : 'rgba(6, 12, 24, 0.32)';
+        ctx.fillStyle = lit ? 'rgba(203, 226, 250, 0.34)' : 'rgba(6, 12, 24, 0.2)';
         ctx.fillRect(p.x + drift, p.y + (b - 0.5) * 3, size, size * 0.75);
       }
       ctx.restore();
-      // ---- barnacle crust: 4 fixed clusters of pale calcareous dots --------
-      const clusters = [
-        [0.86, -0.55], [0.72, 0.42], [0.14, 0.62], [0.46, -1.0]
-      ];
-      for (const [cu, coff] of clusters) {
-        const base = spineAt(cu, coff);
-        if (!Number.isFinite(base.x)) continue;
-        // More barnacles per cluster (14/9): the crust is the single most
-        // readable 'this is an old animal' cue, and it was barely visible.
-        const n = micro > 0.75 ? 14 : 9;
-        for (let k = 0; k < n; k++) {
-          const a = this._hash01(detailSeed * 0.83 + cu * 40 + k * 1.93);
-          const b2 = this._hash01(detailSeed * 1.51 + cu * 61 + k * 2.71);
-          const c2 = this._hash01(detailSeed * 0.29 + cu * 17 + k * 3.37);
-          if (c2 > 0.72) continue;                        // crust, not a carpet
-          const bx = base.x + (a - 0.5) * 26;
-          const by = base.y + (b2 - 0.5) * 14;
-          const s = 1.8 + c2 * 2.6;
-          ctx.fillStyle = 'rgba(226, 236, 245, ' + (0.62 + c2 * 0.32).toFixed(2) + ')';
-          ctx.fillRect(bx, by, s, s);
-          // Littoral barnacles have a dark rim.
-          ctx.fillStyle = 'rgba(20, 30, 44, 0.5)';
-          ctx.fillRect(bx, by + s - 0.7, s, 1);
-          if (c2 > 0.45) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.fillRect(bx, by, 1, 1);
-          }
-        }
-      }
+      // (The barnacle-crust pass used to live here: 4 clusters x 9-14 dots
+      // with dark rims and highlights. It was the loudest of the micro passes
+      // and read as dirt speckle on the animal, so it was cut outright.)
       // ---- hide folds: short lines where the shoulder bunches in a turn ----
-      const foldCount = micro > 0.75 ? 5 : 3;
-      ctx.strokeStyle = 'rgba(6, 12, 24, 0.18)';
+      const foldCount = micro > 0.75 ? 3 : 2;
+      ctx.strokeStyle = 'rgba(6, 12, 24, 0.14)';
       ctx.lineWidth = 1.3;
       for (let i = 0; i < foldCount; i++) {
         const u = 0.58 + i * 0.055;
@@ -27045,12 +27424,14 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 7. HIDE WEAR — a small, DELIBERATE set of battle scars. These are
-    //    readable slashes, not scatter: hatch marks, barnacles and escort
-    //    fish were removed because they read as noise at game scale.
+    // 7. HIDE WEAR — a FEW deliberate scars. Beyond these slashes, the only
+    //    hide detail left is the signature gash below: tooth-rakes, bite
+    //    pits, barnacle rings, the dapple coat and the scar webs were all
+    //    cut, because scatter detail over a moving animal reads as porridge
+    //    no matter how carefully it is drawn. Few, large, readable marks.
     // ======================================================================
     {
-      const scars = 4 + Math.floor(injury * 4);      // 4 .. 8, more as it dies
+      const scars = 2 + Math.floor(injury * 3);      // 2 .. 4, more as it dies
       for (let s = 0; s < scars; s++) {
         const sSeed = s * 7.399 + (this.scarSeed || 0);
         const u = 0.20 + this._hash01(sSeed) * 0.74;
@@ -27112,95 +27493,72 @@ class Megalodon {
       }
     }
 
-      // ---- Richer hide-wear pass. The single-slash loop above is kept, and
-      // these additional scar families layer over it so the animal reads as a
-      // scarred veteran rather than a cleanly sketched silhouette.
+      // One story scar, told in one big readable line: the signature gash
+      // below is the last hide detail that survived the declutter.
       const seed = this.scarSeed || 0;
-      // (a) TOOTH-RAKE TRIPLES: three parallel scratches from one rival's
-      //     swipe — always a tight cluster of exactly three.
-      const rakes = 2 + Math.floor(this._hash01(seed * 5.7) * 3);
-      for (let rk = 0; rk < rakes; rk++) {
-        const rs = rk * 13.31 + seed * 0.9;
-        const u = 0.22 + this._hash01(rs) * 0.6;
-        const p = spineAt(u, -0.74 + this._hash01(rs * 1.4) * 0.55);
-        const baseA = 0.55 + this._hash01(rs * 2.1) * 0.6 + spineBend(u) * 0.35;
-        const len = 20 + this._hash01(rs * 2.8) * 26;
-        for (let t = -1; t <= 1; t++) {
-          const a = baseA + t * 0.14;
-          const off = t * 5.5;
-          ctx.strokeStyle = 'rgba(206, 214, 228, ' + (0.34 + injury * 0.2).toFixed(2) + ')';
-          ctx.lineWidth = 1.5;
+      // (f) THE SIGNATURE GASH — one long, deliberate wound that runs from the
+      //     gill chamber back toward the dorsal root, the story scar of the
+      //     whole animal. A real healed gash is a rope: a raised pale ridge
+      //     with a shadow under it, crossed by four or five stitch marks where
+      //     the wound was closed, and it always reads at game scale because it
+      //     is ONE big line instead of a scatter of small ones. It appears
+      //     only once the animal has actually been hurt (injury > 0.12), so a
+      //     fresh Megalodon at full HP is clean and the scar grows into the
+      //     fight — then stays lit (and throbs) through the Apex phase.
+      if (injury > 0.12 && !vanished) {
+        const uA = 0.55 + this._hash01(seed * 1.7) * 0.12;
+        const uB = uA + 0.20;
+        const offA = -0.44 + this._hash01(seed * 2.9) * 0.2;
+        const gpts = [];
+        for (let gi = 0; gi <= 4; gi++) {
+          const gu = uA + (uB - uA) * (gi / 4);
+          gpts.push(spineAt(gu, offA + gi * 0.07 + Math.sin(gi * 2.1 + seed) * 0.05));
+        }
+        const severity = Math.min(1, (injury - 0.12) / 0.5);
+        const drawPoly = (pts, dx, dy) => {
           ctx.beginPath();
-          ctx.moveTo(p.x + Math.sin(baseA) * off, p.y + Math.cos(baseA) * off);
-          ctx.lineTo(p.x + Math.sin(baseA) * off + Math.cos(a) * len,
-            p.y + Math.cos(baseA) * off + Math.sin(a) * len);
+          ctx.moveTo(pts[0].x + dx, pts[0].y + dy);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x + dx, pts[i].y + dy);
+          ctx.stroke();
+        };
+        // 1. Shadow trough under the raised tissue.
+        ctx.strokeStyle = 'rgba(6, 12, 24, ' + (0.45 + severity * 0.2).toFixed(2) + ')';
+        ctx.lineWidth = 5.2;
+        drawPoly(gpts, 1.6, 2.2);
+        // 2. The pale keloid ridge itself — widest at the gill end, tapering.
+        ctx.strokeStyle = 'rgba(214, 222, 238, ' + (0.55 + severity * 0.3).toFixed(2) + ')';
+        ctx.lineWidth = 3.4;
+        drawPoly(gpts, 0, 0);
+        // 3. Stitch marks: short perpendicular ticks crossing the ridge, the
+        //    single most legible "this wound was deep" cue at 24px scale.
+        ctx.strokeStyle = 'rgba(190, 200, 220, ' + (0.5 + severity * 0.25).toFixed(2) + ')';
+        ctx.lineWidth = 1.6;
+        for (let si = 1; si <= 4; si++) {
+          const t = si / 5;
+          const idx = Math.min(gpts.length - 2, Math.floor(t * (gpts.length - 1)));
+          const a0 = gpts[idx], b0 = gpts[idx + 1];
+          const mx = a0.x + (b0.x - a0.x) * (t * (gpts.length - 1) - idx);
+          const my = a0.y + (b0.y - a0.y) * (t * (gpts.length - 1) - idx);
+          ctx.beginPath();
+          ctx.moveTo(mx - 2.5, my - 4);
+          ctx.lineTo(mx + 2.5, my + 4);
           ctx.stroke();
         }
-      }
-      // (b) HEALED BITE HOLES: paired pockmarks with a raised pale rim.
-      const holes = 2 + Math.floor(this._hash01(seed * 3.9) * 3);
-      for (let hIdx = 0; hIdx < holes; hIdx++) {
-        const hs = hIdx * 8.61 + seed * 3.4;
-        const u = 0.20 + this._hash01(hs) * 0.64;
-        const p = spineAt(u, -0.72 + this._hash01(hs * 1.6) * 0.5);
-        const rr = 3.4 + this._hash01(hs * 2.3) * 4.4;
-        ctx.fillStyle = 'rgba(10, 14, 26, 0.55)';
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.6, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(226, 234, 252, 0.35)';
-        ctx.lineWidth = 1.3;
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(10, 14, 26, 0.45)';
-        ctx.beginPath(); ctx.arc(p.x - rr * 2.2, p.y + rr * 0.8, rr * 0.5, 0, Math.PI * 2); ctx.fill();
-      }
-      // (c) BARNACLE RINGS: pale encrusted clusters from its slow years.
-      const barns = 4 + Math.floor(this._hash01(seed * 7.1) * 4);
-      for (let bIdx = 0; bIdx < barns; bIdx++) {
-        const bs = bIdx * 4.773 + seed * 2.1;
-        const u = 0.30 + this._hash01(bs) * 0.56;
-        const p = spineAt(u, -0.9 + this._hash01(bs * 1.7) * 0.45);
-        const rr = 2.2 + this._hash01(bs * 2.3) * 3.2;
-        ctx.strokeStyle = 'rgba(216, 226, 244, 0.42)';
-        ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = 'rgba(180, 195, 220, 0.28)';
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.5, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(240, 246, 255, 0.28)';
-        ctx.beginPath(); ctx.arc(p.x - rr * 0.3, p.y - rr * 0.3, rr * 0.3, 0, Math.PI * 2); ctx.fill();
-      }
-      // (d) DAPPLE COAT: faint two-tone speckle along the whole flank, bigger
-      //     and denser than before but low-contrast — texture, never noise.
-      const dapples = 30 + Math.floor(injury * 14);
-      for (let d = 0; d < dapples; d++) {
-        const ds = d * 3.317 + seed * 0.31;
-        const u = 0.10 + this._hash01(ds) * 0.86;
-        const p = spineAt(u, -0.95 + this._hash01(ds * 1.9) * 1.55);
-        const rr = 2.6 + this._hash01(ds * 2.7) * 6;
-        const upper = this._hash01(ds * 1.9) < 0.55;
-        ctx.fillStyle = upper ? 'rgba(210, 230, 255, 0.07)' : 'rgba(6, 10, 20, 0.06)';
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y, rr, rr * 0.58, this._hash01(ds * 4.1) * 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // (e) CROSS-HATCHED SCAR WEBS: long-healed wounds crossed by older ones.
-      const webs = 1 + Math.floor(this._hash01(seed * 9.9) * 2);
-      for (let wIdx = 0; wIdx < webs; wIdx++) {
-        const ws = wIdx * 17.43 + seed * 2.6;
-        const u = 0.30 + this._hash01(ws) * 0.46;
-        const p = spineAt(u, -0.66 + this._hash01(ws * 1.3) * 0.5);
-        const arm = 12 + this._hash01(ws * 2.4) * 14;
-        ctx.strokeStyle = 'rgba(224, 232, 250, 0.26)';
-        ctx.lineWidth = 1.2;
-        for (const a of [0.7, 2.15, 3.5, 4.9]) {
-          const aa = a + this._hash01(ws * 3.1) * 0.5;
-          ctx.beginPath();
-          ctx.moveTo(p.x - Math.cos(aa) * arm, p.y - Math.sin(aa) * arm * 0.7);
-          ctx.lineTo(p.x + Math.cos(aa) * arm, p.y + Math.sin(aa) * arm * 0.7);
-          ctx.stroke();
+        // 4. Apex: the gash splits back open and glows from inside — same
+        //    heartbeat as the flank scars, but hotter and always on.
+        if (ph >= 2) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = 'rgba(239, 68, 68, '
+            + (0.14 + severity * 0.22 + 0.14 * Math.sin(this.animT * 2.6)).toFixed(3) + ')';
+          ctx.lineWidth = 2.2;
+          drawPoly(gpts, 0, 0);
+          ctx.restore();
         }
       }
 
     // ======================================================================
-    // 8. THE HEAD â€” blunt snout, heavy brow, burning eye. The head carries
+    // 8. THE HEAD — blunt snout, heavy brow, burning eye. The head carries
     //    its own counter-rotation against the spine so it stays "aimed".
     // ======================================================================
     const headSlope = Math.atan2(spineAt(0.98, 0).y - spineAt(0.86, 0).y,
@@ -27437,6 +27795,16 @@ class Megalodon {
               6 + open01 * 20, 3 + open01 * 9, 0, 0, Math.PI * 2);
             ctx.fill();
           }
+          // Saliva strand bridging the gape when the jaws are thrown wide.
+          if (open01 > 0.7) {
+            const s0 = lipPt(0.45), s1 = jawPt(0.45);
+            ctx.strokeStyle = 'rgba(200, 220, 255, 0.45)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(s0.x, s0.y);
+            ctx.lineTo(s1.x, s1.y + 2 * open01);
+            ctx.stroke();
+          }
         }
       }
 
@@ -27513,6 +27881,44 @@ class Megalodon {
         ctx.stroke();
       }
 
+      // ---- SALIVA STRANDS: elastic threads of mucus stretching between the
+      //      upper and lower jaws while the mouth is working. They are what
+      //      sells a mouth as WET meat: thin near-white lines sagging under
+      //      their own weight, thinning and snapping as the gape widens. Only
+      //      while the jaws are actually apart — a shut mouth has none — and
+      //      deterministic (animT-driven), so nothing flickers randomly.
+      if (open01 > 0.10 && open01 < 0.72 && !vanished) {
+        const strands = [
+          { f: 0.22, sag: 5, snap: 0.72 },
+          { f: 0.46, sag: 8, snap: 0.64 },
+          { f: 0.70, sag: 6, snap: 0.68 }
+        ];
+        for (let si2 = 0; si2 < strands.length; si2++) {
+          const sd = strands[si2];
+          // Threads snap from the back of the mouth forward as it opens.
+          const gapeNow = open01 + Math.sin(this.animT * 7 + si2 * 2.4) * 0.03;
+          if (gapeNow >= sd.snap) continue;
+          const life = 1 - gapeNow / sd.snap;          // 1 fresh .. 0 about to snap
+          const up = lipPt(sd.f);
+          const dn = jawPt(sd.f + 0.03);
+          if (!Number.isFinite(up.x) || !Number.isFinite(dn.x)) continue;
+          const alpha = (0.28 + life * 0.4) * (ph >= 2 ? 1.15 : 1);
+          const slack = sd.sag * life + 1.5;
+          ctx.strokeStyle = 'rgba(236, 240, 248, ' + Math.min(0.72, alpha).toFixed(3) + ')';
+          ctx.lineWidth = 1.1 + life * 0.9;
+          ctx.beginPath();
+          ctx.moveTo(up.x, up.y + 3);
+          ctx.quadraticCurveTo((up.x + dn.x) / 2, (up.y + dn.y) / 2 + slack, dn.x, dn.y - 3);
+          ctx.stroke();
+          // A swollen droplet of mucus hanging off the sag's lowest point.
+          if (life > 0.35) {
+            ctx.fillStyle = 'rgba(240, 244, 252, ' + (life * 0.5).toFixed(3) + ')';
+            ctx.beginPath();
+            ctx.arc((up.x + dn.x) / 2, (up.y + dn.y) / 2 + slack, 1.4 + life * 1.1, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
       // ---- Closed-mouth resting snarl: front teeth always overhang the lip,
       //      the way the sheet's shark never fully closes its mouth. --------
       if (open01 < 0.5) {
@@ -27545,7 +27951,7 @@ class Megalodon {
         ctx.fill();
       }
     }
-    // 10. WATER FX â€” bubbles off the hide, spray when it snaps shut.
+    // 10. WATER FX — bubbles off the hide, spray when it snaps shut.
     // ======================================================================
     if (!vanished) {
       const bub = (speed > 90 ? 1 : 0) + (spinning ? 1 : 0) + (dashing ? 1 : 0);
@@ -33437,11 +33843,19 @@ class Game {
       context.fillStyle = css(trunkShade);
       context.fillRect(x - 3 * ts + lean, ground - h * ts, 6 * ts, 3 * ts);
       context.fillRect(x - 3 * ts + lean, ground - 6 * ts, 6 * ts, 4 * ts);
+      // Bark knot at the flared base.
+      context.fillStyle = css(trunkShade);
+      context.fillRect(x - 2 * ts + lean, ground - 3 * ts, 4 * ts, 2 * ts);
+      context.fillStyle = css(trunkHi);
+      context.fillRect(x - 1 * ts + lean, ground - 3 * ts, 2 * ts, 1 * ts);
       // One or two branches where the trunk hands off to the canopy.
       context.fillStyle = trunk;
       const bx = x + lean;
       context.fillRect(bx - (tall ? 9 : 12) * ts, ground - h * ts - 1, 5 * ts, 2 * ts);
       context.fillRect(bx + (tall ? 4 : 7) * ts, ground - h * ts - 2, 5 * ts, 2 * ts);
+      // A second, smaller branch tier higher on the trunk.
+      context.fillRect(bx - (tall ? 6 : 8) * ts, ground - h * ts - 4, 3 * ts, 2 * ts);
+      context.fillRect(bx + (tall ? 3 : 5) * ts, ground - h * ts - 5, 3 * ts, 2 * ts);
       // Canopy: three overlapping, stepped lobes with a per-tree jitter on
       // every width, offset and height, so no two background trees match.
       const top = ground - (h + (tall ? 9 : 8)) * ts;
@@ -33467,6 +33881,7 @@ class Game {
       context.fillRect(cx + 6 * ts + j, top + 7 * ts, 5 * ts, 5 * ts);
       context.fillRect(cx - 13 * ts - j2, top + 17 * ts, 6 * ts, 4 * ts);
       if (r > 0.5) context.fillRect(cx + 3 * ts, top + 12 * ts, 5 * ts, 4 * ts);
+      context.fillRect(cx - 4 * ts, top + 20 * ts, 5 * ts, 4 * ts);
     };
 
     const mountains = [
@@ -33793,6 +34208,16 @@ class Game {
           context.fillRect(pad.x + 2, py - 3 + bob, 2, 1);
         }
       }
+      // Dragonfly: a small darting silhouette over the pond.
+      {
+        const dfx = lakeX + 40 + Math.sin(time * 0.002) * 26;
+        const dfy = lakeY + 10 + Math.cos(time * 0.0015) * 3;
+        context.fillStyle = '#1e293b';
+        context.fillRect(Math.round(dfx), Math.round(dfy), 3, 1);
+        context.fillStyle = '#94a3b8';
+        context.fillRect(Math.round(dfx - 4), Math.round(dfy - 1), 8, 1);
+        context.fillRect(Math.round(dfx - 3), Math.round(dfy), 6, 1);
+      }
       context.fillStyle = 'rgba(255,255,255,' + (0.12 + 0.16 * day).toFixed(3) + ')';
       const shimmerSpan = lakeW - 40;
       for (let i = 0; i < 5; i++) {
@@ -33851,8 +34276,8 @@ class Game {
           // Flower: a stem plus a 2x2 petal head, day-bright.
           context.fillStyle = grassDark;
           context.fillRect(Math.round(t.x + sway), Math.round(t.y), 1, t.h);
-          const hue = t.kind > 0.52;
-          context.fillStyle = hue ? '#fbbf24' : '#f472b6';
+          const petal = t.kind > 0.56 ? '#fef3c7' : t.kind > 0.52 ? '#fbbf24' : '#f472b6';
+          context.fillStyle = petal;
           context.fillRect(Math.round(t.x + sway) - 1, Math.round(t.y) - 2, 3, 2);
           context.fillStyle = 'rgba(255,255,255,0.75)';
           context.fillRect(Math.round(t.x + sway), Math.round(t.y) - 2, 1, 1);
@@ -35032,7 +35457,7 @@ class Game {
     this.autoQuality = next === 'auto';
     // Auto quality should step down before sustained work misses a 60 FPS
     // frame budget, not wait until the game is already running below 42 FPS.
-    this.quality.budgetMs = next === 'auto' ? 16.7 : next === 'balanced' ? 20 : 24;
+    this.quality.budgetMs = next === 'auto' ? 18.5 : next === 'balanced' ? 20 : 24;
     this.quality.goodFrames = 0;
     if (next === 'high') {
       this.quality.lowQuality = false; this.renderScale = 1;
@@ -41627,7 +42052,7 @@ this.player.dodgeTime = 0;
       // Only restore after a solid run of fast frames, so the game cannot
       // oscillate between resolutions every other second.
       this.quality.goodFrames += 1;
-      if (this.quality.goodFrames >= 300) {
+      if (this.quality.goodFrames >= 200) {
         this.quality.lowQuality = false;
         this.quality.goodFrames = 0;
         this.renderScale = 1;

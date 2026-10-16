@@ -2244,11 +2244,11 @@ class Player {
 // ===========================================================================
 const WEAPON_SPRITES = {
   // ---- Tools: each a head shape, pinned to the shaft tip -------------------
-  copper_pickaxe: { kind: 'tool', toolKind: 'pick', head: '#c2703a', headDark: '#8a4a1e', edge: '#f0b98a', shaft: '#8b5a2b', shaftLen: 30 },
+  copper_pickaxe: { kind: 'tool', toolKind: 'pick', head: '#e07a3f', headDark: '#8a4a1e', edge: '#fcd34d', shaft: '#6b4226', shaftLen: 34, headScale: 1.35 },
   fishing_rod: { kind: 'tool', toolKind: 'rod', shaft: '#a16207', shaftLen: 26, head: '#f87171', headAngle: -1.2 },
   ban_hammer: { kind: 'tool', toolKind: 'hammer', head: '#475569', headDark: '#1e293b', edge: '#e2e8f0', shaft: '#7c5a3a', shaftLen: 30, headScale: 1.3 },
   // ---- Melee: every blade a different SILHOUETTE ---------------------------
-  copper_sword: { kind: 'blade', reach: 36, shape: 'straight', widthScale: 0.95, blade: '#c2703a', edge: '#f0b98a', spine: '#8a4a1e', guard: '#8a4a1e', guardStyle: 'cross', grip: '#5b3a1a', pommel: '#c2703a' },
+  copper_sword: { kind: 'blade', reach: 42, shape: 'straight', widthScale: 1.15, blade: '#e07a3f', edge: '#fcd34d', spine: '#8a4a1e', guard: '#b45309', guardStyle: 'cross', grip: '#5b3a1a', pommel: '#d4a017', pommelStyle: 'gem' },
   iron_broadsword: { kind: 'blade', reach: 47, shape: 'broad', widthScale: 1.15, blade: '#d8dee8', edge: '#ffffff', spine: '#7c8899', guard: '#64748b', guardStyle: 'disc', grip: '#3f3226', pommel: '#cbd5e1' },
   silver_saber: { kind: 'blade', reach: 52, shape: 'curved', blade: '#e5ecf5', edge: '#ffffff', spine: '#94a3b8', guard: '#cbd5e1', guardStyle: 'bow', grip: '#3f3226', pommel: '#e2e8f0' },
   crystal_spear: { kind: 'blade', reach: 64, shape: 'spear', widthScale: 0.7, blade: '#c7b5f5', edge: '#ffffff', spine: '#7c3aed', guard: '#4c1d95', guardStyle: 'prong', grip: '#2e1065', pommel: '#ddd6fe', glow: '#a78bfa', rune: '#f5d0fe' },

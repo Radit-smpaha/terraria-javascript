@@ -1940,9 +1940,9 @@ World.prototype.generateOceanPlanet = function() {
   // Every placement now measures SHORE TO SHORE (centre distance minus both
   // half-widths) and refuses the placement unless real, open, swim-through
   // water stays between the two landmasses.
-  const CHANNEL = 12;     // guaranteed open water between two big-island shores
-  const ISLET_CLEAR = 6;  // open water between an islet and any bigger land
-  const ISLET_GAP = 6;    // open water between two islets
+  const CHANNEL = 22;     // guaranteed open water between two big-island shores
+  const ISLET_CLEAR = 10; // open water between an islet and any bigger land
+  const ISLET_GAP = 10;   // open water between two islets
   // ---- ASYMMETRIC MAP BOUNDS ---------------------------------------------
   // The planet's playable region used to be symmetric (margin 20 both sides),
   // so the far west was a thin strip along the world edge and the whole east
@@ -1970,8 +1970,8 @@ World.prototype.generateOceanPlanet = function() {
     const west = 1 - Math.min(1, Math.max(0, (cx - margin) / usable));
     const westBias = Math.pow(west, 1.8);
     const sizeBoost = 0.75 + westBias * 1.45;
-    let halfWidth = Math.round((8 + Math.floor(Math.random() * 9)) * sizeBoost);
-    const height = Math.round((6 + Math.floor(Math.random() * 9)) * sizeBoost);
+    let halfWidth = Math.round((5 + Math.floor(Math.random() * 6)) * sizeBoost);
+    const height = Math.round((4 + Math.floor(Math.random() * 6)) * sizeBoost);
     // ---- CHANNEL TEST ---- If this slot would leave less than CHANNEL tiles of
     // open water against an island already placed, shrink first (the west still
     // needs its land mass) and only skip the island entirely when even a small
@@ -2008,7 +2008,7 @@ World.prototype.generateOceanPlanet = function() {
   for (let i = 0; i + 1 < islands.length; i++) {
     const a = islands[i], b = islands[i + 1];
     const gap = b.cx - a.cx;
-    if (gap < 30) continue;
+    if (gap < 28) continue;
     const mid = (a.cx + b.cx) / 2;
     const spots = gap > 70 ? [mid - gap * 0.22, mid - gap * 0.08, mid + gap * 0.08, mid + gap * 0.22]
       : gap > 44 ? [mid - gap * 0.15, mid + gap * 0.15]
@@ -2016,7 +2016,7 @@ World.prototype.generateOceanPlanet = function() {
     for (const sx of spots) {
       const cx = Math.round(sx);
       if (cx < margin || cx > this.width - margin - 1) continue;
-      const hw = 5 + Math.floor(Math.random() * 4);
+      const hw = 3 + Math.floor(Math.random() * 3);
       if (!clearOf(cx, hw)) continue;
       // A wide, flat, elevated shoal: 5-8 tiles of walkable table that rises
       // 3-5 tiles above the waterline, floating on the sea like a sand bar
@@ -2036,11 +2036,11 @@ World.prototype.generateOceanPlanet = function() {
     // instead of the long empty crossing it used to be.
     const westRoll = Math.pow(Math.random(), 1.85);
     const wcx = margin + Math.floor(usable * westRoll);
-    const whw = 4 + Math.floor(Math.random() * 4);
+    const whw = 3 + Math.floor(Math.random() * 3);
     if (!clearOf(wcx, whw)) continue;
     islets.push({ cx: wcx, halfWidth: whw,
       height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
-    if (islets.length >= 140) break;
+    if (islets.length >= 200) break;
   }
 
   const allIslands = islands.concat(islets);
