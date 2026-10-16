@@ -1932,7 +1932,17 @@ World.prototype.generateOceanPlanet = function() {
   // not the only thing out west.
   const islandCount = 16 + Math.floor(Math.random() * 5);
   const islands = [];
-  const minGap = 24;
+  // ---- WATER CHANNELS: islands may never touch --------------------------------
+  // The old rule kept island CENTRES 24 tiles apart, which sounds safe — but a
+  // far-west island is up to ~35 tiles to a side, so two "well separated"
+  // islands still overlapped, their shallow rims fused into one shelf, and that
+  // shelf was a walkway: the sea was there, but you could not get into it.
+  // Every placement now measures SHORE TO SHORE (centre distance minus both
+  // half-widths) and refuses the placement unless real, open, swim-through
+  // water stays between the two landmasses.
+  const CHANNEL = 12;     // guaranteed open water between two big-island shores
+  const ISLET_CLEAR = 6;  // open water between an islet and any bigger land
+  const ISLET_GAP = 6;    // open water between two islets
   // ---- ASYMMETRIC MAP BOUNDS ---------------------------------------------
   // The planet's playable region used to be symmetric (margin 20 both sides),
   // so the far west was a thin strip along the world edge and the whole east
@@ -1955,19 +1965,27 @@ World.prototype.generateOceanPlanet = function() {
     const jitter = (Math.random() - 0.5) * (usable / islandCount) * 0.6;
     const cx = Math.max(margin, Math.min(this.width - E_MARGIN - 1,
       Math.round(base + jitter)));
-    if (islands.some(other => Math.abs(other.cx - cx) < minGap)) continue;
-    // Bigger overall, and bigger still the further west you go.
+    // Bigger overall, and bigger still the further west you go (the west curve
+    // is squared so the biggest islands bunch into the western third).
     const west = 1 - Math.min(1, Math.max(0, (cx - margin) / usable));
-    // WEST SIDE BIGGER. The archipelago already biased west; the report is that
-    // it needs to be MORE land out there, not just a bias. Two changes:
-    //   - the west curve is squared, so the biggest islands bunch into the
-    //     western third instead of tapering smoothly across the whole map;
-    //   - the size boost roughly doubles on the far west, with the shoal
-    //     count raised to match (more islets = a real archipelago to cross).
     const westBias = Math.pow(west, 1.8);
     const sizeBoost = 0.75 + westBias * 1.45;
-    const halfWidth = Math.round((8 + Math.floor(Math.random() * 9)) * sizeBoost);
+    let halfWidth = Math.round((8 + Math.floor(Math.random() * 9)) * sizeBoost);
     const height = Math.round((6 + Math.floor(Math.random() * 9)) * sizeBoost);
+    // ---- CHANNEL TEST ---- If this slot would leave less than CHANNEL tiles of
+    // open water against an island already placed, shrink first (the west still
+    // needs its land mass) and only skip the island entirely when even a small
+    // one would weld itself onto a neighbour.
+    let fits = false;
+    while (halfWidth >= 7) {
+      if (islands.every(o =>
+        Math.abs(cx - o.cx) - halfWidth - o.halfWidth >= CHANNEL)) {
+        fits = true;
+        break;
+      }
+      halfWidth -= 2;
+    }
+    if (!fits) continue;
     islands.push({ cx, halfWidth, height });
   }
 
@@ -1979,7 +1997,14 @@ World.prototype.generateOceanPlanet = function() {
   // runs across the WHOLE map (not just the big gaps), so the ocean reads as a
   // living archipelago full of little landmarks to dive between.
   const islets = [];
-  const isletSpacing = 11;   // min tiles between any two small islands
+  // Clearance is measured shore to shore here too: an islet may never weld
+  // itself onto a big island or onto another islet, so every channel keeps a
+  // strip of real, swim-through water even where the shoals are at their
+  // densest. (The old centre-distance checks let a halfWidth-8 islet sit 15
+  // tiles from a halfWidth-35 island — i.e. fused into it.)
+  const clearOf = (cx, hw) =>
+    islands.every(o => Math.abs(cx - o.cx) - hw - o.halfWidth >= ISLET_CLEAR) &&
+    islets.every(o => Math.abs(cx - o.cx) - hw - o.halfWidth >= ISLET_GAP);
   for (let i = 0; i + 1 < islands.length; i++) {
     const a = islands[i], b = islands[i + 1];
     const gap = b.cx - a.cx;
@@ -1991,28 +2016,29 @@ World.prototype.generateOceanPlanet = function() {
     for (const sx of spots) {
       const cx = Math.round(sx);
       if (cx < margin || cx > this.width - margin - 1) continue;
-      if (islands.some(o => Math.abs(o.cx - cx) < 16)) continue;
-      if (islets.some(o => Math.abs(o.cx - cx) < isletSpacing)) continue;
+      const hw = 5 + Math.floor(Math.random() * 4);
+      if (!clearOf(cx, hw)) continue;
       // A wide, flat, elevated shoal: 5-8 tiles of walkable table that rises
       // 3-5 tiles above the waterline, floating on the sea like a sand bar
       // rather than a thin spike spearing up from the deep.
-      islets.push({ cx, halfWidth: 5 + Math.floor(Math.random() * 4),
+      islets.push({ cx, halfWidth: hw,
         height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
     }
   }
   // A generous independent scatter fills the open water between the rows above
   // so no stretch of sea is ever featureless. These free-floating shoals are
-  // the same flat-table shape.
-  for (let attempt = 0; attempt < this.width; attempt++) {
-    const cx = margin + Math.floor(Math.random() * usable);
+  // the same flat-table shape — and they obey the same channel rules. Tripled
+  // attempts: the channel rules reject most rolls (the lane is crowded) and
+  // testing a free slot is cheap.
+  for (let attempt = 0; attempt < this.width * 3; attempt++) {
     // Same westward bias for the free-floating shoals: weight the roll toward
     // the left third so the western sea is a proper archipelago to swim across
     // instead of the long empty crossing it used to be.
     const westRoll = Math.pow(Math.random(), 1.85);
     const wcx = margin + Math.floor(usable * westRoll);
-    if (islands.some(o => Math.abs(o.cx - wcx) < 16)) continue;
-    if (islets.some(o => Math.abs(o.cx - wcx) < isletSpacing)) continue;
-    islets.push({ cx: wcx, halfWidth: 4 + Math.floor(Math.random() * 4),
+    const whw = 4 + Math.floor(Math.random() * 4);
+    if (!clearOf(wcx, whw)) continue;
+    islets.push({ cx: wcx, halfWidth: whw,
       height: 3 + Math.floor(Math.random() * 3), islet: true, flat: true });
     if (islets.length >= 140) break;
   }
@@ -5574,6 +5600,12 @@ class Megalodon {
    * would be under the colosseum's light shafts.
    */
   render(ctx, camera) {
+    // The effects-quality dial, HOISTED to the top of render(): the gill pass
+    // and the hide-wear pass both read it. It used to be declared down in
+    // section 6b, which put its earlier readers in the temporal dead zone —
+    // "Cannot access 'micro' before initialization" — and made every boss
+    // render throw as soon as the gills or the blood bloom drew.
+    const micro = this._fxDetail();
     const x = this.x - camera.x;
     const y = this.y - camera.y;
     const injury = Math.max(0, Math.min(1, 1 - this.hp / this.maxHp));
@@ -5992,9 +6024,8 @@ class Megalodon {
       // drift along the spine and shimmer in width, which is what actually
       // reads as "under water" at rest; static dapples never did. Gated on
       // the quality dial — first thing to drop on low effects.
-      // NOTE: `micro` is declared later in this method (section 6b), so this
-      // early block asks the quality dial directly instead of touching it
-      // before its `const` declaration (which would be a TDZ ReferenceError).
+      // NOTE: `micro` is the effects-quality dial hoisted to the top of render();
+      // this early block re-asks the dial directly to stay self-contained.
       if (this._fxDetail() > 0.35 && !vanished) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -6449,26 +6480,25 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 6b. HIDE MICRO-DETAIL — three cheap, deterministic passes that make the
-    //     hide read as a body instead of a filled silhouette. All of them use
-    //     the quality dial: they are the first thing dropped on low effects.
-    //       - DERMAL DENTICLES: tiny tooth-like scales, brighter on the lit
-    //         upper flank and fading into the belly, along the swim direction.
-    //       - BARNACLE CLUSTERS: pale calcareous dots crusted in 4 fixed spots
-    //         (a wound scar line, the peduncle, behind the eye, at the dorsal
-    //         root) — the detail that most reads as "an old animal".
-    //       - SPERM-whale-style WRINKLES: a few short fold lines over the
+    // 6b. HIDE MICRO-TEXTURE — one light, deterministic pass so the body is a
+    //     hide rather than a flat fill. This used to carry three heavy passes
+    //     (denticles at 120/170, a barnacle crust, fold lines); the report was
+    //     that the body read as visual porridge at game scale, so the crust is
+    //     gone and the rest is dialed down to a whisper. First thing dropped
+    //     on low effects.
+    //       - DERMAL DENTICLES: a few tiny scales along the swim direction,
+    //         faintly brighter on the lit flank.
+    //       - SPERM-whale-style WRINKLES: two short fold lines over the
     //         shoulder where the hide bunches during a turn.
     // ======================================================================
-    const micro = this._fxDetail();
     if (micro > 0.35) {
       const detailSeed = (this.scarSeed || 0) * 0.37;
 
-    // ---- dermal denticles: small soft scales, denser on the lit flank ----
-    // Raised from 46 to 120 (and 90 to 170 at high quality): the hide's
-    // micro-texture is what stopped the body reading as a flat silhouette,
-    // and the previous counts were still too sparse to see at game scale.
-    const scaleCount = micro > 0.75 ? 170 : 120;
+    // ---- dermal denticles: a whisper of scale texture, nothing more ----
+    // The counts used to be 120/170 with bright scales: at game scale that is
+    // a rash of bright dashes over the whole animal. A sparse, dim scatter
+    // keeps the hide alive without turning it into noise.
+    const scaleCount = micro > 0.75 ? 54 : 34;
       ctx.save();
       ctx.globalAlpha = 1.0;
       for (let i = 0; i < scaleCount; i++) {
@@ -6487,42 +6517,16 @@ class Megalodon {
         const size = 1.8 + b * 1.6;
         const drift = (b - 0.5) * 5;
         const lit = off < -0.05;
-        ctx.fillStyle = lit ? 'rgba(203, 226, 250, 0.55)' : 'rgba(6, 12, 24, 0.32)';
+        ctx.fillStyle = lit ? 'rgba(203, 226, 250, 0.34)' : 'rgba(6, 12, 24, 0.2)';
         ctx.fillRect(p.x + drift, p.y + (b - 0.5) * 3, size, size * 0.75);
       }
       ctx.restore();
-      // ---- barnacle crust: 4 fixed clusters of pale calcareous dots --------
-      const clusters = [
-        [0.86, -0.55], [0.72, 0.42], [0.14, 0.62], [0.46, -1.0]
-      ];
-      for (const [cu, coff] of clusters) {
-        const base = spineAt(cu, coff);
-        if (!Number.isFinite(base.x)) continue;
-        // More barnacles per cluster (14/9): the crust is the single most
-        // readable 'this is an old animal' cue, and it was barely visible.
-        const n = micro > 0.75 ? 14 : 9;
-        for (let k = 0; k < n; k++) {
-          const a = this._hash01(detailSeed * 0.83 + cu * 40 + k * 1.93);
-          const b2 = this._hash01(detailSeed * 1.51 + cu * 61 + k * 2.71);
-          const c2 = this._hash01(detailSeed * 0.29 + cu * 17 + k * 3.37);
-          if (c2 > 0.72) continue;                        // crust, not a carpet
-          const bx = base.x + (a - 0.5) * 26;
-          const by = base.y + (b2 - 0.5) * 14;
-          const s = 1.8 + c2 * 2.6;
-          ctx.fillStyle = 'rgba(226, 236, 245, ' + (0.62 + c2 * 0.32).toFixed(2) + ')';
-          ctx.fillRect(bx, by, s, s);
-          // Littoral barnacles have a dark rim.
-          ctx.fillStyle = 'rgba(20, 30, 44, 0.5)';
-          ctx.fillRect(bx, by + s - 0.7, s, 1);
-          if (c2 > 0.45) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.fillRect(bx, by, 1, 1);
-          }
-        }
-      }
+      // (The barnacle-crust pass used to live here: 4 clusters x 9-14 dots
+      // with dark rims and highlights. It was the loudest of the micro passes
+      // and read as dirt speckle on the animal, so it was cut outright.)
       // ---- hide folds: short lines where the shoulder bunches in a turn ----
-      const foldCount = micro > 0.75 ? 5 : 3;
-      ctx.strokeStyle = 'rgba(6, 12, 24, 0.18)';
+      const foldCount = micro > 0.75 ? 3 : 2;
+      ctx.strokeStyle = 'rgba(6, 12, 24, 0.14)';
       ctx.lineWidth = 1.3;
       for (let i = 0; i < foldCount; i++) {
         const u = 0.58 + i * 0.055;
@@ -6536,12 +6540,14 @@ class Megalodon {
     }
 
     // ======================================================================
-    // 7. HIDE WEAR — a small, DELIBERATE set of battle scars. These are
-    //    readable slashes, not scatter: hatch marks, barnacles and escort
-    //    fish were removed because they read as noise at game scale.
+    // 7. HIDE WEAR — a FEW deliberate scars. Beyond these slashes, the only
+    //    hide detail left is the signature gash below: tooth-rakes, bite
+    //    pits, barnacle rings, the dapple coat and the scar webs were all
+    //    cut, because scatter detail over a moving animal reads as porridge
+    //    no matter how carefully it is drawn. Few, large, readable marks.
     // ======================================================================
     {
-      const scars = 4 + Math.floor(injury * 4);      // 4 .. 8, more as it dies
+      const scars = 2 + Math.floor(injury * 3);      // 2 .. 4, more as it dies
       for (let s = 0; s < scars; s++) {
         const sSeed = s * 7.399 + (this.scarSeed || 0);
         const u = 0.20 + this._hash01(sSeed) * 0.74;
@@ -6603,92 +6609,9 @@ class Megalodon {
       }
     }
 
-      // ---- Richer hide-wear pass. The single-slash loop above is kept, and
-      // these additional scar families layer over it so the animal reads as a
-      // scarred veteran rather than a cleanly sketched silhouette.
+      // One story scar, told in one big readable line: the signature gash
+      // below is the last hide detail that survived the declutter.
       const seed = this.scarSeed || 0;
-      // (a) TOOTH-RAKE TRIPLES: three parallel scratches from one rival's
-      //     swipe — always a tight cluster of exactly three.
-      const rakes = 2 + Math.floor(this._hash01(seed * 5.7) * 3);
-      for (let rk = 0; rk < rakes; rk++) {
-        const rs = rk * 13.31 + seed * 0.9;
-        const u = 0.22 + this._hash01(rs) * 0.6;
-        const p = spineAt(u, -0.74 + this._hash01(rs * 1.4) * 0.55);
-        const baseA = 0.55 + this._hash01(rs * 2.1) * 0.6 + spineBend(u) * 0.35;
-        const len = 20 + this._hash01(rs * 2.8) * 26;
-        for (let t = -1; t <= 1; t++) {
-          const a = baseA + t * 0.14;
-          const off = t * 5.5;
-          ctx.strokeStyle = 'rgba(206, 214, 228, ' + (0.34 + injury * 0.2).toFixed(2) + ')';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(p.x + Math.sin(baseA) * off, p.y + Math.cos(baseA) * off);
-          ctx.lineTo(p.x + Math.sin(baseA) * off + Math.cos(a) * len,
-            p.y + Math.cos(baseA) * off + Math.sin(a) * len);
-          ctx.stroke();
-        }
-      }
-      // (b) HEALED BITE HOLES: paired pockmarks with a raised pale rim.
-      const holes = 2 + Math.floor(this._hash01(seed * 3.9) * 3);
-      for (let hIdx = 0; hIdx < holes; hIdx++) {
-        const hs = hIdx * 8.61 + seed * 3.4;
-        const u = 0.20 + this._hash01(hs) * 0.64;
-        const p = spineAt(u, -0.72 + this._hash01(hs * 1.6) * 0.5);
-        const rr = 3.4 + this._hash01(hs * 2.3) * 4.4;
-        ctx.fillStyle = 'rgba(10, 14, 26, 0.55)';
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.6, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = 'rgba(226, 234, 252, 0.35)';
-        ctx.lineWidth = 1.3;
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(10, 14, 26, 0.45)';
-        ctx.beginPath(); ctx.arc(p.x - rr * 2.2, p.y + rr * 0.8, rr * 0.5, 0, Math.PI * 2); ctx.fill();
-      }
-      // (c) BARNACLE RINGS: pale encrusted clusters from its slow years.
-      const barns = 4 + Math.floor(this._hash01(seed * 7.1) * 4);
-      for (let bIdx = 0; bIdx < barns; bIdx++) {
-        const bs = bIdx * 4.773 + seed * 2.1;
-        const u = 0.30 + this._hash01(bs) * 0.56;
-        const p = spineAt(u, -0.9 + this._hash01(bs * 1.7) * 0.45);
-        const rr = 2.2 + this._hash01(bs * 2.3) * 3.2;
-        ctx.strokeStyle = 'rgba(216, 226, 244, 0.42)';
-        ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = 'rgba(180, 195, 220, 0.28)';
-        ctx.beginPath(); ctx.arc(p.x, p.y, rr * 0.5, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(240, 246, 255, 0.28)';
-        ctx.beginPath(); ctx.arc(p.x - rr * 0.3, p.y - rr * 0.3, rr * 0.3, 0, Math.PI * 2); ctx.fill();
-      }
-      // (d) DAPPLE COAT: faint two-tone speckle along the whole flank, bigger
-      //     and denser than before but low-contrast — texture, never noise.
-      const dapples = 30 + Math.floor(injury * 14);
-      for (let d = 0; d < dapples; d++) {
-        const ds = d * 3.317 + seed * 0.31;
-        const u = 0.10 + this._hash01(ds) * 0.86;
-        const p = spineAt(u, -0.95 + this._hash01(ds * 1.9) * 1.55);
-        const rr = 2.6 + this._hash01(ds * 2.7) * 6;
-        const upper = this._hash01(ds * 1.9) < 0.55;
-        ctx.fillStyle = upper ? 'rgba(210, 230, 255, 0.07)' : 'rgba(6, 10, 20, 0.06)';
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y, rr, rr * 0.58, this._hash01(ds * 4.1) * 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // (e) CROSS-HATCHED SCAR WEBS: long-healed wounds crossed by older ones.
-      const webs = 1 + Math.floor(this._hash01(seed * 9.9) * 2);
-      for (let wIdx = 0; wIdx < webs; wIdx++) {
-        const ws = wIdx * 17.43 + seed * 2.6;
-        const u = 0.30 + this._hash01(ws) * 0.46;
-        const p = spineAt(u, -0.66 + this._hash01(ws * 1.3) * 0.5);
-        const arm = 12 + this._hash01(ws * 2.4) * 14;
-        ctx.strokeStyle = 'rgba(224, 232, 250, 0.26)';
-        ctx.lineWidth = 1.2;
-        for (const a of [0.7, 2.15, 3.5, 4.9]) {
-          const aa = a + this._hash01(ws * 3.1) * 0.5;
-          ctx.beginPath();
-          ctx.moveTo(p.x - Math.cos(aa) * arm, p.y - Math.sin(aa) * arm * 0.7);
-          ctx.lineTo(p.x + Math.cos(aa) * arm, p.y + Math.sin(aa) * arm * 0.7);
-          ctx.stroke();
-        }
-      }
       // (f) THE SIGNATURE GASH — one long, deliberate wound that runs from the
       //     gill chamber back toward the dorsal root, the story scar of the
       //     whole animal. A real healed gash is a rope: a raised pale ridge
@@ -6747,37 +6670,6 @@ class Megalodon {
           ctx.lineWidth = 2.2;
           drawPoly(gpts, 0, 0);
           ctx.restore();
-        }
-      }
-      // (g) TORN FIN NOTCHES — bite craters taken out of the dorsal and the
-      //     near pectoral: dark wedges over the fin body plus a pale healed
-      //     lip, so the fins themselves carry the fight history. Count scales
-      //     with injury; deterministic from scarSeed.
-      if (micro > 0.35) {
-        const tears = Math.min(5, 1 + Math.floor(injury * 5));
-        for (let ti = 0; ti < tears; ti++) {
-          const ts = ti * 11.17 + seed * 4.4;
-          // Alternate between dorsal territory (u 0.30..0.62, high on the back)
-          // and pectoral territory (u 0.66..0.80, mid flank).
-          const onDorsal = this._hash01(ts * 0.7) < 0.55;
-          const u = onDorsal ? 0.30 + this._hash01(ts) * 0.32
-            : 0.66 + this._hash01(ts) * 0.14;
-          const p = onDorsal ? spineAt(u, -1.16) : spineAt(u, 0.34);
-          const r = 4.5 + this._hash01(ts * 1.9) * 5;
-          const bite = 0.7 + this._hash01(ts * 2.7) * 1.4;
-          // Healed lip: a pale arc around the crater's intact side.
-          ctx.strokeStyle = 'rgba(206, 216, 234, 0.4)';
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, r, Math.PI * 0.25, Math.PI * (1.1 + bite * 0.5));
-          ctx.stroke();
-          // The notch itself: dark wedge bitten out of the silhouette edge.
-          ctx.fillStyle = 'rgba(8, 14, 26, 0.55)';
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.arc(p.x, p.y, r * 0.85, Math.PI * (1.15 + bite * 0.35), Math.PI * (2.0 + bite * 0.55));
-          ctx.closePath();
-          ctx.fill();
         }
       }
 
