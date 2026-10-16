@@ -1513,17 +1513,42 @@ class Player {
     const itemData = ITEMS[heldItem.id];
     if (!itemData) return;
 
-    ctx.save();
-    // Anchor at player hand
-    ctx.translate(14, 18);
-
-    if (this.isSwinging) {
-      const swingProg = 1 - (this.swingTimer / this.swingDuration);
-      const swingAngle = -Math.PI * 0.4 + swingProg * Math.PI * 0.85;
-      ctx.rotate(swingAngle);
-    } else {
-      ctx.rotate(0.2); // Rest angle
+    // ---- SWING SMEAR — before the real item, paint 2 lagged ghosts of it at
+    // earlier points of the arc. Motion is what makes a held weapon feel like
+    // a weapon instead of a sticker: the ghosts trail the swing, the newest
+    // brightest, so even a 0.22s swing reads as a committed cut. The smear is
+    // drawn only DURING a swing; at rest the item is drawn once, crisp.
+    // Each pass owns its full save/translate/rotate/restore so the ghosts can
+    // never leak a transform into the real draw (or into the player's frame).
+    const swingAngleNow = this.isSwinging
+      ? -Math.PI * 0.4 + (1 - (this.swingTimer / this.swingDuration)) * Math.PI * 0.85
+      : 0.2; // Rest angle
+    if (this.isSwinging && this.swingDuration > 0.05) {
+      const baseProg = 1 - (this.swingTimer / this.swingDuration);
+      for (let ghost = 2; ghost >= 1; ghost--) {
+        const lagged = Math.max(0, baseProg - ghost * 0.14);
+        const oldAngle = -Math.PI * 0.4 + lagged * Math.PI * 0.85;
+        ctx.save();
+        ctx.globalAlpha = ghost === 1 ? 0.28 : 0.14;
+        ctx.translate(14, 18);
+        ctx.rotate(oldAngle);
+        this._drawHeldSprite(ctx, heldItem, itemData);
+        ctx.restore();
+      }
     }
+    ctx.save();
+    ctx.translate(14, 18);
+    ctx.rotate(swingAngleNow);
+    this._drawHeldSprite(ctx, heldItem, itemData);
+    ctx.restore();
+  }
+
+  /**
+   * The held item itself, in its own local frame (rotated to the swing/rest
+   * angle by the caller). Split out of renderHeldItem so the swing smear can
+   * paint ghosts of the exact same sprite without duplicating the dispatch.
+   */
+  _drawHeldSprite(ctx, heldItem, itemData) {
 
     // ---- Render tool or weapon sprite ------------------------------------
     const isPrismatic = heldItem.id === 'prismatic_saber' || heldItem.id === 'aurora_blade';
@@ -1615,8 +1640,9 @@ class Player {
         ctx.fillText(itemData.icon, 8, -6);
       }
     }
-
-    ctx.restore();
+    // NOTE: no ctx.restore() here — the caller owns the save/translate/
+    // rotate frame (see renderHeldItem). Only the balanced save/restore
+    // PAIRS opened inside this function may close here.
   }
 
   /**
@@ -1681,6 +1707,56 @@ class Player {
       ctx.fillStyle = M.rune;
       ctx.fillRect(-1, -reach * 0.86, 2, reach * 0.8);
       ctx.restore();
+    }
+    // ---- SPECULAR SWEEP — a narrow, bright band of reflected light that
+    // travels up the blade on a slow loop, like a metal surface catching a
+    // light source as it moves. Clipped to the blade profile so the glint
+    // never spills into the air beside the edge; this is the single detail
+    // that separates "flat metal shape" from "polished steel".
+    {
+      ctx.save();
+      drawBlade();              // clip to the exact blade silhouette
+      ctx.clip();
+      ctx.globalCompositeOperation = 'lighter';
+      const sweep = (Date.now() * 0.00042) % 1;          // 0..1, ~2.4s loop
+      const bandY = 4 - sweep * (reach + 8);             // travels tip-ward
+      const grad = ctx.createLinearGradient(0, bandY - reach * 0.16, 0, bandY + reach * 0.16);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.34)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(-w * 2.2, bandY - reach * 0.16, w * 4.4, reach * 0.32);
+      ctx.restore();
+    }
+    // ---- GRIP WRAP — cord wound round the handle in evenly spaced bands,
+    // with the twist crossing the light. A plain rectangle reads as a stick;
+    // the bands say "wrapped for grip" at a glance.
+    {
+      const gripX = -2, gripW = 4, gripTop = 3.5, gripLen = 9;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      for (let b = 0; b < 4; b++) {
+        const by = gripTop + 1.4 + b * 2.3;
+        ctx.fillRect(gripX, by, gripW, 0.9);
+      }
+      // Lit edge of each wrap turn, offset a hair to the right of the shadow.
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+      for (let b = 0; b < 4; b++) {
+        const by = gripTop + 0.9 + b * 2.3;
+        ctx.fillRect(gripX + gripW * 0.5, by, gripW * 0.5, 0.7);
+      }
+      // Pommel peen: the tang end hammered flat over the pommel.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(-0.7, gripTop + gripLen + 10.2, 1.4, 1.4);
+    }
+    // ---- GUARD RIVETS — two pins fastening the crossguard to the tang. Tiny,
+    // but they turn a bar into a piece of smithed hardware.
+    {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(-(w + 1.6), 0.7, 1.2, 1.2);
+      ctx.fillRect(w + 0.4, 0.7, 1.2, 1.2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillRect(-(w + 1.6) + 0.8, 1.5, 1.2, 1.2);
+      ctx.fillRect(w + 0.4 + 0.8, 1.5, 1.2, 1.2);
     }
     // Grip, guard, pommel — the guard is what most distinguishes two swords at
     // this scale, so it is per-model.
@@ -1784,6 +1860,19 @@ class Player {
     ctx.rotate(M.shaftAngle || 0.5);
     ctx.fillStyle = shaft;
     ctx.fillRect(-1.6, -shaftLen, 3.4, shaftLen + 8);
+    // Wood grain: two darker lengthwise streaks so the shaft reads as timber,
+    // not a painted bar. Drawn inside the same transform as the shaft.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.fillRect(-1.0, -shaftLen + 2, 0.8, shaftLen + 3);
+    ctx.fillRect(0.9, -shaftLen + 6, 0.7, shaftLen - 1);
+    // Lit side of the shaft down the left edge (the light is overhead-left).
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.fillRect(-1.6, -shaftLen + 1, 0.7, shaftLen + 5);
+    // Leather grip wrap near the butt of the shaft: dark bands over the wood.
+    ctx.fillStyle = 'rgba(30, 22, 14, 0.85)';
+    ctx.fillRect(-1.7, -7, 3.6, 8);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    for (let b = 0; b < 3; b++) ctx.fillRect(-1.7, -6 + b * 2.6, 3.6, 0.7);
     ctx.restore();
     ctx.save();
     ctx.translate(0, -shaftLen * 0.55);
@@ -1796,18 +1885,50 @@ class Player {
       ctx.fillStyle = M.edge || '#e2e8f0';
       ctx.fillRect(-13, -4.2, 7, 1.6);
       ctx.fillRect(6, -4.2, 7, 1.6);
+      // Bevel: the dark under-face of the bar, giving the pick real thickness
+      // instead of a flat rectangle, plus polished points at both tips.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.fillRect(-14, 1, 28, 1.4);
+      ctx.fillStyle = M.edge || '#e2e8f0';
+      ctx.fillRect(-15, -2.4, 1.6, 3);
+      ctx.fillRect(13.4, -2.4, 1.6, 3);
+      // Eye collar: where the shaft passes through the head.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(-1.6, -3.4, 3.4, 5.2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fillRect(-1.6, -3.4, 1.2, 5.2);
     } else if (M.toolKind === 'axe') {
       ctx.fillRect(-3, -8, 20, 9);
       ctx.fillStyle = M.headDark || '#64748b';
       ctx.fillRect(-3, -8, 20, 2.5);
       ctx.fillStyle = M.edge || '#e2e8f0';
       ctx.fillRect(15, -8.5, 3.5, 10);
+      // Crescent cutting edge highlight + dark bevel under the bit.
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillRect(17.6, -8, 0.9, 8);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(15, 0.4, 3.5, 1.2);
+      // Eye collar around where the handle seats into the head.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillRect(-3, -1.4, 6, 2.4);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+      ctx.fillRect(-3, -1.4, 6, 0.8);
     } else if (M.toolKind === 'hammer') {
       ctx.fillRect(-13, -7, 26, 9);
       ctx.fillStyle = M.headDark || '#64748b';
       ctx.fillRect(-13, 0, 26, 2);
       ctx.fillStyle = M.edge || '#e2e8f0';
       ctx.fillRect(-13, -7, 26, 2);
+      // Striking face (left) and claw/peen (right): the two ends that do the
+      // work get their own planes so the head isn't one uniform slab.
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.fillRect(-13.6, -6.4, 2.4, 7.8);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(11, -5, 3, 6);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.fillRect(-13, 0.8, 26, 1.2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillRect(-1.6, -1.6, 3.4, 2.6);
     } else if (M.toolKind === 'rod') {
       ctx.fillRect(2, -4, 26, 2.2);
       ctx.strokeStyle = 'rgba(226,232,240,0.75)';
@@ -1815,12 +1936,30 @@ class Player {
       ctx.beginPath(); ctx.moveTo(27, -2.8); ctx.quadraticCurveTo(30, 2, 27, 8); ctx.stroke();
       ctx.fillStyle = M.head || '#f87171';
       ctx.fillRect(25, 8, 4, 2.5);
+      // Line guides: little rings along the rod that the line threads through.
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.55)';
+      ctx.lineWidth = 0.9;
+      for (let gr = 1; gr <= 3; gr++) {
+        ctx.beginPath();
+        ctx.arc(6 + gr * 6.5, -3.4 + gr * 0.3, 1.5, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      }
+      // Float bobbing on the line, dipping with the anim clock.
+      const bob = Math.sin(Date.now() * 0.004) * 1.6;
+      ctx.fillStyle = '#f87171';
+      ctx.fillRect(26.2, 11 + bob, 2.6, 3.4);
+      ctx.fillStyle = '#fef2f2';
+      ctx.fillRect(26.2, 11 + bob, 2.6, 1.2);
     }
     ctx.restore();
     if (M.grip) {
       ctx.fillStyle = M.grip;
       ctx.fillRect(-2, 0, 4, 5);
     }
+    // Grip bands on the pommel-side wrap for a tactile read.
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(-2, 1, 4, 0.7);
+    ctx.fillRect(-2, 3.2, 4, 0.7);
   }
 }
 
