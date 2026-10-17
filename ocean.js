@@ -5977,8 +5977,8 @@ class Megalodon {
       // fin is TALL and only mildly swept so it reads as a shark fin, not a
       // stub or a sail. Keep the three-band shading so it shares volume
       // language with the hull.
-      const finH = bodyHalf(0.43) * 2.65 + (this.surge || 0) * 7;
-      const tipX = rootFront.x - 32 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
+      const finH = bodyHalf(0.43) * 3.0 + (this.surge || 0) * 7;
+      const tipX = rootFront.x - 42 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
       const tipY = base.y - finH + finTilt * 16;
       // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
       // the ridge cap) so the leading edge has room to run long and convex —
@@ -6793,7 +6793,7 @@ class Megalodon {
       };
       // Jaw angle: a resting snarl that unhinges to near-vertical. The sheet's
       // gape is enormous: the head throws open like a bear trap.
-      const ja = 0.10 + (this.jawOpen || 0) * 0.64;
+      const ja = 0.08 + (this.jawOpen || 0) * 0.82;
       const rot = (p, a) => {
         const c = Math.cos(a), s = Math.sin(a);
         const dx = p.x - hinge.x, dy = p.y - hinge.y;
@@ -6924,15 +6924,15 @@ class Megalodon {
         // LOWER TEETH: they ride the top edge of the dropped jaw, pointing up
         // into the gape so the two rows interleave when it snaps shut. Fewer,
         // cleaner teeth (was 13, oversized and overlapping).
-        const lowerTeeth = 9;
+        const lowerTeeth = 11;
         for (let t = 0; t < lowerTeeth; t++) {
           const f = 0.04 + (t / (lowerTeeth - 1)) * 0.94;
           const base = jawPt(f);
           const tg = jawTangent(f);
-          const tlen = (8 + Math.sin(f * Math.PI) * 13 + open01 * 4)
+          const tlen = (10 + Math.sin(f * Math.PI) * 16 + open01 * 6)
             * (ph === 3 && t % 3 === 1 ? 0.45 : 1);   // apex: teeth snapped off
           // direction: from the jaw line up into the gape = (-t.y, t.x) reversed
-          this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 3.4, tooth);
+          this._toothTri(ctx, base.x + tg.y * 2, base.y - tg.x * 2, tg.y, -tg.x, tlen, 4.0, tooth);
         }
       }
 
@@ -6941,15 +6941,15 @@ class Megalodon {
       //      a messy white zigzag; a single row is how a shark's real serrated
       //      bite looks and keeps every tooth individually readable.
       {
-        const count = 11;
+        const count = 13;
         for (let t = 0; t < count; t++) {
           const f = 0.03 + (t / (count - 1)) * 0.94;
           const base = lipPt(f);
           const tg = lipTangent(f);
-          const tlen = (9 + Math.sin(f * Math.PI) * 16 + open01 * 4)
+          const tlen = (11 + Math.sin(f * Math.PI) * 19 + open01 * 6)
             * (ph === 3 && t % 3 === 2 ? 0.5 : 1);  // apex: a tooth snapped off
           // direction: from the lip down into the gape = (t.y, -t.x)
-          this._toothTri(ctx, base.x - tg.y * 1.4, base.y + tg.x * 1.4, -tg.y, tg.x, tlen, 3.6, tooth);
+          this._toothTri(ctx, base.x - tg.y * 1.4, base.y + tg.x * 1.4, -tg.y, tg.x, tlen, 4.2, tooth);
         }
         // Gum line along the upper jaw, just inside the lip.
         ctx.strokeStyle = gum;
