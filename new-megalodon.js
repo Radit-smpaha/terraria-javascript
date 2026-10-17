@@ -30,8 +30,8 @@ class Megalodon {
     // every zoom and leaves the jaws the biggest single feature.
     this.width = 420;
     this.height = 200;
-    this.maxHp = 180000;
-    this.hp = 180000;
+    this.maxHp = 150000;
+    this.hp = 150000;
     this.phase = 1;
     this.dead = false;
     this.game = game;

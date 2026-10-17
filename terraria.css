@@ -584,6 +584,16 @@ canvas#glowCanvas {
   font-size: 26px;
 }
 
+/* A weapon/tool slot whose icon is the real held MODEL, rasterised to a tiny
+   canvas. Flex-centering keeps the sprite inside the square, and the pixelated
+   hint keeps it crisp when the browser scales it. */
+.slot-icon-canvas {
+  display: block;
+  width: 26px;
+  height: 26px;
+  image-rendering: pixelated;
+}
+
 .controls-hint {
   display: flex;
   flex-wrap: wrap;

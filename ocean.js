@@ -3286,8 +3286,8 @@ class Megalodon {
     // every zoom and leaves the jaws the biggest single feature.
     this.width = 420;
     this.height = 200;
-    this.maxHp = 180000;
-    this.hp = 180000;
+    this.maxHp = 150000;
+    this.hp = 150000;
     this.phase = 1;
     this.dead = false;
     this.game = game;
@@ -5776,19 +5776,27 @@ class Megalodon {
       ctx.strokeStyle = outline;
       ctx.lineWidth = 3.5;
       ctx.stroke();
-      // Fin rays fanning through both lobes.
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
+      // Fin rays fanning through both lobes. Each ray curves along the lobe
+      // instead of running as a straight chord, so they read as membrane
+      // structure inside the fin rather than strings crossing a silhouette.
+      ctx.strokeStyle = 'rgba(6, 10, 20, 0.26)';
       ctx.lineWidth = 1.5;
-      for (let r = 0; r < 6; r++) {
+      for (let r = 0; r < 5; r++) {
+        const t = r / 4;                       // 0 = leading edge, 1 = trailing
         ctx.beginPath();
-        ctx.moveTo(16, -3 + r * 2);
-        ctx.lineTo(-14 - r * 4, -110 + r * 15);
+        ctx.moveTo(18, -10 + t * 8);
+        ctx.quadraticCurveTo(
+          -8 - t * 18, -58 - t * 22,
+          upperTip.x + 6 + t * 26, upperTip.y + 12 + t * 34);
         ctx.stroke();
       }
-      for (let r = 0; r < 4; r++) {
+      for (let r = 0; r < 3; r++) {
+        const t = r / 2;
         ctx.beginPath();
-        ctx.moveTo(14, 6 + r * 2);
-        ctx.lineTo(-16 - r * 4, 66 + r * 6);
+        ctx.moveTo(16, 8 + t * 6);
+        ctx.quadraticCurveTo(
+          -6 - t * 14, 40 + t * 10,
+          lowerTip.x + 4 + t * 18, lowerTip.y - 6 - t * 12);
         ctx.stroke();
       }
       // Caudal keel: the ridge running forward of the fin on the peduncle.
@@ -5969,8 +5977,8 @@ class Megalodon {
       // fin is TALL and only mildly swept so it reads as a shark fin, not a
       // stub or a sail. Keep the three-band shading so it shares volume
       // language with the hull.
-      const finH = bodyHalf(0.43) * 2.45 + (this.surge || 0) * 7;
-      const tipX = rootFront.x - 26 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
+      const finH = bodyHalf(0.43) * 2.65 + (this.surge || 0) * 7;
+      const tipX = rootFront.x - 32 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
       const tipY = base.y - finH + finTilt * 16;
       // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
       // the ridge cap) so the leading edge has room to run long and convex —
@@ -5986,7 +5994,7 @@ class Megalodon {
       ]
         // Concave, torn trailing edge: apex -> notch. Tearing lives here only.
         .concat(raggedEdge({ x: tipX + 9, y: tipY + 10 },
-          { x: notchX, y: notchY }, 4, 4 + tearAmp * 8, 61.7))
+          { x: notchX, y: notchY }, 4, 2 + tearAmp * 5, 61.7))
         .concat([{ x: notchX + 10, y: notchY + bodyHalf(0.43) * 0.10 }, { x: rootBack.x, y: rootBack.y + 3 }]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finLite;
@@ -5996,14 +6004,23 @@ class Megalodon {
       ctx.stroke();
       // Membrane rays: a FEW clean strokes, not a fan that scribbles the fin.
       // Three read as fin structure; five read as clutter at game scale.
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.28)';
+      ctx.strokeStyle = 'rgba(6, 10, 20, 0.22)';
       ctx.lineWidth = 1.5;
-      for (let r = 0; r < 3; r++) {
+      for (let r = 0; r < 2; r++) {
         ctx.beginPath();
-        ctx.moveTo(rootFront.x - 4 - r * 10, rootFront.y - 4 - r * 5);
-        ctx.lineTo(tipX + 8 + r * 12, tipY + 18 + r * 22);
+        ctx.moveTo(rootFront.x - 6 - r * 14, rootFront.y - 6 - r * 6);
+        ctx.lineTo(notchX - 6 + r * 4, notchY + 6 + r * 8);
         ctx.stroke();
       }
+      // Inner shade: a single soft band hugging the trailing edge keeps the
+      // fin reading as one clean swept plane instead of a scribbled sail.
+      ctx.fillStyle = 'rgba(10, 18, 34, 0.30)';
+      ctx.beginPath();
+      ctx.moveTo(tipX + 6, tipY + 6);
+      ctx.lineTo(notchX, notchY);
+      ctx.lineTo(notchX + 10, notchY + bodyHalf(0.43) * 0.10);
+      ctx.closePath();
+      ctx.fill();
       // The leading edge catches the key light all the way up to the apex.
       ctx.strokeStyle = 'rgba(206, 224, 255, 0.30)';
       ctx.lineWidth = 2.5;

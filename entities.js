@@ -1463,19 +1463,23 @@ class Player {
 
   renderArmor(ctx, armorItem, ox, oy) {
     if (!armorItem) return;
+    // [bright, mid, dark, accent] per tier — brighter/lighter on top, darker
+    // on the undersides so the plate reads as metal rather than a flat tint.
     const colors = {
-      gold_armor: ['#fbbf24', '#92400e'],
-      iron_armor: ['#cbd5e1', '#475569'],
-      diamond_armor: ['#67e8f9', '#155e75'],
-      crystal_armor: ['#1e3a8a', '#0f172a'],
-      rainbow_armor: ['#f0abfc', '#3730a3'],
-      fallen_star_armor: ['#fef3c7', '#78350f'],
-      demon_armor: ['#f87171', '#450a0a'],
-      voidscale_armor: ['#a78bfa', '#1e1b4b'],
-      ossuary_armor: ['#e7e5e4', '#292524']
+      gold_armor: ['#fbbf24', '#d97706', '#78350f', '#fef3c7'],
+      iron_armor: ['#e2e8f0', '#94a3b8', '#475569', '#f8fafc'],
+      diamond_armor: ['#8ee6f5', '#38bdf8', '#0e7490', '#ecfeff'],
+      crystal_armor: ['#93c5fd', '#3b82f6', '#1e3a8a', '#dbeafe'],
+      rainbow_armor: ['#f0abfc', '#f472b6', '#3730a3', '#fef08a'],
+      fallen_star_armor: ['#fef9c3', '#fde68a', '#92400e', '#ffffff'],
+      demon_armor: ['#f87171', '#dc2626', '#450a0a', '#fecaca'],
+      voidscale_armor: ['#c4b5fd', '#8b5cf6', '#1e1b4b', '#ede9fe'],
+      ossuary_armor: ['#e7e5e4', '#a8a29e', '#292524', '#f5f5f4'],
+      megalodon_armor: ['#bae6fd', '#38bdf8', '#0c4a6e', '#f0f9ff']
     };
     const armorColors = colors[armorItem.id];
     if (!armorColors) return;
+    const [bright, mid, dark, accent] = armorColors;
 
     ctx.save();
     // A hit that the plate soaked sets armorFlash to 1; it decays over ~0.4s.
@@ -1486,25 +1490,62 @@ class Player {
       ctx.shadowColor = armorColors[0];
       ctx.shadowBlur = 14 * flash;
     }
-    ctx.fillStyle = armorColors[0];
-    ctx.fillRect(ox + 2, oy + 2, 14, 6);
-    ctx.fillRect(ox + 2, oy + 14, 14, 11);
-    ctx.fillRect(ox, oy + 15, 4, 7);
-    ctx.fillRect(ox + 14, oy + 15, 4, 7);
-    ctx.fillStyle = armorColors[1];
-    ctx.fillRect(ox + 3, oy + 22, 12, 3);
-    ctx.fillRect(ox + 5, oy + 4, 3, 2);
-    ctx.fillStyle = '#f8fafc';
-    ctx.globalAlpha = 0.55;
-    ctx.fillRect(ox + 4, oy + 15, 2, 6);
+    ctx.fillStyle = bright;
+    // ---- HELMET: crown dome + brow band + a small crest on top -------------
+    ctx.fillRect(ox + 2, oy + 1, 14, 4);            // dome
+    ctx.fillRect(ox + 1, oy + 4, 16, 3);            // brow band
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox + 1, oy + 6, 16, 2);            // brow shadow
+    // Crest: one bright blade up the crown centre, dark keyline on its sides.
+    ctx.fillStyle = accent;
+    ctx.fillRect(ox + 7, oy - 3, 4, 4);
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox + 6, oy - 3, 1, 4);
+    ctx.fillRect(ox + 11, oy - 3, 1, 4);
+
+    // ---- CHESTPLATE: breastplate + chest highlight + shoulder pauldrons ----
+    ctx.fillStyle = bright;
+    ctx.fillRect(ox + 2, oy + 14, 14, 11);          // breastplate
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox + 2, oy + 22, 14, 3);           // lower shadow
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(ox + 4, oy + 15, 2, 7);            // chest highlight
+    ctx.globalAlpha = 1;
+    // Pauldrons: rounded shoulder caps over the arms.
+    ctx.fillStyle = bright;
+    ctx.fillRect(ox, oy + 13, 4, 6);                // back pauldron
+    ctx.fillRect(ox + 14, oy + 13, 4, 6);           // front pauldron
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox, oy + 19, 4, 2);                // back pauldron rim
+    ctx.fillRect(ox + 14, oy + 19, 4, 2);           // front pauldron rim
+    // Gauntlet cuffs at the wrists.
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox - 1, oy + 19, 3, 3);
+    ctx.fillRect(ox + 16, oy + 19, 3, 3);
+
+    // ---- BELT + BOOT PLATES: the last read of “armoured body” -------------
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox + 2, oy + 24, 14, 3);           // belt
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(ox + 8, oy + 24, 3, 3);            // buckle
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox + 3, oy + 27, 5, 8);            // back boot plate
+    ctx.fillRect(ox + 11, oy + 27, 5, 8);           // front boot plate
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox + 3, oy + 33, 5, 2);            // boot soles
+    ctx.fillRect(ox + 11, oy + 33, 5, 2);
     // White-hot wash across the whole plate on impact.
     if (flash > 0) {
       ctx.globalAlpha = 0.75 * flash;
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(ox + 2, oy + 2, 14, 6);
-      ctx.fillRect(ox + 2, oy + 14, 14, 11);
-      ctx.fillRect(ox, oy + 15, 4, 7);
-      ctx.fillRect(ox + 14, oy + 15, 4, 7);
+      ctx.fillRect(ox + 1, oy + 1, 16, 8);
+      ctx.fillRect(ox + 2, oy + 13, 14, 14);
+      ctx.fillRect(ox, oy + 13, 4, 8);
+      ctx.fillRect(ox + 14, oy + 13, 4, 8);
+      ctx.fillRect(ox + 3, oy + 27, 13, 8);
     }
     ctx.restore();
   }
@@ -2123,31 +2164,40 @@ class Player {
     const s = M.headScale || 1;
     ctx.scale(s, s);
     if (M.toolKind === 'pick') {
-      // Two swept, tapering arms meeting at the eye — curved paths, so the
-      // tips are POINTS instead of stacked strips of static.
+      // TWO SWEEPING ARMS meeting at a clean eye. Each arm is a single closed
+      // curve: the top edge sweeps outward, the bottom edge returns, so the
+      // head reads as one forged blade instead of strips.
       for (const dir of [-1, 1]) {
+        // Top edge: root -> tip, arcing upward then falling to a point.
         ctx.fillStyle = M.head || '#94a3b8';
         ctx.beginPath();
-        ctx.moveTo(dir * 2.6, -4.6);
-        ctx.quadraticCurveTo(dir * 10, -5.4, dir * 16.6, -1.2);
-        ctx.lineTo(dir * 17.4, 1.2);
-        ctx.quadraticCurveTo(dir * 9, -1.4, dir * 2.6, 3.4);
+        ctx.moveTo(dir * 2.4, -5.2);
+        ctx.quadraticCurveTo(dir * 11, -6.6, dir * 19.5, -1.6);
+        ctx.lineTo(dir * 20.2, 0.6);
+        ctx.quadraticCurveTo(dir * 10, -0.6, dir * 2.4, 3.6);
         ctx.closePath();
         ctx.fill();
+        // Spine shadow along the bottom edge (gives the arm thickness).
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
         ctx.lineWidth = 1.4;
         ctx.beginPath();
-        ctx.moveTo(dir * 2.6, 3.4);
-        ctx.quadraticCurveTo(dir * 9, -1.4, dir * 17.4, 1.2);
+        ctx.moveTo(dir * 2.4, 3.6);
+        ctx.quadraticCurveTo(dir * 10, -0.6, dir * 20.2, 0.6);
         ctx.stroke();
+        // Polished cutting edge at the tip: a bright cap.
         ctx.fillStyle = M.edge || '#e2e8f0';
-        ctx.fillRect(dir > 0 ? 15.8 : -17.6, -1.4, 1.8, 2.6);
+        ctx.beginPath();
+        ctx.moveTo(dir * 18.2, -2.6);
+        ctx.lineTo(dir * 20.2, 0.6);
+        ctx.lineTo(dir * 17.4, 0.9);
+        ctx.closePath();
+        ctx.fill();
       }
       // The eye: a collar where the shaft threads through the head.
       ctx.fillStyle = M.headDark || 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(-2.8, -5, 5.6, 9.6);
+      ctx.fillRect(-3.2, -5.6, 6.4, 10.4);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.fillRect(-2.8, -5, 1.8, 9.6);
+      ctx.fillRect(-3.2, -5.6, 2, 10.4);
     }
     else if (M.toolKind === 'axe') {
       // One bit flaring out from the eye with a compact poll behind it.
@@ -3009,12 +3059,12 @@ class Monster {
       ctx.closePath();
       ctx.fill();
       // Lateral line: the sensory stripe that runs snout to tail.
-      context.beginPath();
-      context.moveTo(w * 0.22, h * 0.5);
-      context.quadraticCurveTo(w * 0.5, h * 0.52, w * 0.86, h * 0.48);
-      context.strokeStyle = 'rgba(15, 23, 42, 0.35)';
-      context.lineWidth = 1.4;
-      context.stroke();
+      ctx.beginPath();
+      ctx.moveTo(w * 0.22, h * 0.5);
+      ctx.quadraticCurveTo(w * 0.5, h * 0.52, w * 0.86, h * 0.48);
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
       ctx.fillStyle = '#94a3b8';
       ctx.beginPath();
       ctx.moveTo(w * 0.54, h * 0.67);

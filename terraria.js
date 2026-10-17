@@ -1,5 +1,35 @@
 // Terracraft Game Engine: Inventory, Crafting, Game Loop, Camera, Input, HUD & Combat
 
+/**
+ * Render a weapon/tool sprite (the same model the player holds) into a small
+ * canvas element, for inventory slots and UI icons. Returns a <canvas> or null
+ * when the item has no sprite model (blocks, materials etc. keep the emoji).
+ */
+function weaponIconCanvas(itemId, size = 26) {
+  const M = (typeof WEAPON_SPRITES !== 'undefined') ? WEAPON_SPRITES[itemId] : null;
+  if (!M) return null;
+  const cv = document.createElement('canvas');
+  cv.width = size; cv.height = size;
+  cv.className = 'slot-icon-canvas';
+  const ctx = cv.getContext('2d');
+  ctx.save();
+  // Centre the sprite: translate to the middle, then scale the model so the
+  // weapon's reach fills the box (model is drawn upward from the hand at 0,0).
+  ctx.translate(size * 0.5, size * 0.72);
+  const reach = M.reach || M.shaftLen || 40;
+  const k = (size * 0.86) / reach;
+  ctx.scale(k, k);
+  const proto = (typeof Player !== 'undefined') ? Player.prototype : null;
+  if (!proto) return null;
+  if (M.kind === 'blade') proto._drawBladeModel(ctx, M);
+  else if (M.kind === 'bow') proto._drawBowModel(ctx, M);
+  else if (M.kind === 'gun') proto._drawGunModel(ctx, M);
+  else if (M.kind === 'staff') proto._drawStaffModel(ctx, M);
+  else if (M.kind === 'tool') proto._drawToolModel(ctx, M);
+  ctx.restore();
+  return cv;
+}
+
 // Items definition database
 const ITEMS = {
   dirt: { id: 'dirt', name: 'Dirt Block', type: 'tile', tile: TILES.DIRT, icon: '🟫', stackMax: 999 },
@@ -538,7 +568,8 @@ const NEW_ITEMS = {
     // The apex weapon: a notch above the Voidstar Cleaver (214 dmg / 0.27s /
     // 24% crit / 7% lifesteal) in every stat, but not a runaway — it hits
     // harder, faster and deeper while keeping the same lifesteal family.
-    damage: 232, range: 150, useTime: 0.25, critBonus: 0.27, lifesteal: 0.09,
+    // Kind buff: +9% damage, a touch faster + a little more crit. Still fair.
+    damage: 310, range: 178, useTime: 0.20, critBonus: 0.37, lifesteal: 0.10,
     icon: '🦷', stackMax: 1,
     desc: 'A serrated fang-blade of tooth and abyssal ore. The sharpest thing ever pulled from the sea.'
   }
@@ -4635,7 +4666,7 @@ class Game {
     this.world.tiles.set(save.tiles);
     if (save.version >= 12 && save.version <= 14) this.world.repairLegacyReef(save.version);
     if (save.version < 15) this.world.generateReef();
-    this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(110000, save.leviathanHP)) : null;
+    this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(150000, save.leviathanHP)) : null;
     this.leviathanSlain = save.leviathanSlain === true;
     this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
       ? new CerberusPet(this.player.x, this.player.y, save.cerberus)
@@ -4844,7 +4875,12 @@ class Game {
       if (slot && slot.id !== 'empty') {
         const iconDiv = document.createElement('div');
         iconDiv.className = 'slot-icon';
-        iconDiv.textContent = itemData ? itemData.icon : '📦';
+        // Weapon/tool items render their real held MODEL into the slot instead
+        // of the emoji sticker, so the UI picture is the thing you swing.
+        const iconCanvas = (typeof weaponIconCanvas === 'function')
+          ? weaponIconCanvas(slot.id, 26) : null;
+        if (iconCanvas) iconDiv.appendChild(iconCanvas);
+        else iconDiv.textContent = itemData ? itemData.icon : '📦';
         slotDiv.appendChild(iconDiv);
 
         if (slot.count > 1) {
@@ -5064,7 +5100,10 @@ class Game {
 
       const icon = document.createElement('span');
       icon.className = 'creative-cell-icon';
-      icon.textContent = item.icon || '📦';
+      const iconCanvas = (typeof weaponIconCanvas === 'function')
+        ? weaponIconCanvas(item.id, 26) : null;
+      if (iconCanvas) icon.appendChild(iconCanvas);
+      else icon.textContent = item.icon || '📦';
       cell.appendChild(icon);
 
       const badge = document.createElement('span');
@@ -5288,7 +5327,10 @@ class Game {
       });
       if (slot && slot.id !== 'empty') {
         const item = ITEMS[slot.id];
-        div.textContent = item ? item.icon : '📦';
+        const iconCanvas = (typeof weaponIconCanvas === 'function')
+          ? weaponIconCanvas(slot.id, 26) : null;
+        if (iconCanvas) div.appendChild(iconCanvas);
+        else div.textContent = item ? item.icon : '📦';
         if (slot.count > 1) {
           const count = document.createElement('span');
           count.className = 'slot-count';
@@ -7890,7 +7932,11 @@ class Game {
     const fromOcean = this.world.isInOcean();
     if (this.boss && !this.boss.dead && this.boss.kind === 'dragon') this.dragonHP = this.boss.hp;
     if (this.boss && !this.boss.dead && (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan')) this.leviathanHP = this.boss.hp;
-    this.boss = null;
+    // A living Megalodon survives the player's death: nulling it here is what
+    // made it despawn on the death screen before respawnPlayer could resume it.
+    const keepMega = this.isDead && this.boss && !this.boss.dead &&
+      (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan' || (typeof Megalodon !== 'undefined' && this.boss instanceof Megalodon));
+    if (!keepMega) this.boss = null;
     // The death show belongs to the arena: leaving (or being dragged out by
     // death) ends it. The held victory screen keeps its own timer — the kill
     // still deserves its curtain wherever the player ends up.
@@ -7973,7 +8019,40 @@ class Game {
     // real surface profile), and updateWormhole then reopens a charged rift a
     // few seconds later to drag you straight back in for the retry.
     const diedInSpace = this.world.isInSpace();
-    if (diedInSpace || this.world.isInOcean()) {
+    const diedInOcean = this.world.isInOcean();
+    const megaAlive = this.boss && !this.boss.dead &&
+      (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan' ||
+        (typeof Megalodon !== 'undefined' && this.boss instanceof Megalodon));
+    if (diedInOcean && megaAlive) {
+      // THE MEGALODON DOES NOT DESPAWN WHEN YOU DIE. The predator owns the
+      // water: dying to it must not erase it from the arena. Stay in the
+      // ocean, put the player back on the arena floor and hand the shark its
+      // banked wound back — the fight simply resumes where it left off.
+      this.leviathanHP = Math.max(1, Math.round(this.boss.hp));
+      this._respawnBoss = this.boss;
+      this.isDead = false;
+      this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 3.0);
+      const arena = this.world.oceanArena;
+      if (arena && Number.isFinite(arena.spawnX)) {
+        this.player.x = arena.spawnX;
+        this.player.y = arena.spawnY;
+      }
+      this.player.vx = 0;
+      this.player.vy = 0;
+      this.player.hp = this.player.maxHp;
+      this.player.mana = this.player.maxMana;
+      this.player.stamina = this.player.maxStamina;
+      this.player.wingsUsed = null;
+      this.player.setWings(this.equippedAccessoryId ? ITEMS[this.equippedAccessoryId] : null);
+      this._wingsLocked = false;
+      this.regenLock = 0;
+      document.getElementById('death-screen')?.classList.add('hidden');
+      this.projectiles = this.projectiles.filter(p => !(p && p.fromBoss));
+      this.showToast('🦈 The predator circles. It remembers every hit — get back in the fight.');
+      this.saveGame(true);
+      return;
+    }
+    if (diedInSpace || diedInOcean) {
       this.returnToOverworld();
       // Only a Sovereign that is still standing — or banked with damage on it —
       // pulls you back in. Dying in a quiet Ossuary opens nothing: before the

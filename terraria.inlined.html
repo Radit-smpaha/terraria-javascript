@@ -593,6 +593,16 @@ canvas#glowCanvas {
   font-size: 26px;
 }
 
+/* A weapon/tool slot whose icon is the real held MODEL, rasterised to a tiny
+   canvas. Flex-centering keeps the sprite inside the square, and the pixelated
+   hint keeps it crisp when the browser scales it. */
+.slot-icon-canvas {
+  display: block;
+  width: 26px;
+  height: 26px;
+  image-rendering: pixelated;
+}
+
 .controls-hint {
   display: flex;
   flex-wrap: wrap;
@@ -12882,19 +12892,23 @@ class Player {
 
   renderArmor(ctx, armorItem, ox, oy) {
     if (!armorItem) return;
+    // [bright, mid, dark, accent] per tier — brighter/lighter on top, darker
+    // on the undersides so the plate reads as metal rather than a flat tint.
     const colors = {
-      gold_armor: ['#fbbf24', '#92400e'],
-      iron_armor: ['#cbd5e1', '#475569'],
-      diamond_armor: ['#67e8f9', '#155e75'],
-      crystal_armor: ['#1e3a8a', '#0f172a'],
-      rainbow_armor: ['#f0abfc', '#3730a3'],
-      fallen_star_armor: ['#fef3c7', '#78350f'],
-      demon_armor: ['#f87171', '#450a0a'],
-      voidscale_armor: ['#a78bfa', '#1e1b4b'],
-      ossuary_armor: ['#e7e5e4', '#292524']
+      gold_armor: ['#fbbf24', '#d97706', '#78350f', '#fef3c7'],
+      iron_armor: ['#e2e8f0', '#94a3b8', '#475569', '#f8fafc'],
+      diamond_armor: ['#8ee6f5', '#38bdf8', '#0e7490', '#ecfeff'],
+      crystal_armor: ['#93c5fd', '#3b82f6', '#1e3a8a', '#dbeafe'],
+      rainbow_armor: ['#f0abfc', '#f472b6', '#3730a3', '#fef08a'],
+      fallen_star_armor: ['#fef9c3', '#fde68a', '#92400e', '#ffffff'],
+      demon_armor: ['#f87171', '#dc2626', '#450a0a', '#fecaca'],
+      voidscale_armor: ['#c4b5fd', '#8b5cf6', '#1e1b4b', '#ede9fe'],
+      ossuary_armor: ['#e7e5e4', '#a8a29e', '#292524', '#f5f5f4'],
+      megalodon_armor: ['#bae6fd', '#38bdf8', '#0c4a6e', '#f0f9ff']
     };
     const armorColors = colors[armorItem.id];
     if (!armorColors) return;
+    const [bright, mid, dark, accent] = armorColors;
 
     ctx.save();
     // A hit that the plate soaked sets armorFlash to 1; it decays over ~0.4s.
@@ -12905,25 +12919,62 @@ class Player {
       ctx.shadowColor = armorColors[0];
       ctx.shadowBlur = 14 * flash;
     }
-    ctx.fillStyle = armorColors[0];
-    ctx.fillRect(ox + 2, oy + 2, 14, 6);
-    ctx.fillRect(ox + 2, oy + 14, 14, 11);
-    ctx.fillRect(ox, oy + 15, 4, 7);
-    ctx.fillRect(ox + 14, oy + 15, 4, 7);
-    ctx.fillStyle = armorColors[1];
-    ctx.fillRect(ox + 3, oy + 22, 12, 3);
-    ctx.fillRect(ox + 5, oy + 4, 3, 2);
-    ctx.fillStyle = '#f8fafc';
-    ctx.globalAlpha = 0.55;
-    ctx.fillRect(ox + 4, oy + 15, 2, 6);
+    ctx.fillStyle = bright;
+    // ---- HELMET: crown dome + brow band + a small crest on top -------------
+    ctx.fillRect(ox + 2, oy + 1, 14, 4);            // dome
+    ctx.fillRect(ox + 1, oy + 4, 16, 3);            // brow band
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox + 1, oy + 6, 16, 2);            // brow shadow
+    // Crest: one bright blade up the crown centre, dark keyline on its sides.
+    ctx.fillStyle = accent;
+    ctx.fillRect(ox + 7, oy - 3, 4, 4);
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox + 6, oy - 3, 1, 4);
+    ctx.fillRect(ox + 11, oy - 3, 1, 4);
+
+    // ---- CHESTPLATE: breastplate + chest highlight + shoulder pauldrons ----
+    ctx.fillStyle = bright;
+    ctx.fillRect(ox + 2, oy + 14, 14, 11);          // breastplate
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox + 2, oy + 22, 14, 3);           // lower shadow
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(ox + 4, oy + 15, 2, 7);            // chest highlight
+    ctx.globalAlpha = 1;
+    // Pauldrons: rounded shoulder caps over the arms.
+    ctx.fillStyle = bright;
+    ctx.fillRect(ox, oy + 13, 4, 6);                // back pauldron
+    ctx.fillRect(ox + 14, oy + 13, 4, 6);           // front pauldron
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox, oy + 19, 4, 2);                // back pauldron rim
+    ctx.fillRect(ox + 14, oy + 19, 4, 2);           // front pauldron rim
+    // Gauntlet cuffs at the wrists.
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox - 1, oy + 19, 3, 3);
+    ctx.fillRect(ox + 16, oy + 19, 3, 3);
+
+    // ---- BELT + BOOT PLATES: the last read of “armoured body” -------------
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox + 2, oy + 24, 14, 3);           // belt
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(ox + 8, oy + 24, 3, 3);            // buckle
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = mid;
+    ctx.fillRect(ox + 3, oy + 27, 5, 8);            // back boot plate
+    ctx.fillRect(ox + 11, oy + 27, 5, 8);           // front boot plate
+    ctx.fillStyle = dark;
+    ctx.fillRect(ox + 3, oy + 33, 5, 2);            // boot soles
+    ctx.fillRect(ox + 11, oy + 33, 5, 2);
     // White-hot wash across the whole plate on impact.
     if (flash > 0) {
       ctx.globalAlpha = 0.75 * flash;
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(ox + 2, oy + 2, 14, 6);
-      ctx.fillRect(ox + 2, oy + 14, 14, 11);
-      ctx.fillRect(ox, oy + 15, 4, 7);
-      ctx.fillRect(ox + 14, oy + 15, 4, 7);
+      ctx.fillRect(ox + 1, oy + 1, 16, 8);
+      ctx.fillRect(ox + 2, oy + 13, 14, 14);
+      ctx.fillRect(ox, oy + 13, 4, 8);
+      ctx.fillRect(ox + 14, oy + 13, 4, 8);
+      ctx.fillRect(ox + 3, oy + 27, 13, 8);
     }
     ctx.restore();
   }
@@ -13542,31 +13593,40 @@ class Player {
     const s = M.headScale || 1;
     ctx.scale(s, s);
     if (M.toolKind === 'pick') {
-      // Two swept, tapering arms meeting at the eye — curved paths, so the
-      // tips are POINTS instead of stacked strips of static.
+      // TWO SWEEPING ARMS meeting at a clean eye. Each arm is a single closed
+      // curve: the top edge sweeps outward, the bottom edge returns, so the
+      // head reads as one forged blade instead of strips.
       for (const dir of [-1, 1]) {
+        // Top edge: root -> tip, arcing upward then falling to a point.
         ctx.fillStyle = M.head || '#94a3b8';
         ctx.beginPath();
-        ctx.moveTo(dir * 2.6, -4.6);
-        ctx.quadraticCurveTo(dir * 10, -5.4, dir * 16.6, -1.2);
-        ctx.lineTo(dir * 17.4, 1.2);
-        ctx.quadraticCurveTo(dir * 9, -1.4, dir * 2.6, 3.4);
+        ctx.moveTo(dir * 2.4, -5.2);
+        ctx.quadraticCurveTo(dir * 11, -6.6, dir * 19.5, -1.6);
+        ctx.lineTo(dir * 20.2, 0.6);
+        ctx.quadraticCurveTo(dir * 10, -0.6, dir * 2.4, 3.6);
         ctx.closePath();
         ctx.fill();
+        // Spine shadow along the bottom edge (gives the arm thickness).
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
         ctx.lineWidth = 1.4;
         ctx.beginPath();
-        ctx.moveTo(dir * 2.6, 3.4);
-        ctx.quadraticCurveTo(dir * 9, -1.4, dir * 17.4, 1.2);
+        ctx.moveTo(dir * 2.4, 3.6);
+        ctx.quadraticCurveTo(dir * 10, -0.6, dir * 20.2, 0.6);
         ctx.stroke();
+        // Polished cutting edge at the tip: a bright cap.
         ctx.fillStyle = M.edge || '#e2e8f0';
-        ctx.fillRect(dir > 0 ? 15.8 : -17.6, -1.4, 1.8, 2.6);
+        ctx.beginPath();
+        ctx.moveTo(dir * 18.2, -2.6);
+        ctx.lineTo(dir * 20.2, 0.6);
+        ctx.lineTo(dir * 17.4, 0.9);
+        ctx.closePath();
+        ctx.fill();
       }
       // The eye: a collar where the shaft threads through the head.
       ctx.fillStyle = M.headDark || 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(-2.8, -5, 5.6, 9.6);
+      ctx.fillRect(-3.2, -5.6, 6.4, 10.4);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.fillRect(-2.8, -5, 1.8, 9.6);
+      ctx.fillRect(-3.2, -5.6, 2, 10.4);
     }
     else if (M.toolKind === 'axe') {
       // One bit flaring out from the eye with a compact poll behind it.
@@ -14428,12 +14488,12 @@ class Monster {
       ctx.closePath();
       ctx.fill();
       // Lateral line: the sensory stripe that runs snout to tail.
-      context.beginPath();
-      context.moveTo(w * 0.22, h * 0.5);
-      context.quadraticCurveTo(w * 0.5, h * 0.52, w * 0.86, h * 0.48);
-      context.strokeStyle = 'rgba(15, 23, 42, 0.35)';
-      context.lineWidth = 1.4;
-      context.stroke();
+      ctx.beginPath();
+      ctx.moveTo(w * 0.22, h * 0.5);
+      ctx.quadraticCurveTo(w * 0.5, h * 0.52, w * 0.86, h * 0.48);
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
       ctx.fillStyle = '#94a3b8';
       ctx.beginPath();
       ctx.moveTo(w * 0.54, h * 0.67);
@@ -24323,8 +24383,8 @@ class Megalodon {
     // every zoom and leaves the jaws the biggest single feature.
     this.width = 420;
     this.height = 200;
-    this.maxHp = 180000;
-    this.hp = 180000;
+    this.maxHp = 150000;
+    this.hp = 150000;
     this.phase = 1;
     this.dead = false;
     this.game = game;
@@ -26813,19 +26873,27 @@ class Megalodon {
       ctx.strokeStyle = outline;
       ctx.lineWidth = 3.5;
       ctx.stroke();
-      // Fin rays fanning through both lobes.
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.30)';
+      // Fin rays fanning through both lobes. Each ray curves along the lobe
+      // instead of running as a straight chord, so they read as membrane
+      // structure inside the fin rather than strings crossing a silhouette.
+      ctx.strokeStyle = 'rgba(6, 10, 20, 0.26)';
       ctx.lineWidth = 1.5;
-      for (let r = 0; r < 6; r++) {
+      for (let r = 0; r < 5; r++) {
+        const t = r / 4;                       // 0 = leading edge, 1 = trailing
         ctx.beginPath();
-        ctx.moveTo(16, -3 + r * 2);
-        ctx.lineTo(-14 - r * 4, -110 + r * 15);
+        ctx.moveTo(18, -10 + t * 8);
+        ctx.quadraticCurveTo(
+          -8 - t * 18, -58 - t * 22,
+          upperTip.x + 6 + t * 26, upperTip.y + 12 + t * 34);
         ctx.stroke();
       }
-      for (let r = 0; r < 4; r++) {
+      for (let r = 0; r < 3; r++) {
+        const t = r / 2;
         ctx.beginPath();
-        ctx.moveTo(14, 6 + r * 2);
-        ctx.lineTo(-16 - r * 4, 66 + r * 6);
+        ctx.moveTo(16, 8 + t * 6);
+        ctx.quadraticCurveTo(
+          -6 - t * 14, 40 + t * 10,
+          lowerTip.x + 4 + t * 18, lowerTip.y - 6 - t * 12);
         ctx.stroke();
       }
       // Caudal keel: the ridge running forward of the fin on the peduncle.
@@ -27006,8 +27074,8 @@ class Megalodon {
       // fin is TALL and only mildly swept so it reads as a shark fin, not a
       // stub or a sail. Keep the three-band shading so it shares volume
       // language with the hull.
-      const finH = bodyHalf(0.43) * 2.45 + (this.surge || 0) * 7;
-      const tipX = rootFront.x - 26 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
+      const finH = bodyHalf(0.43) * 2.65 + (this.surge || 0) * 7;
+      const tipX = rootFront.x - 32 - (this.surge || 0) * 9 - (dashing ? 8 : 0);
       const tipY = base.y - finH + finTilt * 16;
       // The leading root is pulled DOWN onto the shoulder (spineAt -0.92, not
       // the ridge cap) so the leading edge has room to run long and convex —
@@ -27023,7 +27091,7 @@ class Megalodon {
       ]
         // Concave, torn trailing edge: apex -> notch. Tearing lives here only.
         .concat(raggedEdge({ x: tipX + 9, y: tipY + 10 },
-          { x: notchX, y: notchY }, 4, 4 + tearAmp * 8, 61.7))
+          { x: notchX, y: notchY }, 4, 2 + tearAmp * 5, 61.7))
         .concat([{ x: notchX + 10, y: notchY + bodyHalf(0.43) * 0.10 }, { x: rootBack.x, y: rootBack.y + 3 }]);
       ctx.beginPath(); traceSmooth(ctx, pts); ctx.closePath();
       ctx.fillStyle = flash ? '#e2e8f0' : finLite;
@@ -27033,14 +27101,23 @@ class Megalodon {
       ctx.stroke();
       // Membrane rays: a FEW clean strokes, not a fan that scribbles the fin.
       // Three read as fin structure; five read as clutter at game scale.
-      ctx.strokeStyle = 'rgba(6, 10, 20, 0.28)';
+      ctx.strokeStyle = 'rgba(6, 10, 20, 0.22)';
       ctx.lineWidth = 1.5;
-      for (let r = 0; r < 3; r++) {
+      for (let r = 0; r < 2; r++) {
         ctx.beginPath();
-        ctx.moveTo(rootFront.x - 4 - r * 10, rootFront.y - 4 - r * 5);
-        ctx.lineTo(tipX + 8 + r * 12, tipY + 18 + r * 22);
+        ctx.moveTo(rootFront.x - 6 - r * 14, rootFront.y - 6 - r * 6);
+        ctx.lineTo(notchX - 6 + r * 4, notchY + 6 + r * 8);
         ctx.stroke();
       }
+      // Inner shade: a single soft band hugging the trailing edge keeps the
+      // fin reading as one clean swept plane instead of a scribbled sail.
+      ctx.fillStyle = 'rgba(10, 18, 34, 0.30)';
+      ctx.beginPath();
+      ctx.moveTo(tipX + 6, tipY + 6);
+      ctx.lineTo(notchX, notchY);
+      ctx.lineTo(notchX + 10, notchY + bodyHalf(0.43) * 0.10);
+      ctx.closePath();
+      ctx.fill();
       // The leading edge catches the key light all the way up to the apex.
       ctx.strokeStyle = 'rgba(206, 224, 255, 0.30)';
       ctx.lineWidth = 2.5;
@@ -32436,6 +32513,36 @@ Multiplayer.hookWorld();
 /* inlined terraria.js */
 // Terracraft Game Engine: Inventory, Crafting, Game Loop, Camera, Input, HUD & Combat
 
+/**
+ * Render a weapon/tool sprite (the same model the player holds) into a small
+ * canvas element, for inventory slots and UI icons. Returns a <canvas> or null
+ * when the item has no sprite model (blocks, materials etc. keep the emoji).
+ */
+function weaponIconCanvas(itemId, size = 26) {
+  const M = (typeof WEAPON_SPRITES !== 'undefined') ? WEAPON_SPRITES[itemId] : null;
+  if (!M) return null;
+  const cv = document.createElement('canvas');
+  cv.width = size; cv.height = size;
+  cv.className = 'slot-icon-canvas';
+  const ctx = cv.getContext('2d');
+  ctx.save();
+  // Centre the sprite: translate to the middle, then scale the model so the
+  // weapon's reach fills the box (model is drawn upward from the hand at 0,0).
+  ctx.translate(size * 0.5, size * 0.72);
+  const reach = M.reach || M.shaftLen || 40;
+  const k = (size * 0.86) / reach;
+  ctx.scale(k, k);
+  const proto = (typeof Player !== 'undefined') ? Player.prototype : null;
+  if (!proto) return null;
+  if (M.kind === 'blade') proto._drawBladeModel(ctx, M);
+  else if (M.kind === 'bow') proto._drawBowModel(ctx, M);
+  else if (M.kind === 'gun') proto._drawGunModel(ctx, M);
+  else if (M.kind === 'staff') proto._drawStaffModel(ctx, M);
+  else if (M.kind === 'tool') proto._drawToolModel(ctx, M);
+  ctx.restore();
+  return cv;
+}
+
 // Items definition database
 const ITEMS = {
   dirt: { id: 'dirt', name: 'Dirt Block', type: 'tile', tile: TILES.DIRT, icon: '🟫', stackMax: 999 },
@@ -32974,7 +33081,8 @@ const NEW_ITEMS = {
     // The apex weapon: a notch above the Voidstar Cleaver (214 dmg / 0.27s /
     // 24% crit / 7% lifesteal) in every stat, but not a runaway — it hits
     // harder, faster and deeper while keeping the same lifesteal family.
-    damage: 232, range: 150, useTime: 0.25, critBonus: 0.27, lifesteal: 0.09,
+    // Kind buff: +9% damage, a touch faster + a little more crit. Still fair.
+    damage: 310, range: 178, useTime: 0.20, critBonus: 0.37, lifesteal: 0.10,
     icon: '🦷', stackMax: 1,
     desc: 'A serrated fang-blade of tooth and abyssal ore. The sharpest thing ever pulled from the sea.'
   }
@@ -37071,7 +37179,7 @@ class Game {
     this.world.tiles.set(save.tiles);
     if (save.version >= 12 && save.version <= 14) this.world.repairLegacyReef(save.version);
     if (save.version < 15) this.world.generateReef();
-    this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(110000, save.leviathanHP)) : null;
+    this.leviathanHP = Number.isFinite(save.leviathanHP) ? Math.max(1, Math.min(150000, save.leviathanHP)) : null;
     this.leviathanSlain = save.leviathanSlain === true;
     this.cerberus = save.cerberus && typeof CerberusPet !== 'undefined'
       ? new CerberusPet(this.player.x, this.player.y, save.cerberus)
@@ -37280,7 +37388,12 @@ class Game {
       if (slot && slot.id !== 'empty') {
         const iconDiv = document.createElement('div');
         iconDiv.className = 'slot-icon';
-        iconDiv.textContent = itemData ? itemData.icon : '📦';
+        // Weapon/tool items render their real held MODEL into the slot instead
+        // of the emoji sticker, so the UI picture is the thing you swing.
+        const iconCanvas = (typeof weaponIconCanvas === 'function')
+          ? weaponIconCanvas(slot.id, 26) : null;
+        if (iconCanvas) iconDiv.appendChild(iconCanvas);
+        else iconDiv.textContent = itemData ? itemData.icon : '📦';
         slotDiv.appendChild(iconDiv);
 
         if (slot.count > 1) {
@@ -37500,7 +37613,10 @@ class Game {
 
       const icon = document.createElement('span');
       icon.className = 'creative-cell-icon';
-      icon.textContent = item.icon || '📦';
+      const iconCanvas = (typeof weaponIconCanvas === 'function')
+        ? weaponIconCanvas(item.id, 26) : null;
+      if (iconCanvas) icon.appendChild(iconCanvas);
+      else icon.textContent = item.icon || '📦';
       cell.appendChild(icon);
 
       const badge = document.createElement('span');
@@ -37724,7 +37840,10 @@ class Game {
       });
       if (slot && slot.id !== 'empty') {
         const item = ITEMS[slot.id];
-        div.textContent = item ? item.icon : '📦';
+        const iconCanvas = (typeof weaponIconCanvas === 'function')
+          ? weaponIconCanvas(slot.id, 26) : null;
+        if (iconCanvas) div.appendChild(iconCanvas);
+        else div.textContent = item ? item.icon : '📦';
         if (slot.count > 1) {
           const count = document.createElement('span');
           count.className = 'slot-count';
@@ -40326,7 +40445,11 @@ class Game {
     const fromOcean = this.world.isInOcean();
     if (this.boss && !this.boss.dead && this.boss.kind === 'dragon') this.dragonHP = this.boss.hp;
     if (this.boss && !this.boss.dead && (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan')) this.leviathanHP = this.boss.hp;
-    this.boss = null;
+    // A living Megalodon survives the player's death: nulling it here is what
+    // made it despawn on the death screen before respawnPlayer could resume it.
+    const keepMega = this.isDead && this.boss && !this.boss.dead &&
+      (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan' || (typeof Megalodon !== 'undefined' && this.boss instanceof Megalodon));
+    if (!keepMega) this.boss = null;
     // The death show belongs to the arena: leaving (or being dragged out by
     // death) ends it. The held victory screen keeps its own timer — the kill
     // still deserves its curtain wherever the player ends up.
@@ -40409,7 +40532,40 @@ class Game {
     // real surface profile), and updateWormhole then reopens a charged rift a
     // few seconds later to drag you straight back in for the retry.
     const diedInSpace = this.world.isInSpace();
-    if (diedInSpace || this.world.isInOcean()) {
+    const diedInOcean = this.world.isInOcean();
+    const megaAlive = this.boss && !this.boss.dead &&
+      (this.boss.kind === 'kraken' || this.boss.kind === 'leviathan' ||
+        (typeof Megalodon !== 'undefined' && this.boss instanceof Megalodon));
+    if (diedInOcean && megaAlive) {
+      // THE MEGALODON DOES NOT DESPAWN WHEN YOU DIE. The predator owns the
+      // water: dying to it must not erase it from the arena. Stay in the
+      // ocean, put the player back on the arena floor and hand the shark its
+      // banked wound back — the fight simply resumes where it left off.
+      this.leviathanHP = Math.max(1, Math.round(this.boss.hp));
+      this._respawnBoss = this.boss;
+      this.isDead = false;
+      this.player.invulnerableTime = Math.max(this.player.invulnerableTime, 3.0);
+      const arena = this.world.oceanArena;
+      if (arena && Number.isFinite(arena.spawnX)) {
+        this.player.x = arena.spawnX;
+        this.player.y = arena.spawnY;
+      }
+      this.player.vx = 0;
+      this.player.vy = 0;
+      this.player.hp = this.player.maxHp;
+      this.player.mana = this.player.maxMana;
+      this.player.stamina = this.player.maxStamina;
+      this.player.wingsUsed = null;
+      this.player.setWings(this.equippedAccessoryId ? ITEMS[this.equippedAccessoryId] : null);
+      this._wingsLocked = false;
+      this.regenLock = 0;
+      document.getElementById('death-screen')?.classList.add('hidden');
+      this.projectiles = this.projectiles.filter(p => !(p && p.fromBoss));
+      this.showToast('🦈 The predator circles. It remembers every hit — get back in the fight.');
+      this.saveGame(true);
+      return;
+    }
+    if (diedInSpace || diedInOcean) {
       this.returnToOverworld();
       // Only a Sovereign that is still standing — or banked with damage on it —
       // pulls you back in. Dying in a quiet Ossuary opens nothing: before the
